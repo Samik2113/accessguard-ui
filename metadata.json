@@ -1,0 +1,5 @@
+{
+  "name": "AccessGuard IGA Lite",
+  "description": "A streamlined User Access Review (UAR) platform for organizations to manage logical access governance, featuring automated review workflows, manager approvals, and governance reporting.",
+  "requestFramePermissions": []
+}

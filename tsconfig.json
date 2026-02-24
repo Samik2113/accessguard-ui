@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "skipLibCheck": true
+  },
+  "include": [
+    "index.tsx",
+    "src/**/*"
+  ],
+  "exclude": [
+    "vite.config.ts",
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+
+}
