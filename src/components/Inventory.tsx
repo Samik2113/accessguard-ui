@@ -181,6 +181,15 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     setShowAddApp(false);
   };
 
+  const normalizeEntOwnerForEdit = (ent: EntitlementDefinition) => {
+    let owner = ent.owner;
+    if (owner) {
+      const match = users.find(u => u.id === owner || u.name === owner);
+      if (match) owner = match.id;
+    }
+    return { ...ent, owner } as EntitlementDefinition;
+  };
+
   const handleAddGlobalSod = () => {
   setSodError(null);
     if (!newSod.policyName || !newSod.appId1 || !newSod.entitlement1 || !newSod.appId2 || !newSod.entitlement2) {
@@ -864,10 +873,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <span className="text-slate-400">NO</span>
                                   )}
                                 </td>
-                                <td className="px-4 py-3 text-slate-600">{ent.owner || '-'}</td>
+                                <td className="px-4 py-3 text-slate-600">{users.find(u => u.id === ent.owner)?.name || ent.owner || '-'}</td>
                                 <td className="px-4 py-3 text-slate-500 italic max-w-xs truncate">{ent.description || 'No description provided.'}</td>
                                 <td className="px-4 py-3 text-right">
-                                  <button onClick={() => setEditingEnt(ent)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
+                                  <button onClick={() => setEditingEnt(normalizeEntOwnerForEdit(ent))} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
                                 </td>
@@ -1118,7 +1127,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Owner</label>
                 <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/10 outline-none" value={editingEnt.owner} onChange={e => setEditingEnt({...editingEnt, owner: e.target.value})}>
                   <option value="">Select Owner...</option>
-                  {users.map(u => <option key={u.id} value={u.name}>{u.name} ({u.id})</option>)}
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
                 </select>
               </div>
               <div>
@@ -1146,20 +1155,23 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
               <div className="flex items-center h-full pt-4">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input 
+                    <input 
                     type="checkbox" 
                     className="w-4 h-4 rounded text-blue-600" 
                     checked={editingEnt.isPrivileged} 
                     onChange={e => {
-                        const isPriv = e.target.checked;
-                        const newState = {...editingEnt, isPrivileged: isPriv};
-                        if (isPriv) {
-                            newState.risk = 'HIGH';
-                            newState.riskScore = '10';
-                        }
-                        setEditingEnt(newState);
+                      const isPriv = e.target.checked;
+                      const newState = {...editingEnt, isPrivileged: isPriv};
+                      if (isPriv) {
+                        newState.risk = 'HIGH';
+                        newState.riskScore = '10';
+                      } else {
+                        newState.risk = 'LOW';
+                        newState.riskScore = '1';
+                      }
+                      setEditingEnt(newState);
                     }} 
-                  />
+                    />
                   <span className="text-sm font-bold text-slate-700">Privileged Entitlement?</span>
                 </label>
               </div>
