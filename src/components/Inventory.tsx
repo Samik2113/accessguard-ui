@@ -186,14 +186,20 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           const name = (d.policyName || d['Policy Name'] || '').toString().trim();
           if (!name) return;
           const existing = sodPolicies.find(p => p.policyName.toLowerCase() === name.toLowerCase());
+          // sanitize all fields to strings and trim
+          const appId1 = (d.appId1 || d.appId || d.appId_1 || '').toString().trim();
+          const entitlement1 = (d.entitlement1 || d.entitlement_1 || d.entitlement || '').toString().trim();
+          const appId2 = (d.appId2 || d.appId_2 || '').toString().trim();
+          const entitlement2 = (d.entitlement2 || d.entitlement_2 || '').toString().trim();
+          const riskLevel = (d.riskLevel || d.risk || 'HIGH').toString().trim().toUpperCase();
           const item = {
-            id: existing?.id || d.id,
+            id: existing?.id || (d.id || d.policyId || '').toString().trim(),
             policyName: name,
-            appId1: d.appId1 || d.appId || d.appId_1 || '',
-            entitlement1: d.entitlement1 || d.entitlement_1 || d.entitlement || '',
-            appId2: d.appId2 || d.appId_2 || '',
-            entitlement2: d.entitlement2 || d.entitlement_2 || '',
-            riskLevel: d.riskLevel || d.risk || 'HIGH'
+            appId1,
+            entitlement1,
+            appId2,
+            entitlement2,
+            riskLevel
           };
           // If CSV contains duplicates, prefer the last occurrence
           if (seen[name.toLowerCase()] !== undefined) {
@@ -203,6 +209,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             normalized.push(item);
           }
         });
+        console.debug('Prepared SOD upload payload:', normalized);
         onDataImport(type, normalized);
       } else {
         onDataImport(type, data, appId);
@@ -259,16 +266,28 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       entitlement2: newSod.entitlement2!,
       riskLevel: newSod.riskLevel as 'HIGH' | 'MEDIUM' | 'LOW'
     };
-    onUpdateSoD([...sodPolicies, policy]);
-    setShowAddSod(false);
-    setNewSod({ riskLevel: 'HIGH' });
+
+    // Persist via sod-import endpoint so backend stores the policy
+    (async () => {
+      try {
+        const res = await importSodPolicies([policy]);
+        console.debug('sod-import create response:', res);
+        onUpdateSoD([...sodPolicies, policy]);
+        setShowAddSod(false);
+        setNewSod({ riskLevel: 'HIGH' });
+      } catch (e: any) {
+        console.error('Failed to create SoD policy:', e);
+        window.alert('Failed to create SoD policy. ' + (e?.message || ''));
+      }
+    })();
   };
 
   const handleDeleteSod = async (policyId: string) => {
     if (!window.confirm('Delete this SoD policy? This cannot be undone.')) return;
     try {
       // Use the existing sod-import endpoint to perform delete operations by sending an item with action: 'DELETE'
-      await importSodPolicies([{ action: 'DELETE', id: policyId }]);
+      const res = await importSodPolicies([{ action: 'DELETE', id: policyId }]);
+      console.debug('sod-import delete response:', res);
       onUpdateSoD(sodPolicies.filter(x => x.id !== policyId));
     } catch (e: any) {
       console.error('Failed to delete SoD policy via import endpoint:', e);

@@ -305,14 +305,14 @@ useEffect(() => {
     // Build access map per logical owner: prefer correlatedUserId, fall back to account/userId for orphans
     const userAccessMap: Record<string, { appId: string, entitlement: string }[]> = {};
     currentAccess.forEach(acc => {
-      const fallbackId = acc.userId || acc.accountId || acc.id || '';
+      const fallbackId = acc.userId || acc.id || '';
       const key = acc.correlatedUserId ? `u:${acc.correlatedUserId}` : `a:${fallbackId}`;
       if (!userAccessMap[key]) userAccessMap[key] = [];
       userAccessMap[key].push({ appId: acc.appId, entitlement: acc.entitlement });
     });
 
     return currentAccess.map(acc => {
-      const fallbackId = acc.userId || acc.accountId || acc.id || '';
+      const fallbackId = acc.userId || acc.id || '';
       const key = acc.correlatedUserId ? `u:${acc.correlatedUserId}` : `a:${fallbackId}`;
       const userItems = userAccessMap[key] || [];
       const violatedPolicies = policies.filter(policy => {
@@ -414,20 +414,7 @@ useEffect(() => {
       setUsers(res.items ?? []);
       setAccess(prev => recalculateSoD(prev, sodPolicies));
       return;
-    }
-
-
-		
-		
-      // 1) Persist to Cosmos via Azure Function
-      //await importHrUsers(data);
-      // 2) Refresh from backend
-     // const res = await getHrUsers({ top: 200 });
-      //setUsers(res.items ?? []);
-      // Recalculate SoD flags (accounts already in state)
-     // setAccess(prev => recalculateSoD(prev, sodPolicies));
-      // Optional: toast/log success here
-    else if (type === 'APPLICATIONS') {
+    } else if (type === 'APPLICATIONS') {
       await importApplications(data);
       const res = await getApplications(100);
       setApplications(res.items ?? []);
@@ -486,7 +473,15 @@ useEffect(() => {
       // Optional: recalc SoD (privileged flags may change)
       setAccess(prev => recalculateSoD(prev, sodPolicies));
     } else if (type === 'APP_SOD') {
-      await importSodPolicies(data);
+      try {
+        const res = await importSodPolicies(data);
+        console.debug('sod-import response:', res);
+      } catch (err: any) {
+        console.error('sod-import failed:', err);
+        // show a helpful alert including server message if available
+        window.alert('SoD import failed: ' + (err?.message || JSON.stringify(err)));
+        throw err;
+      }
       const sod = await getSodPolicies();
       const items = sod.items ?? [];
       setSodPolicies(items);
