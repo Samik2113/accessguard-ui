@@ -145,9 +145,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             obj.isPrivileged = false;
           }
           // Normalize owner: prefer storing user ID if owner matches a known user (by id or name)
-          if (obj.owner) {
+          // Support both 'owner' and 'ownerId' columns in CSV. Prefer ownerId when present.
+          if (obj.ownerId && !obj.owner) {
+            // ownerId provided directly
+            const ownerMatch = users.find(u => u.id === String(obj.ownerId));
+            if (ownerMatch) {
+              obj.ownerId = ownerMatch.id;
+              obj.owner = ownerMatch.name;
+            } else {
+              obj.ownerId = String(obj.ownerId);
+            }
+          } else if (obj.owner) {
             const ownerMatch = users.find(u => u.id === obj.owner || u.name === obj.owner);
-            if (ownerMatch) obj.owner = ownerMatch.id;
+            if (ownerMatch) {
+              obj.ownerId = ownerMatch.id;
+              obj.owner = ownerMatch.name;
+            } else {
+              obj.ownerId = String(obj.owner);
+            }
           }
 
           // Auto-calc risk and riskScore based on isPrivileged
@@ -182,12 +197,16 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   };
 
   const normalizeEntOwnerForEdit = (ent: EntitlementDefinition) => {
-    let owner = ent.owner;
-    if (owner) {
-      const match = users.find(u => u.id === owner || u.name === owner);
-      if (match) owner = match.id;
+    let ownerId = (ent as any).ownerId || ent.owner;
+    let ownerName = ent.owner;
+    if (ownerId) {
+      const match = users.find(u => u.id === ownerId || u.name === ownerId || u.name === ownerName);
+      if (match) {
+        ownerId = match.id;
+        ownerName = match.name;
+      }
     }
-    return { ...ent, owner } as EntitlementDefinition;
+    return { ...ent, owner: ownerName, ownerId } as EntitlementDefinition;
   };
 
   const handleAddGlobalSod = () => {
@@ -873,7 +892,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <span className="text-slate-400">NO</span>
                                   )}
                                 </td>
-                                <td className="px-4 py-3 text-slate-600">{users.find(u => u.id === ent.owner)?.name || ent.owner || '-'}</td>
+                                <td className="px-4 py-3 text-slate-600">{users.find(u => u.id === (ent as any).ownerId || u.id === ent.owner)?.name || ent.owner || '-'}</td>
                                 <td className="px-4 py-3 text-slate-500 italic max-w-xs truncate">{ent.description || 'No description provided.'}</td>
                                 <td className="px-4 py-3 text-right">
                                   <button onClick={() => setEditingEnt(normalizeEntOwnerForEdit(ent))} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">

@@ -723,14 +723,15 @@ const removeApplication = async (appId?: string | null) => {
     onRemoveApp={id => { removeApplication(id); }}
     onUpdateEntitlement={async (ent) => {
       try {
-        // Persist single entitlement change to backend via import endpoint
-        await importEntitlements(ent.appId, [ent]);
-        // Refresh entitlements for the app from backend
+        // Ensure ownerId is present as string for backend
+        const payload: any = { ...ent };
+        if (!payload.ownerId && payload.owner) payload.ownerId = String(payload.owner);
+        console.debug('Saving entitlement payload:', payload);
+        await importEntitlements(ent.appId, [payload]);
         const res = await getEntitlements(ent.appId, undefined, 200);
         setEntitlements(res.items || []);
       } catch (err) {
         console.error('Failed to save entitlement:', err);
-        // Fallback: update local state
         setEntitlements(p => p.map(e => (e.appId === ent.appId && e.entitlement === ent.entitlement ? ent : e)));
       }
     }}
