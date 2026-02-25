@@ -8,12 +8,7 @@ export default defineConfig(({ mode }) => {
   return {
     server: {
       host: 'localhost',           // bind to VM’s IP so it’s reachable outside RDP
-      port: 3000,
-      /*https: {
-        key: fs.readFileSync('./172.16.0.4-key.pem'),
-        cert: fs.readFileSync('./172.16.0.4.pem'),
-      },*/
-      
+      port: 3000,      
     },
     plugins: [react()],
     define: {
