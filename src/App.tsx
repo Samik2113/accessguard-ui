@@ -302,16 +302,19 @@ useEffect(() => {
   };
 
   const recalculateSoD = (currentAccess: ApplicationAccess[], policies: SoDPolicy[]): ApplicationAccess[] => {
+    // Build access map per logical owner: prefer correlatedUserId, fall back to account/userId for orphans
     const userAccessMap: Record<string, { appId: string, entitlement: string }[]> = {};
     currentAccess.forEach(acc => {
-      if (!acc.correlatedUserId) return;
-      if (!userAccessMap[acc.correlatedUserId]) userAccessMap[acc.correlatedUserId] = [];
-      userAccessMap[acc.correlatedUserId].push({ appId: acc.appId, entitlement: acc.entitlement });
+      const fallbackId = acc.userId || acc.accountId || acc.id || '';
+      const key = acc.correlatedUserId ? `u:${acc.correlatedUserId}` : `a:${fallbackId}`;
+      if (!userAccessMap[key]) userAccessMap[key] = [];
+      userAccessMap[key].push({ appId: acc.appId, entitlement: acc.entitlement });
     });
 
     return currentAccess.map(acc => {
-      if (!acc.correlatedUserId) return { ...acc, isSoDConflict: false, violatedPolicyNames: [], violatedPolicyIds: [] };
-      const userItems = userAccessMap[acc.correlatedUserId] || [];
+      const fallbackId = acc.userId || acc.accountId || acc.id || '';
+      const key = acc.correlatedUserId ? `u:${acc.correlatedUserId}` : `a:${fallbackId}`;
+      const userItems = userAccessMap[key] || [];
       const violatedPolicies = policies.filter(policy => {
         const has1 = userItems.some(i => i.appId === policy.appId1 && i.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase());
         const has2 = userItems.some(i => i.appId === policy.appId2 && i.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());

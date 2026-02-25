@@ -83,5 +83,8 @@ export const importApplications   = (items: any[]) => postJson("/api/application
 // Delete application (backend should accept { appId })
 export const deleteApplication = (appId: string) => postJson("/api/applications-delete", { appId });
 
+// Delete an SoD policy by id
+export const deleteSodPolicy = (id: string) => postJson("/api/sod-delete", { id });
+
 // Messages
 export const saveMessageToBackend = (message: any) => postJson("/api/messages", { message });

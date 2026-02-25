@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { getAccounts, getAccountsByUser } from '../services/api';
+import { getAccounts, getAccountsByUser, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
@@ -178,8 +178,35 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
         return obj;
       });
-
-      onDataImport(type, data, appId);
+      // Special handling for SoD policies: dedupe by policyName and mark existing id for upsert
+      if (type === 'APP_SOD') {
+        const normalized: any[] = [];
+        const seen: Record<string, number> = {};
+        data.forEach((d: any) => {
+          const name = (d.policyName || d['Policy Name'] || '').toString().trim();
+          if (!name) return;
+          const existing = sodPolicies.find(p => p.policyName.toLowerCase() === name.toLowerCase());
+          const item = {
+            id: existing?.id || d.id,
+            policyName: name,
+            appId1: d.appId1 || d.appId || d.appId_1 || '',
+            entitlement1: d.entitlement1 || d.entitlement_1 || d.entitlement || '',
+            appId2: d.appId2 || d.appId_2 || '',
+            entitlement2: d.entitlement2 || d.entitlement_2 || '',
+            riskLevel: d.riskLevel || d.risk || 'HIGH'
+          };
+          // If CSV contains duplicates, prefer the last occurrence
+          if (seen[name.toLowerCase()] !== undefined) {
+            normalized[seen[name.toLowerCase()]] = item;
+          } else {
+            seen[name.toLowerCase()] = normalized.length;
+            normalized.push(item);
+          }
+        });
+        onDataImport(type, normalized);
+      } else {
+        onDataImport(type, data, appId);
+      }
       if (e.target) e.target.value = '';
     };
     reader.readAsText(file);
@@ -235,6 +262,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     onUpdateSoD([...sodPolicies, policy]);
     setShowAddSod(false);
     setNewSod({ riskLevel: 'HIGH' });
+  };
+
+  const handleDeleteSod = async (policyId: string) => {
+    if (!window.confirm('Delete this SoD policy? This cannot be undone.')) return;
+    try {
+      // Use the existing sod-import endpoint to perform delete operations by sending an item with action: 'DELETE'
+      await importSodPolicies([{ action: 'DELETE', id: policyId }]);
+      onUpdateSoD(sodPolicies.filter(x => x.id !== policyId));
+    } catch (e: any) {
+      console.error('Failed to delete SoD policy via import endpoint:', e);
+      window.alert('Failed to delete SoD policy. ' + (e?.message || ''));
+    }
   };
 
   const isPrivilegedEntitlement = (appId: string, entitlement: string) => {
@@ -644,7 +683,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                            }`}>{p.riskLevel}</span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button onClick={() => onUpdateSoD(sodPolicies.filter(x => x.id !== p.id))} className="text-red-400 hover:text-red-600">
+                          <button onClick={() => handleDeleteSod(p.id)} className="text-red-400 hover:text-red-600">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </td>
