@@ -51,11 +51,19 @@ export const getSodPolicies       = (search?: string, top=100, ct?:string) => ge
 
 // -------------------- UAR flows (Read) --------------------
 // Get all review cycles (optionally filtered by appId or status)
-export const getReviewCycles = (opts: { appId?: string; status?: string; top?: number; ct?: string } = {}) => {
+export const getReviewCycles = async (opts: { appId?: string; status?: string; top?: number; ct?: string } = {}) => {
   // Only include appId if it is a non-empty string
   const params: Record<string, string | number | undefined> = { status: opts.status, top: opts.top ?? 100, continuationToken: opts.ct };
   if (typeof opts.appId === 'string' && opts.appId.trim().length > 0) params.appId = opts.appId.trim();
-  return getJson("/api/reviewcycles-get", params);
+  console.debug('[API] getReviewCycles params:', params);
+  try {
+    const result = await getJson("/api/reviewcycles-get", params);
+    console.debug('[API] getReviewCycles result:', result);
+    return result;
+  } catch (err) {
+    console.error('[API] getReviewCycles error:', err);
+    throw err;
+  }
 };
 
 // Get review items (optionally filtered by cycleId, managerId, or status)
@@ -67,8 +75,17 @@ export const getManagerItems      = (managerId: string, status?: string) =>
   getReviewItems({ managerId, status });
 
 // -------------------- UAR flows (Write) --------------------
-export const launchReview         = (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }) =>
-  postJson("/api/reviews-launch", payload);
+export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }) => {
+  console.debug('[API] launchReview payload:', payload);
+  try {
+    const result = await postJson("/api/reviews-launch", payload);
+    console.debug('[API] launchReview result:', result);
+    return result;
+  } catch (err) {
+    console.error('[API] launchReview error:', err);
+    throw err;
+  }
+};
 
 export const actOnItem            = (payload: { itemId: string; managerId: string; status: string; comment?: string }) =>
   postJson("/api/reviews-items-action", payload);
