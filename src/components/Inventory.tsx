@@ -126,7 +126,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       window.alert("Please fill in Application Name and select an Owner.");
       return;
     }
-    onAddApp({ ...newApp, id: `APP_${Date.now()}` });
+    const appId = `APP_${Date.now()}`;
+    onAddApp({ ...newApp, id: appId, appId });
     setNewApp({ name: '', ownerId: '', description: '' });
     setShowAddApp(false);
   };

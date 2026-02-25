@@ -78,8 +78,8 @@ export const importEntitlements   = (appId: string, items: any[]) => postJson("/
 export const importSodPolicies    = (items: any[]) => postJson("/api/sod-import", items);
 export const importApplications   = (items: any[]) => postJson("/api/applications-import", items);
 
-// Delete application (backend should accept { id })
-export const deleteApplication = (appId: string) => postJson("/api/applications-delete", { id: appId });
+// Delete application (backend should accept { appId })
+export const deleteApplication = (appId: string) => postJson("/api/applications-delete", { appId });
 
 // Messages
 export const saveMessageToBackend = (message: any) => postJson("/api/messages", message);
