@@ -7,12 +7,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
-      host: '172.16.0.4',           // bind to VM’s IP so it’s reachable outside RDP
+      host: 'localhost',           // bind to VM’s IP so it’s reachable outside RDP
       port: 3000,
-      https: {
+      /*https: {
         key: fs.readFileSync('./172.16.0.4-key.pem'),
         cert: fs.readFileSync('./172.16.0.4.pem'),
-      },
+      },*/
+      
     },
     plugins: [react()],
     define: {

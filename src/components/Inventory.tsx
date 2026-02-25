@@ -44,7 +44,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const sodInputRef = useRef<HTMLInputElement>(null);
   const appsInputRef = useRef<HTMLInputElement>(null);
 
-  const downloadTemplate = (type: 'HR' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD') => {
+  const downloadTemplate = (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD') => {
     let headers: string[] = [];
     let rows: any[] = [];
 

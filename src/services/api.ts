@@ -65,7 +65,10 @@ export const archiveCycle         = (payload: { cycleId: string; appId: string }
 
 // -------------------- Ingest (admin screens) --------------------
 export const importHrUsers        = (items: any[]) => postJson("/api/hr-import", items);
-export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts/import", items, { appId });
-export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements/import", items, { appId });
-export const importSodPolicies    = (items: any[]) => postJson("/api/sod/import", items);
-export const importApplications   = (items: any[]) => postJson("/api/applications/import", items);
+export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts-import", items, { appId });
+export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements-import", items, { appId });
+export const importSodPolicies    = (items: any[]) => postJson("/api/sod-import", items);
+export const importApplications   = (items: any[]) => postJson("/api/applications-import", items);
+
+// Messages
+export const saveMessageToBackend = (message: any) => postJson("/api/messages", message);

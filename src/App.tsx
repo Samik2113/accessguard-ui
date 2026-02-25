@@ -6,7 +6,7 @@ import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
-//import { saveMessageToBackend } from './services/api';
+import { saveMessageToBackend } from './services/api';
 import { getApplications } from "./services/api";
 import { getEntitlements } from "./services/api";
 import { getAccounts } from "./services/api";
@@ -87,7 +87,7 @@ const App: React.FC = () => {
       details,
     };
     setAuditLogs(prev => [newLog, ...prev]);
-  };
+  };*/
 
 const addAuditLog = async (action: string, details: string) => {
   const newLog: AuditLog = {
@@ -106,7 +106,7 @@ const addAuditLog = async (action: string, details: string) => {
   try {
     // Combine action + details as the message body we store server-side
     const message = `[${action}] ${details}`;
-    const id = await saveMessageToBackend(message, currentUser.id);
+    const id = await saveMessageToBackend(message);
     // (Optional) You can append the backend id into the log if you want:
     // setAuditLogs(prev => prev.map(l => l.id === newLog.id ? { ...l, details: `${l.details} (id:${id})` } : l));
     console.debug('Saved to Cosmos. id=', id);
@@ -114,7 +114,7 @@ const addAuditLog = async (action: string, details: string) => {
     console.error('Backend save failed:', err?.message || err);
     // (Optional) surface a toast/snackbar here if you have one.
   }
-};*/
+};
 
 useEffect(() => {
   let isMounted = true;
