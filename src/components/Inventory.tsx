@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getAccountsByUser, importSodPolicies } from '../services/api';
-import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
 
@@ -650,11 +650,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             </div>
             <div className="flex gap-3">
               <button onClick={() => downloadTemplate('APP_SOD')} className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50">
-                <Download className="w-4 h-4" /> Export Data
+                <Download className="w-4 h-4" /> Template
               </button>
               <input type="file" ref={sodInputRef} className="hidden" accept=".csv" onChange={(e) => handleFileUpload(e, 'APP_SOD')} />
-              <button onClick={() => sodInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-sm font-medium hover:bg-slate-200">
-                <Upload className="w-4 h-4" /> Bulk Upload
+              <button onClick={() => sodInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800">
+                <Upload className="w-4 h-4" /> Upload
               </button>
               <button onClick={() => setShowAddSod(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
                 <Plus className="w-4 h-4" /> New Policy
@@ -718,33 +718,43 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
       {activeSubTab === 'applications' && (
         <div className="space-y-6">
-          {/* Action Buttons Row */}
-          <div className="flex flex-col sm:flex-row gap-3 items-stretch">
-            <button 
-              onClick={() => setShowAddApp(true)} 
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
-            >
-              <Plus className="w-4 h-4" /> Add Application
-            </button>
-            <button
-              onClick={() => downloadTemplate('APPLICATIONS')}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-semibold text-sm"
-            >
-              <Download className="w-4 h-4" /> Export Template
-            </button>
-            <input
-              type="file"
-              ref={appsInputRef}
-              className="hidden"
-              accept=".csv"
-              onChange={(e) => handleFileUpload(e, 'APPLICATIONS')}
-            />
-            <button
-              onClick={() => appsInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all font-semibold text-sm"
-            >
-              <Upload className="w-4 h-4" /> Bulk Upload
-            </button>
+          {/* Header Box - Same pattern as SoD */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-blue-100 p-3 rounded-xl">
+                <Package className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-lg">Application Onboarding</h3>
+                <p className="text-sm text-slate-500">Create, configure, and manage connected applications.</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => downloadTemplate('APPLICATIONS')}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50"
+              >
+                <Download className="w-4 h-4" /> Template
+              </button>
+              <input
+                type="file"
+                ref={appsInputRef}
+                className="hidden"
+                accept=".csv"
+                onChange={(e) => handleFileUpload(e, 'APPLICATIONS')}
+              />
+              <button
+                onClick={() => appsInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800"
+              >
+                <Upload className="w-4 h-4" /> Upload
+              </button>
+              <button 
+                onClick={() => setShowAddApp(true)} 
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all"
+              >
+                <Plus className="w-4 h-4" /> Add Application
+              </button>
+            </div>
           </div>
 
           {/* Two-Column Layout */}
@@ -923,7 +933,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <div className="flex gap-2">
-                        <button onClick={() => downloadTemplate('APP_ENT')} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50"><Download className="w-3.5 h-3.5" /> Export Data</button>
+                        <button onClick={() => downloadTemplate('APP_ENT')} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50"><Download className="w-3.5 h-3.5" /> Template</button>
                         <input type="file" ref={entInputRef} className="hidden" onChange={(e) => handleFileUpload(e, 'APP_ENT', selectedAppId)} />
                         <button onClick={() => entInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"><Upload className="w-3.5 h-3.5" /> Bulk Update</button>
                       </div>
