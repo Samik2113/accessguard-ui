@@ -660,8 +660,10 @@ useEffect(() => {
       // Refresh cycles and items from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
       const itemsRes = await getReviewItems({ top: 500 });
-      setCycles(cyclesRes?.items ?? []);
-      setReviewItems(itemsRes?.items ?? []);
+      console.debug('UAR: cycles after launch', cyclesRes);
+      console.debug('UAR: items after launch', itemsRes);
+      setCycles(Array.isArray(cyclesRes?.items) ? cyclesRes.items : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
 
       await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign for ${targetApp.name}. Cycle ID: ${response?.id || 'N/A'}`);
       alert(`✓ Review campaign launched for ${targetApp.name}!`);

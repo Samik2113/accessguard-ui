@@ -51,8 +51,12 @@ export const getSodPolicies       = (search?: string, top=100, ct?:string) => ge
 
 // -------------------- UAR flows (Read) --------------------
 // Get all review cycles (optionally filtered by appId or status)
-export const getReviewCycles      = (opts: { appId?: string; status?: string; top?: number; ct?: string } = {}) =>
-  getJson("/api/reviewcycles-get", { appId: opts.appId, status: opts.status, top: opts.top ?? 100, continuationToken: opts.ct });
+export const getReviewCycles = (opts: { appId?: string; status?: string; top?: number; ct?: string } = {}) => {
+  // Only include appId if actually set (avoid sending undefined)
+  const params: Record<string, string | number | undefined> = { status: opts.status, top: opts.top ?? 100, continuationToken: opts.ct };
+  if (opts.appId) params.appId = opts.appId;
+  return getJson("/api/reviewcycles-get", params);
+};
 
 // Get review items (optionally filtered by cycleId, managerId, or status)
 export const getReviewItems       = (opts: { cycleId?: string; managerId?: string; status?: string; top?: number; ct?: string } = {}) =>
