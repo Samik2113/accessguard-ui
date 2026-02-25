@@ -82,4 +82,4 @@ export const importApplications   = (items: any[]) => postJson("/api/application
 export const deleteApplication = (appId: string) => postJson("/api/applications-delete", { appId });
 
 // Messages
-export const saveMessageToBackend = (message: any) => postJson("/api/messages", message);
+export const saveMessageToBackend = (message: any) => postJson("/api/messages", { message });
