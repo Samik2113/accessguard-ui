@@ -112,6 +112,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         headers.forEach((header, i) => {
           obj[header] = values[i];
         });
+
+        // For app account uploads, ensure backend-required fields exist
+        if (type === 'APP_ACCESS') {
+          // Ensure appId comes from the selected app (don't rely on CSV)
+          if (appId) obj.appId = appId;
+
+          // Account ID should default to userId (or id/email) so CSV need not include it
+          obj.accountId = obj.accountId || obj.userId || obj.id || obj.email || `ACC_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+          // Make sure userId is present as well
+          obj.userId = obj.userId || obj.accountId;
+        }
+
         return obj;
       });
 
