@@ -20,7 +20,13 @@ import {
   importAccounts,
   importEntitlements,
   importSodPolicies,
-  deleteApplication
+  deleteApplication,
+  getReviewCycles,
+  getReviewItems,
+  launchReview,
+  actOnItem,
+  confirmManager,
+  archiveCycle
 } from "./services/api";
 
 
@@ -40,6 +46,13 @@ const App: React.FC = () => {
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+
+  // UAR Loading/Error States
+  const [uarLoading, setUarLoading] = useState(false);
+  const [uarError, setUarError] = useState<string | null>(null);
+  const [launchingReview, setLaunchingReview] = useState(false);
+  const [actingOnItem, setActingOnItem] = useState<string | null>(null); // itemId being actioned
+  const [confirmingReview, setConfirmingReview] = useState<string | null>(null); // cycleId being confirmed
 
   // Audit Log Filter State
   const [auditFilterUser, setAuditFilterUser] = useState('');
@@ -262,6 +275,32 @@ useEffect(() => {
   return () => { alive = false; };
 }, []);
 
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    try {
+      setUarLoading(true);
+      setUarError(null);
+      // Fetch review cycles and items from backend
+      const cyclesRes = await getReviewCycles({ top: 200 });
+      const itemsRes = await getReviewItems({ top: 500 });
+      if (!alive) return;
+      setCycles(cyclesRes?.items ?? []);
+      setReviewItems(itemsRes?.items ?? []);
+    } catch (e) {
+      console.error("Failed to load UAR data:", e);
+      if (alive) {
+        setUarError(e?.message || "Failed to load review campaigns and items.");
+        setCycles([]);
+        setReviewItems([]);
+      }
+    } finally {
+      if (alive) setUarLoading(false);
+    }
+  })();
+  return () => { alive = false; };
+}, []);
+
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
     const accEmails = [acc.email, acc.userEmail, acc.accountEmail].filter(Boolean).map((s: string) => s.toLowerCase());
@@ -375,14 +414,37 @@ useEffect(() => {
     });
   }, [users, sodPolicies]);
 
-  const handleConfirmReview = (cycleId: string, managerId: string) => {
-    setCycles(prev => prev.map(c => {
-      if (c.id === cycleId && !c.confirmedManagers.includes(managerId)) {
-        return { ...c, confirmedManagers: [...c.confirmedManagers, managerId] };
+  const handleConfirmReview = async (cycleId: string, managerId: string) => {
+    setConfirmingReview(cycleId);
+    try {
+      const cycle = cycles.find(c => c.id === cycleId);
+      if (!cycle) {
+        throw new Error('Review cycle not found');
       }
-      return c;
-    }));
-    addAuditLog('MANAGER_CONFIRM', `Manager ${managerId} locked decisions for campaign: ${cycleId}.`);
+
+      // Call backend to confirm manager review
+      await confirmManager({
+        cycleId,
+        appId: cycle.appId,
+        managerId
+      });
+
+      // Refresh cycles from backend
+      const cyclesRes = await getReviewCycles({ top: 200 });
+      setCycles(cyclesRes?.items ?? []);
+
+      // Also refresh items in case cycle status changed to COMPLETED and items need refresh
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(itemsRes?.items ?? []);
+
+      await addAuditLog('MANAGER_CONFIRM', `Manager ${managerId} locked decisions for campaign: ${cycleId}.`);
+      alert('✓ Review finalized successfully!');
+    } catch (e: any) {
+      console.error('Failed to confirm review:', e);
+      alert(`Failed to finalize review: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setConfirmingReview(null);
+    }
   };
   const handleDataImport = async (
   type: 'HR' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD' | 'APPLICATIONS',
@@ -557,49 +619,97 @@ useEffect(() => {
     addAuditLog('SOD_UPDATE', `SoD policies updated manually.`);
   };
 
-  const handleLaunchReview = (appId: string, dueDateStr?: string) => {
+  const handleLaunchReview = async (appId: string, dueDateStr?: string) => {
     const targetApp = applications.find(a => a.id === appId);
     if (!targetApp) return;
     const existingActive = cycles.find(c => c.appId === appId && c.status !== ReviewStatus.COMPLETED);
     if (existingActive) { alert(`A campaign for ${targetApp.name} is already running.`); return; }
     const appAccess = access.filter(a => a.appId === appId);
     if (appAccess.length === 0) { alert(`No accounts found for ${targetApp.name}.`); return; }
-    const now = new Date();
-    const cycleId = `CYC_${appId}_${Date.now()}`;
-    const dueDate = dueDateStr ? new Date(dueDateStr) : new Date();
-    if (!dueDateStr) dueDate.setDate(dueDate.getDate() + 14);
-    const dateStr = now.toLocaleDateString().replace(/\//g, '-');
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/:/g, '-');
-    const campaignName = `Manager Campaign - ${targetApp.name} - ${dateStr}-${timeStr}`;
-    const newCycle: ReviewCycle = {
-      id: cycleId, name: campaignName, appId, appName: targetApp.name,
-      year: now.getFullYear(), quarter: Math.ceil((now.getMonth() + 1) / 3),
-      status: ReviewStatus.ACTIVE, totalItems: appAccess.length, pendingItems: appAccess.length,
-      launchedAt: now.toISOString(), dueDate: dueDate.toISOString(), confirmedManagers: []
-    };
-    const tasks: ReviewItem[] = appAccess.map((acc, idx) => {
-      const identity = users.find(u => u.id === acc.correlatedUserId);
-      const isPriv = entitlements.some(e => e.appId === acc.appId && e.entitlement === acc.entitlement && e.isPrivileged);
-      return {
-        id: `ITM${cycleId}-${idx}`, reviewCycleId: cycleId, accessId: acc.id, appUserId: acc.userId,
-        managerId: acc.isOrphan ? targetApp.ownerId : (identity?.managerId || targetApp.ownerId),
-        status: ActionStatus.PENDING, userName: acc.userName, appName: acc.appName, entitlement: acc.entitlement,
-        isSoDConflict: acc.isSoDConflict, violatedPolicyNames: acc.violatedPolicyNames, violatedPolicyIds: acc.violatedPolicyIds,
-        isOrphan: acc.isOrphan, isPrivileged: isPriv
-      };
-    });
-    setCycles(prev => [newCycle, ...prev]);
-    setReviewItems(prev => [...tasks, ...prev]);
-    addAuditLog('CAMPAIGN_LAUNCH', `Launched ${newCycle.name} for ${targetApp.name}.`);
+
+    setLaunchingReview(true);
+    try {
+      const now = new Date();
+      const dueDate = dueDateStr ? new Date(dueDateStr) : new Date();
+      if (!dueDateStr) dueDate.setDate(dueDate.getDate() + 14);
+
+      // Call backend to launch review
+      const response = await launchReview({
+        appId,
+        dueDate: dueDate.toISOString()
+      });
+
+      // Refresh cycles and items from backend
+      const cyclesRes = await getReviewCycles({ top: 200 });
+      const itemsRes = await getReviewItems({ top: 500 });
+      setCycles(cyclesRes?.items ?? []);
+      setReviewItems(itemsRes?.items ?? []);
+
+      await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign for ${targetApp.name}. Cycle ID: ${response?.id || 'N/A'}`);
+      alert(`✓ Review campaign launched for ${targetApp.name}!`);
+    } catch (e: any) {
+      console.error('Failed to launch review:', e);
+      alert(`Failed to launch review: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setLaunchingReview(false);
+    }
   };
 
-  const handleAction = (itemId: string, status: ActionStatus, comment?: string) => {
-    setReviewItems(prev => prev.map(i => i.id === itemId ? { ...i, status, comment, actionedAt: new Date().toISOString() } : i));
+  const handleAction = async (itemId: string, status: ActionStatus, comment?: string) => {
+    setActingOnItem(itemId);
+    try {
+      const item = reviewItems.find(i => i.id === itemId);
+      if (!item) {
+        throw new Error('Item not found');
+      }
+      
+      // Call backend to update item status
+      await actOnItem({
+        itemId,
+        managerId: currentUser.id,
+        status,
+        comment
+      });
+
+      // Refresh items from backend
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(itemsRes?.items ?? []);
+      
+      await addAuditLog('ITEM_ACTION', `${status} on review item ${itemId}`);
+    } catch (e: any) {
+      console.error('Failed to action item:', e);
+      alert(`Failed to update item: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setActingOnItem(null);
+    }
   };
 
-  const handleBulkAction = (itemIds: string[], status: ActionStatus, comment?: string) => {
-    setReviewItems(prev => prev.map(i => itemIds.includes(i.id) ? { ...i, status, comment, actionedAt: new Date().toISOString() } : i));
-    addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} records.`);
+  const handleBulkAction = async (itemIds: string[], status: ActionStatus, comment?: string) => {
+    setActingOnItem('bulk');
+    try {
+      // Call backend for each item
+      await Promise.all(
+        itemIds.map(itemId =>
+          actOnItem({
+            itemId,
+            managerId: currentUser.id,
+            status,
+            comment
+          })
+        )
+      );
+
+      // Refresh items from backend
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(itemsRes?.items ?? []);
+      
+      await addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} items`);
+    } catch (e: any) {
+      console.error('Failed to bulk action items:', e);
+      alert(`Failed to bulk update: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setActingOnItem(null);
+    }
   };
 
   // --- Audit Filter Logic ---
@@ -646,45 +756,46 @@ useEffect(() => {
     setAuditFilterDateFrom('');
     setAuditFilterDateTo('');
   };
-const refreshUsers = async () => {
-  setUsersLoading(true);
-  setUsersError(null);
-  try {
-    const res = await getHrUsers({ top: 200 });
-    if (!res?.ok && res?.status) {
-      setUsersError(res.message || "Failed to refresh HR users.");
+
+  const refreshUsers = async () => {
+    setUsersLoading(true);
+    setUsersError(null);
+    try {
+      const res = await getHrUsers({ top: 200 });
+      if (!res?.ok && res?.status) {
+        setUsersError(res.message || "Failed to refresh HR users.");
+        setUsers([]);
+        return;
+      }
+      setUsers(res.items || []);
+    } catch (e: any) {
+      setUsersError(e?.message || "Failed to refresh HR users.");
       setUsers([]);
-      return;
+    } finally {
+      setUsersLoading(false);
     }
-    setUsers(res.items || []);
-  } catch (e: any) {
-    setUsersError(e?.message || "Failed to refresh HR users.");
-    setUsers([]);
-  } finally {
-    setUsersLoading(false);
-  }
-};
+  };
 
-// Create a single application by reusing the import endpoint (upsert)
-const createApplication = async (app: Application) => {
-  try {
-    const res = await importApplications([app]);
-    if (!res?.ok) {
-      console.error('Create application failed:', res);
+  // Create a single application by reusing the import endpoint (upsert)
+  const createApplication = async (app: Application) => {
+    try {
+      const res = await importApplications([app]);
+      if (!res?.ok) {
+        console.error('Create application failed:', res);
+        window.alert('Failed to create application. See console for details.');
+        return;
+      }
+      // Add to local state (backend should persist)
+      setApplications(prev => [...prev, app]);
+      await addAuditLog('APP_CREATE', `Created application ${app.name} (${app.id})`);
+    } catch (err: any) {
+      console.error('Create application error:', err);
       window.alert('Failed to create application. See console for details.');
-      return;
     }
-    // Add to local state (backend should persist)
-    setApplications(prev => [...prev, app]);
-    addAuditLog('APP_CREATE', `Created application ${app.name} (${app.id})`);
-  } catch (err: any) {
-    console.error('Create application error:', err);
-    window.alert('Failed to create application. See console for details.');
-  }
-};
+  };
 
-// Remove application from backend then local state
-const removeApplication = async (appId?: string | null) => {
+  // Remove application from backend then local state
+  const removeApplication = async (appId?: string | null) => {
   if (!appId) return;
   if (!confirm('This will permanently delete the application and all associated accounts and definitions. Continue?')) return;
   try {

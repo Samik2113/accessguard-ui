@@ -49,21 +49,31 @@ export const getAuditLogs         = (opts: { userId?: string; action?: string; f
 // (Optional) SoD list for admin
 export const getSodPolicies       = (search?: string, top=100, ct?:string) => getJson("/api/sod-get", { search, top, continuationToken: ct });
 
-// -------------------- UAR flows --------------------
-export const launchReview         = (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }) =>
-  postJson("/api/reviews/launch", payload);
+// -------------------- UAR flows (Read) --------------------
+// Get all review cycles (optionally filtered by appId or status)
+export const getReviewCycles      = (opts: { appId?: string; status?: string; top?: number; ct?: string } = {}) =>
+  getJson("/api/reviewcycles-get", { appId: opts.appId, status: opts.status, top: opts.top ?? 100, continuationToken: opts.ct });
 
+// Get review items (optionally filtered by cycleId, managerId, or status)
+export const getReviewItems       = (opts: { cycleId?: string; managerId?: string; status?: string; top?: number; ct?: string } = {}) =>
+  getJson("/api/reviewitems-get", { cycleId: opts.cycleId, managerId: opts.managerId, status: opts.status, top: opts.top ?? 500, continuationToken: opts.ct });
+
+// Legacy: alias for backward compatibility
 export const getManagerItems      = (managerId: string, status?: string) =>
-  getJson("/api/reviewItems", { managerId, status });
+  getReviewItems({ managerId, status });
+
+// -------------------- UAR flows (Write) --------------------
+export const launchReview         = (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }) =>
+  postJson("/api/reviews-launch", payload);
 
 export const actOnItem            = (payload: { itemId: string; managerId: string; status: string; comment?: string }) =>
-  postJson("/api/reviews/items/action", payload);
+  postJson("/api/reviews-items-action", payload);
 
 export const confirmManager       = (payload: { cycleId: string; appId: string; managerId: string }) =>
-  postJson("/api/reviews/confirm", payload);
+  postJson("/api/reviews-confirm", payload);
 
 export const archiveCycle         = (payload: { cycleId: string; appId: string }) =>
-  postJson("/api/reviews/archive", payload);
+  postJson("/api/reviews-archive", payload);
 
 // -------------------- Ingest (admin screens) --------------------
 type ImportOpts = { replaceAll?: boolean; debug?: boolean };
