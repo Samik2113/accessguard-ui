@@ -126,6 +126,26 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           obj.userId = obj.userId || obj.accountId;
         }
 
+        // For entitlement uploads, coerce common truthy/falsey values into actual boolean for isPrivileged
+        if (type === 'APP_ENT') {
+          const v = obj.isPrivileged;
+          if (typeof v === 'boolean') {
+            // already correct
+          } else if (typeof v === 'string') {
+            const s = v.trim().toLowerCase();
+            if (s === 'true' || s === 'yes' || s === '1') obj.isPrivileged = true;
+            else if (s === 'false' || s === 'no' || s === '0' || s === '') obj.isPrivileged = false;
+            else {
+              // unknown value, leave as-is (backend validation may reject)
+              obj.isPrivileged = s === 'true';
+            }
+          } else if (typeof v === 'number') {
+            obj.isPrivileged = v === 1;
+          } else {
+            obj.isPrivileged = false;
+          }
+        }
+
         return obj;
       });
 
