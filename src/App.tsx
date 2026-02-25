@@ -375,7 +375,7 @@ useEffect(() => {
   useEffect(() => {
     setCycles(prevCycles => {
       let hasGlobalChanges = false;
-      const nextCycles = prevCycles.map(cycle => {
+      const nextCycles = prevCycles.map(async cycle => {
         if (cycle.status === ReviewStatus.COMPLETED) return cycle;
         const cycleItems = reviewItems.filter(i => i.reviewCycleId === cycle.id);
         if (cycleItems.length === 0) return cycle;
@@ -391,10 +391,28 @@ useEffect(() => {
           } else {
             nextStatus = ReviewStatus.COMPLETED;
             completedAt = completedAt || new Date().toISOString();
+            // Archive the cycle if not already archived
+            if (cycle.status !== ReviewStatus.COMPLETED) {
+              try {
+                await archiveCycle({ cycleId: cycle.id, appId: cycle.appId });
+                // Optionally, refresh cycles from backend here
+              } catch (e) {
+                console.error('Failed to archive cycle:', e);
+              }
+            }
           }
         } else if (cycle.status === ReviewStatus.PENDING_VERIFICATION && activeRevokeCount === 0) {
           nextStatus = ReviewStatus.COMPLETED;
           completedAt = completedAt || new Date().toISOString();
+          // Archive the cycle if not already archived
+          if (cycle.status !== ReviewStatus.COMPLETED) {
+            try {
+              await archiveCycle({ cycleId: cycle.id, appId: cycle.appId });
+              // Optionally, refresh cycles from backend here
+            } catch (e) {
+              console.error('Failed to archive cycle:', e);
+            }
+          }
         }
         if (nextStatus !== cycle.status || cycle.pendingItems !== pendingReviewCount || cycle.completedAt !== completedAt) {
           hasGlobalChanges = true;
