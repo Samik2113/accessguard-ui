@@ -324,6 +324,14 @@ useEffect(() => {
     });
   }, [reviewItems, cycles.map(c => c.confirmedManagers.length).join(',')]);
 
+  // Recalculate correlation and SoD whenever HR users or SoD policies change
+  useEffect(() => {
+    setAccess(prev => {
+      const updated = prev.map(acc => ({ ...acc, ...correlateAccount(acc, users) }));
+      return recalculateSoD(updated, sodPolicies);
+    });
+  }, [users, sodPolicies]);
+
   const handleConfirmReview = (cycleId: string, managerId: string) => {
     setCycles(prev => prev.map(c => {
       if (c.id === cycleId && !c.confirmedManagers.includes(managerId)) {
@@ -386,17 +394,17 @@ useEffect(() => {
       }
     } else if (type === 'APP_ACCESS') {
       if (!appId) { alert("Missing appId for Accounts import"); return; }
-      // Persist to backend
-      await importAccounts(appId, data);
+      // Enrich payload with correlation fields so backend persists correlation/isOrphan
+      const targetApp = applications.find(a => a.id === appId) || applications.find(a => a.appId === appId);
+      const enrichedPayload = data.map((item: any) => ({ ...item, appId: appId!, ...correlateAccount(item, users) }));
+      // Persist enriched accounts to backend
+      await importAccounts(appId!, enrichedPayload);
 
       // Build access list locally so UI can immediately reflect correlation, entitlements, and SoD
-      const targetApp = applications.find(a => a.id === appId) || applications.find(a => a.appId === appId);
-      const newAccessList: ApplicationAccess[] = data.map((item, idx) => ({
+      const newAccessList: ApplicationAccess[] = enrichedPayload.map((item, idx) => ({
         ...item,
         id: `ACC_${appId}_${idx}_${Date.now()}`,
-        appId: appId!,
         appName: targetApp?.name || '',
-        ...correlateAccount(item, users),
         isSoDConflict: false
       }));
 
