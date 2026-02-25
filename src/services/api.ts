@@ -64,8 +64,15 @@ export const archiveCycle         = (payload: { cycleId: string; appId: string }
   postJson("/api/reviews/archive", payload);
 
 // -------------------- Ingest (admin screens) --------------------
-export const importHrUsers        = (items: any[], opts?: { replaceAll?: boolean }) => 
-  postJson("/api/hr-import", items, opts?.replaceAll ? { replaceAll: "true" } : {});
+type ImportOpts = { replaceAll?: boolean; debug?: boolean };
+
+export const importHrUsers = (items: any[], opts?: ImportOpts) => {
+  const query: Record<string, string> = {};
+  if (opts?.replaceAll) query.replaceAll = "true";
+  if (opts?.debug) query.debug = "true";
+  return postJson("/api/hr-import", items, query);
+};
+
 export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts-import", items, { appId });
 export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements-import", items, { appId });
 export const importSodPolicies    = (items: any[]) => postJson("/api/sod-import", items);
