@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { getAccounts } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
@@ -26,6 +27,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [groupInApp, setGroupInApp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [userAllAccess, setUserAllAccess] = useState<ApplicationAccess[]>([]);
   
   // Editing state for Entitlements
   const [editingEnt, setEditingEnt] = useState<EntitlementDefinition | null>(null);
@@ -268,8 +270,69 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const userGlobalAccess = useMemo(() => {
     if (!viewingUserId) return [];
-    return access.filter(a => a.correlatedUserId === viewingUserId);
+    const source = userAllAccess.length > 0 ? userAllAccess : access;
+    return source.filter(a => a.correlatedUserId === viewingUserId);
   }, [access, viewingUserId]);
+
+  // When a user drill-down is opened, fetch all accounts for that user across apps
+  useEffect(() => {
+    let alive = true;
+    if (!viewingUserId) {
+      setUserAllAccess([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        // pass empty appId so backend will filter only by userId
+        const res = await getAccounts('', viewingUserId, undefined, 500);
+        if (!alive) return;
+        const items: ApplicationAccess[] = (res.items || []).map((acc: any) => {
+          // correlate locally using available users data
+          const email = (acc.email || acc.userEmail || acc.accountEmail || '').toLowerCase();
+          let match = users.find(u => u.email && u.email.toLowerCase() === email);
+          if (!match) match = users.find(u => u.id === acc.userId || u.id === acc.accountId || u.id === acc.employeeId || u.id === acc.id);
+          return {
+            ...acc,
+            correlatedUserId: match?.id,
+            isOrphan: !match,
+            userName: match?.name || acc.userName || acc.name || '',
+            email: acc.email || match?.email || ''
+          } as ApplicationAccess;
+        });
+
+        // Recalculate SoD locally for the fetched user access
+        const userAccessMap: Record<string, { appId: string; entitlement: string }[]> = {};
+        items.forEach(acc => {
+          if (!acc.correlatedUserId) return;
+          if (!userAccessMap[acc.correlatedUserId]) userAccessMap[acc.correlatedUserId] = [];
+          userAccessMap[acc.correlatedUserId].push({ appId: acc.appId, entitlement: acc.entitlement });
+        });
+
+        const final = items.map(acc => {
+          if (!acc.correlatedUserId) return { ...acc, isSoDConflict: false, violatedPolicyIds: [], violatedPolicyNames: [] } as ApplicationAccess;
+          const userItems = userAccessMap[acc.correlatedUserId] || [];
+          const violatedPolicies = sodPolicies.filter(policy => {
+            const has1 = userItems.some(i => i.appId === policy.appId1 && i.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase());
+            const has2 = userItems.some(i => i.appId === policy.appId2 && i.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
+            if (has1 && has2) {
+              return (acc.appId === policy.appId1 && acc.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase()) ||
+                     (acc.appId === policy.appId2 && acc.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
+            }
+            return false;
+          });
+          return { ...acc, isSoDConflict: violatedPolicies.length > 0, violatedPolicyIds: violatedPolicies.map(p => p.id), violatedPolicyNames: violatedPolicies.map(p => p.policyName) } as ApplicationAccess;
+        });
+
+        setUserAllAccess(final);
+      } catch (e) {
+        console.error('Failed to load user access:', e);
+        if (alive) setUserAllAccess([]);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [viewingUserId, users, sodPolicies]);
 
   const viewingUser = users.find(u => u.id === viewingUserId);
 
