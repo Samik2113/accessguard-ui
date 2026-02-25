@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { getAccounts } from '../services/api';
+import { getAccounts, getAccountsByUser } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
@@ -27,7 +27,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [groupInApp, setGroupInApp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [userAllAccess, setUserAllAccess] = useState<ApplicationAccess[]>([]);
+  const [userAllAccess, setUserAllAccess] = useState<ApplicationAccess[] | null>(null);
   
   // Editing state for Entitlements
   const [editingEnt, setEditingEnt] = useState<EntitlementDefinition | null>(null);
@@ -270,9 +270,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const userGlobalAccess = useMemo(() => {
     if (!viewingUserId) return [];
-    const source = userAllAccess.length > 0 ? userAllAccess : access;
-    return source.filter(a => a.correlatedUserId === viewingUserId);
-  }, [access, viewingUserId]);
+    // Only show userAllAccess once it has been fetched (not null)
+    if (userAllAccess !== null) {
+      return userAllAccess.filter(a => a.correlatedUserId === viewingUserId);
+    }
+    // While fetching, show empty (don't fall back to selectedAppId-filtered access)
+    return [];
+  }, [userAllAccess, viewingUserId]);
 
   // When a user drill-down is opened, fetch all accounts for that user across apps
   useEffect(() => {
@@ -286,7 +290,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       try {
         // Try server-side user-scoped endpoint first (more efficient)
         try {
-          const res = await (await import('../services/api')).getAccountsByUser(viewingUserId!, 1000);
+          const res = await getAccountsByUser(viewingUserId!, 1000);
           if (res && res.items) {
             if (!alive) return;
             const items: ApplicationAccess[] = (res.items || []).map((acc: any) => {

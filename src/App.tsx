@@ -189,7 +189,20 @@ useEffect(() => {
       }
 
       // res.items is an array of accounts from Cosmos
-      setAccess(res.items || []);
+      const raw = res.items || [];
+      const enriched: ApplicationAccess[] = raw.map((acc: any) => ({
+        ...acc,
+        // ensure correlation fields are present
+        ...correlateAccount(acc, users),
+        userName: acc.userName || acc.name || acc.userName || '',
+      }));
+
+      // Merge into existing access state (replace this app's entries) and recalc SoD across all apps
+      setAccess(prev => {
+        const other = prev.filter(a => a.appId !== selectedAppId);
+        const merged = [...other, ...enriched];
+        return recalculateSoD(merged, sodPolicies);
+      });
     } catch (e) {
       console.error("Accounts load error:", e);
       if (alive) setAccess([]);
