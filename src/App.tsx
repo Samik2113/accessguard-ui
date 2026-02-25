@@ -250,14 +250,41 @@ useEffect(() => {
 }, []);
 
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
-    let match = identityList.find(u => u.id === acc.userId);
-    if (!match && acc.email) {
-      match = identityList.find(u => u.email.toLowerCase() === acc.email.toLowerCase());
+    // Prefer matching by email first. If email matches, use it and skip id checks.
+    const accEmails = [acc.email, acc.userEmail, acc.accountEmail].filter(Boolean).map((s: string) => s.toLowerCase());
+    let match: User | undefined;
+    if (accEmails.length > 0) {
+      match = identityList.find(u => u.email && accEmails.includes(u.email.toLowerCase()));
+      if (match) {
+        return {
+          correlatedUserId: match.id,
+          isOrphan: false,
+          email: match.email,
+          userName: match.name || acc.userName || acc.name || ''
+        };
+      }
     }
-    return { 
-      correlatedUserId: match?.id, 
-      isOrphan: !match, 
-      email: acc.email || match?.email 
+
+    // If email didn't match, try various id fields (employee id, account id, etc.)
+    const possibleIds = [acc.userId, acc.accountId, acc.employeeId, acc.account_id, acc.id].filter(Boolean);
+    if (possibleIds.length > 0) {
+      match = identityList.find(u => possibleIds.includes(u.id));
+      if (match) {
+        return {
+          correlatedUserId: match.id,
+          isOrphan: false,
+          email: acc.email || match.email,
+          userName: match.name || acc.userName || acc.name || ''
+        };
+      }
+    }
+
+    // No match -> orphan
+    return {
+      correlatedUserId: undefined,
+      isOrphan: true,
+      email: acc.email || undefined,
+      userName: acc.userName || acc.name || ''
     };
   };
 
