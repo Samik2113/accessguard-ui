@@ -386,10 +386,47 @@ useEffect(() => {
       }
     } else if (type === 'APP_ACCESS') {
       if (!appId) { alert("Missing appId for Accounts import"); return; }
+      // Persist to backend
       await importAccounts(appId, data);
-      const res = await getAccounts(appId, undefined, undefined, 200);
-      setAccess(res.items ?? []);
-      setAccess(prev => recalculateSoD(prev, sodPolicies));
+
+      // Build access list locally so UI can immediately reflect correlation, entitlements, and SoD
+      const targetApp = applications.find(a => a.id === appId) || applications.find(a => a.appId === appId);
+      const newAccessList: ApplicationAccess[] = data.map((item, idx) => ({
+        ...item,
+        id: `ACC_${appId}_${idx}_${Date.now()}`,
+        appId: appId!,
+        appName: targetApp?.name || '',
+        ...correlateAccount(item, users),
+        isSoDConflict: false
+      }));
+
+      // Sync entitlements catalog from uploaded accounts
+      const uniqueEntsFromAccess = Array.from(new Set(newAccessList.map(a => a.entitlement)));
+      setEntitlements(prev => {
+        const otherAppEnts = prev.filter(e => e.appId !== appId);
+        const existingAppEnts = prev.filter(e => e.appId === appId);
+        const synchronizedEnts = uniqueEntsFromAccess.map(entName => {
+          const existing = existingAppEnts.find(e => e.entitlement === entName);
+          return existing || { appId: appId!, entitlement: entName, description: '', owner: '', isPrivileged: false, risk: 'LOW' as const, riskScore: '0' };
+        });
+        return [...otherAppEnts, ...synchronizedEnts];
+      });
+
+      // Update review items: mark revoked items as remediated if they no longer exist
+      setReviewItems(prevItems => {
+        return prevItems.map(item => {
+          const cycle = cycles.find(c => c.id === item.reviewCycleId);
+          if (cycle?.appId === appId && item.status === ActionStatus.REVOKED) {
+            const stillExists = newAccessList.some(acc => acc.userId === item.appUserId && acc.entitlement === item.entitlement);
+            if (!stillExists) return { ...item, status: ActionStatus.REMEDIATED, remediatedAt: new Date().toISOString() };
+          }
+          return item;
+        });
+      });
+
+      // Recalculate SoD and set access state
+      setAccess(prev => recalculateSoD([...prev.filter(a => a.appId !== appId), ...newAccessList], sodPolicies));
+      addAuditLog('DATA_IMPORT', `Imported ${data.length} accounts for ${targetApp?.name || appId}.`);
     } else if (type === 'APP_ENT') {
       if (!appId) { alert("Missing appId for Entitlements import"); return; }
       await importEntitlements(appId, data);
