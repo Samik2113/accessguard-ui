@@ -717,58 +717,70 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       )}
 
       {activeSubTab === 'applications' && (
-	    
-	  
-	  
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-		{/* Applications bulk import/export */}
-<div className="space-y-2">
-  <button
-    onClick={() => downloadTemplate('APPLICATIONS')}
-    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-semibold text-sm"
-  >
-    <Download className="w-4 h-4" />
-    Export / Template (Applications)
-  </button>
-
-  <input
-    type="file"
-    ref={appsInputRef}
-    className="hidden"
-    accept=".csv"
-    onChange={(e) => handleFileUpload(e, 'APPLICATIONS')}
-  />
-
-  <button
-    onClick={() => appsInputRef.current?.click()}
-    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all font-semibold text-sm"
-  >
-    <Upload className="w-4 h-4" />
-    Bulk Upload Applications
-  </button>
-</div>
-          <div className="lg:col-span-1 space-y-4">
-		  <button onClick={() => setShowAddApp(true)} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-dashed border-slate-200 text-slate-500 rounded-xl hover:border-blue-300 hover:text-blue-600 transition-all font-semibold text-sm">
+        <div className="space-y-6">
+          {/* Action Buttons Row */}
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch">
+            <button 
+              onClick={() => setShowAddApp(true)} 
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
+            >
               <Plus className="w-4 h-4" /> Add Application
             </button>
-            <div className="space-y-2">
-              {applications.map(app => (
-                <button key={app.id} onClick={() => {
-				setSelectedAppId(app.id);
-				onSelectApp?.(app.id);
-				}
-				} className={`w-full text-left p-4 rounded-xl border transition-all ${selectedAppId === app.id ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
-                  <div className="font-bold flex justify-between items-center">
-                    <span>{app.name}</span>
-                    {selectedAppId === app.id && <Settings2 className="w-3.5 h-3.5" />}
-                  </div>
-                  <div className={`text-[11px] mt-1 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-400'}`}>Owner: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}</div>
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => downloadTemplate('APPLICATIONS')}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl hover:bg-slate-50 transition-all font-semibold text-sm"
+            >
+              <Download className="w-4 h-4" /> Export Template
+            </button>
+            <input
+              type="file"
+              ref={appsInputRef}
+              className="hidden"
+              accept=".csv"
+              onChange={(e) => handleFileUpload(e, 'APPLICATIONS')}
+            />
+            <button
+              onClick={() => appsInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all font-semibold text-sm"
+            >
+              <Upload className="w-4 h-4" /> Bulk Upload
+            </button>
           </div>
 
-          <div className="lg:col-span-3">
+          {/* Two-Column Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Left Sidebar - Application List */}
+            <div className="lg:col-span-1">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-4 space-y-2 max-h-[600px] overflow-y-auto">
+                {applications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+                    <Database className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-sm font-medium">No applications yet.</p>
+                    <p className="text-xs opacity-70">Click "Add Application" above to create one.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {applications.map(app => (
+                      <button key={app.id} onClick={() => {
+                        setSelectedAppId(app.id);
+                        onSelectApp?.(app.id);
+                      }} className={`w-full text-left p-3 rounded-lg border transition-all ${selectedAppId === app.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-slate-50 border-slate-200 hover:border-blue-300 hover:bg-white'}`}>
+                        <div className="font-bold flex justify-between items-center">
+                          <span className="truncate">{app.name}</span>
+                          {selectedAppId === app.id && <Settings2 className="w-3.5 h-3.5 shrink-0 ml-2" />}
+                        </div>
+                        <div className={`text-[11px] mt-1.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                          Owner: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Panel - Application Detail */}
+            <div className="lg:col-span-3">
             {selectedAppId ? (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex items-start justify-between mb-6">
@@ -967,8 +979,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-40 bg-white border border-dashed rounded-2xl text-slate-400 shadow-sm"><Settings2 className="w-16 h-16 mb-4 opacity-10" /><p className="font-medium">Select an application from the sidebar to manage its data.</p></div>
+              <div className="flex flex-col items-center justify-center py-40 bg-white border border-dashed rounded-2xl text-slate-400 shadow-sm">
+                <Settings2 className="w-16 h-16 mb-4 opacity-10" />
+                <p className="font-medium text-center">Select an application from the list to view details and manage accounts.</p>
+              </div>
             )}
+            </div>
           </div>
         </div>
       )}
