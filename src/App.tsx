@@ -19,7 +19,8 @@ import {
   importApplications,
   importAccounts,
   importEntitlements,
-  importSodPolicies
+  importSodPolicies,
+  deleteApplication
 } from "./services/api";
 
 
@@ -581,6 +582,46 @@ const refreshUsers = async () => {
   }
 };
 
+// Create a single application by reusing the import endpoint (upsert)
+const createApplication = async (app: Application) => {
+  try {
+    const res = await importApplications([app]);
+    if (!res?.ok) {
+      console.error('Create application failed:', res);
+      window.alert('Failed to create application. See console for details.');
+      return;
+    }
+    // Add to local state (backend should persist)
+    setApplications(prev => [...prev, app]);
+    addAuditLog('APP_CREATE', `Created application ${app.name} (${app.id})`);
+  } catch (err: any) {
+    console.error('Create application error:', err);
+    window.alert('Failed to create application. See console for details.');
+  }
+};
+
+// Remove application from backend then local state
+const removeApplication = async (appId?: string | null) => {
+  if (!appId) return;
+  if (!confirm('This will permanently delete the application and all associated accounts and definitions. Continue?')) return;
+  try {
+    const res = await deleteApplication(appId);
+    if (!res?.ok) {
+      console.error('Delete application failed:', res);
+      window.alert('Failed to delete application. See console for details.');
+      return;
+    }
+    // Remove from local state
+    setApplications(prev => prev.filter(a => a.id !== appId));
+    // If the deleted app was selected, clear selection
+    if (selectedAppId === appId) setSelectedAppId(null);
+    addAuditLog('APP_DELETE', `Deleted application ${appId}`);
+  } catch (err: any) {
+    console.error('Delete application error:', err);
+    window.alert('Failed to delete application. See console for details.');
+  }
+};
+
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} toggleRole={toggleRole} availableManagers={activeManagers} onSwitchManager={handleSwitchManager}>
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} />}
@@ -593,8 +634,8 @@ const refreshUsers = async () => {
     sodPolicies={sodPolicies}
     onSelectApp={setSelectedAppId}         // <-- add this if Inventory can drive selection
     onDataImport={handleDataImport}
-    onAddApp={app => setApplications(p => [...p, app])}
-    onRemoveApp={id => setApplications(p => p.filter(a => a.id !== id))}
+    onAddApp={app => { createApplication(app); }}
+    onRemoveApp={id => { removeApplication(id); }}
     onUpdateEntitlement={ent => setEntitlements(p => p.map(e => (e.appId === ent.appId && e.entitlement === ent.entitlement ? ent : e)))}
     onUpdateSoD={handleUpdateSoD}
   />
