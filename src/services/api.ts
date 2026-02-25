@@ -39,6 +39,8 @@ export const getApplications      = (top=100, ct?:string) => getJson("/api/appli
 export const getEntitlements      = (appId: string, search?: string, top=200, ct?:string) => getJson("/api/entitlements-get", { appId, search, top, continuationToken: ct });
 export const getAccounts          = (appId: string, userId?: string, entitlement?: string, top=200, ct?:string) =>
   getJson("/api/accounts-get", { appId, userId, entitlement, top, continuationToken: ct });
+// Optional server-side: fetch all accounts for a user across apps
+export const getAccountsByUser   = (userId: string, top=500) => getJson("/api/accounts-get-by-user", { userId, top });
 export const getHrUsers           = (opts: { userId?: string; managerId?: string; search?: string; top?: number; ct?: string } = {}) =>
   getJson("/api/hr-users-get", { userId: opts.userId, managerId: opts.managerId, search: opts.search, top: opts.top ?? 50, continuationToken: opts.ct });
 export const getAuditLogs         = (opts: { userId?: string; action?: string; from?: string; to?: string; top?: number; ct?: string } = {}) =>

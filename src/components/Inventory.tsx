@@ -284,11 +284,66 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
     (async () => {
       try {
-        // pass empty appId so backend will filter only by userId
-        const res = await getAccounts('', viewingUserId, undefined, 500);
-        if (!alive) return;
-        const items: ApplicationAccess[] = (res.items || []).map((acc: any) => {
-          // correlate locally using available users data
+        // Try server-side user-scoped endpoint first (more efficient)
+        try {
+          const res = await (await import('../services/api')).getAccountsByUser(viewingUserId!, 1000);
+          if (res && res.items) {
+            if (!alive) return;
+            const items: ApplicationAccess[] = (res.items || []).map((acc: any) => {
+              const email = (acc.email || acc.userEmail || acc.accountEmail || '').toLowerCase();
+              let match = users.find(u => u.email && u.email.toLowerCase() === email);
+              if (!match) match = users.find(u => u.id === acc.userId || u.id === acc.accountId || u.id === acc.employeeId || u.id === acc.id);
+              return {
+                ...acc,
+                correlatedUserId: match?.id,
+                isOrphan: !match,
+                userName: match?.name || acc.userName || acc.name || '',
+                email: acc.email || match?.email || ''
+              } as ApplicationAccess;
+            });
+            // Recalculate SoD for the fetched items
+            const userAccessMap: Record<string, { appId: string; entitlement: string }[]> = {};
+            items.forEach(acc => {
+              if (!acc.correlatedUserId) return;
+              if (!userAccessMap[acc.correlatedUserId]) userAccessMap[acc.correlatedUserId] = [];
+              userAccessMap[acc.correlatedUserId].push({ appId: acc.appId, entitlement: acc.entitlement });
+            });
+            const final = items.map(acc => {
+              if (!acc.correlatedUserId) return { ...acc, isSoDConflict: false, violatedPolicyIds: [], violatedPolicyNames: [] } as ApplicationAccess;
+              const userItems = userAccessMap[acc.correlatedUserId] || [];
+              const violatedPolicies = sodPolicies.filter(policy => {
+                const has1 = userItems.some(i => i.appId === policy.appId1 && i.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase());
+                const has2 = userItems.some(i => i.appId === policy.appId2 && i.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
+                if (has1 && has2) {
+                  return (acc.appId === policy.appId1 && acc.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase()) ||
+                         (acc.appId === policy.appId2 && acc.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
+                }
+                return false;
+              });
+              return { ...acc, isSoDConflict: violatedPolicies.length > 0, violatedPolicyIds: violatedPolicies.map(p => p.id), violatedPolicyNames: violatedPolicies.map(p => p.policyName) } as ApplicationAccess;
+            });
+            setUserAllAccess(final);
+            return;
+          }
+        } catch (e) {
+          // If server endpoint not available or returns an error, fall back to per-app aggregation
+          console.debug('getAccountsByUser failed, falling back to per-app aggregation.', e?.message || e);
+        }
+
+        // Fallback: fetch accounts per application in batches to avoid huge parallel load
+        const batchSize = 20;
+        const batches: string[][] = [];
+        for (let i = 0; i < applications.length; i += batchSize) batches.push(applications.slice(i, i + batchSize).map(a => a.id));
+        const rawItems: any[] = [];
+        for (const batch of batches) {
+          const fetches = batch.map(appId => getAccounts(appId, viewingUserId, undefined, 200).catch(() => ({ items: [] })));
+          // await each batch to limit concurrency
+          // eslint-disable-next-line no-await-in-loop
+          const results = await Promise.all(fetches);
+          if (!alive) return;
+          results.forEach(r => { rawItems.push(...(r.items || [])); });
+        }
+        const items: ApplicationAccess[] = rawItems.map((acc: any) => {
           const email = (acc.email || acc.userEmail || acc.accountEmail || '').toLowerCase();
           let match = users.find(u => u.email && u.email.toLowerCase() === email);
           if (!match) match = users.find(u => u.id === acc.userId || u.id === acc.accountId || u.id === acc.employeeId || u.id === acc.id);
