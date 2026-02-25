@@ -357,7 +357,7 @@ useEffect(() => {
 	  });
 	  
 	  
-    await importHrUsers(normalized);            // POST to /api/hr/import
+    await importHrUsers(normalized, { replaceAll: true, debug: true });            // POST to /api/hr/import
       const res = await getHrUsers({ top: 200 }); // refresh
       setUsers(res.items ?? []);
       setAccess(prev => recalculateSoD(prev, sodPolicies));
