@@ -721,7 +721,19 @@ const removeApplication = async (appId?: string | null) => {
     onDataImport={handleDataImport}
     onAddApp={app => { createApplication(app); }}
     onRemoveApp={id => { removeApplication(id); }}
-    onUpdateEntitlement={ent => setEntitlements(p => p.map(e => (e.appId === ent.appId && e.entitlement === ent.entitlement ? ent : e)))}
+    onUpdateEntitlement={async (ent) => {
+      try {
+        // Persist single entitlement change to backend via import endpoint
+        await importEntitlements(ent.appId, [ent]);
+        // Refresh entitlements for the app from backend
+        const res = await getEntitlements(ent.appId, undefined, 200);
+        setEntitlements(res.items || []);
+      } catch (err) {
+        console.error('Failed to save entitlement:', err);
+        // Fallback: update local state
+        setEntitlements(p => p.map(e => (e.appId === ent.appId && e.entitlement === ent.entitlement ? ent : e)));
+      }
+    }}
     onUpdateSoD={handleUpdateSoD}
   />
 )}

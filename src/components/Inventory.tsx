@@ -144,6 +144,21 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           } else {
             obj.isPrivileged = false;
           }
+          // Normalize owner: prefer storing user ID if owner matches a known user (by id or name)
+          if (obj.owner) {
+            const ownerMatch = users.find(u => u.id === obj.owner || u.name === obj.owner);
+            if (ownerMatch) obj.owner = ownerMatch.id;
+          }
+
+          // Auto-calc risk and riskScore based on isPrivileged
+          if (obj.isPrivileged) {
+            obj.risk = 'HIGH';
+            obj.riskScore = '10';
+          } else {
+            // Preserve provided risk if present, otherwise default to LOW/1
+            obj.risk = obj.risk || 'LOW';
+            obj.riskScore = obj.riskScore || '1';
+          }
         }
 
         return obj;
