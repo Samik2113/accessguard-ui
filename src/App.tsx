@@ -652,8 +652,11 @@ useEffect(() => {
       if (!dueDateStr) dueDate.setDate(dueDate.getDate() + 14);
 
       // Call backend to launch review
+      if (!appId || typeof appId !== 'string' || appId.trim().length === 0) {
+        throw new Error('No valid appId provided for UAR launch');
+      }
       const response = await launchReview({
-        appId,
+        appId: appId.trim(),
         dueDate: dueDate.toISOString()
       });
 
