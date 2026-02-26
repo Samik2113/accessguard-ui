@@ -87,7 +87,14 @@ export const launchReview = async (payload: { appId: string; name?: string; dueD
   }
 };
 
-export const actOnItem            = (payload: { itemId: string; managerId: string; status: string; comment?: string }) =>
+export const actOnItem            = (payload: {
+  itemId: string;
+  managerId: string;
+  status: string;
+  comment?: string;
+  remediationComment?: string;
+  remediatedAt?: string;
+}) =>
   postJson("/api/reviews-item-action", payload);
 
 export const confirmManager       = (payload: { cycleId: string; appId: string; managerId: string }) =>

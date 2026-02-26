@@ -594,13 +594,15 @@ useEffect(() => {
       });
 
       if (remediatedCandidates.length > 0) {
+        const remediationTimestamp = new Date().toISOString();
         await Promise.all(
           remediatedCandidates.map(item =>
             actOnItem({
               itemId: item.id,
               managerId: item.managerId || currentUser.id,
               status: ActionStatus.REMEDIATED,
-              comment: 'Verified removed via account upload'
+              remediationComment: 'Verified removed via account upload',
+              remediatedAt: remediationTimestamp
             })
           )
         );
