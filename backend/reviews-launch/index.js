@@ -152,11 +152,37 @@ module.exports = async function (context, req) {
     // Block duplicate non-completed cycles unless caller explicitly overrides
     if (!body.launchIfExists) {
       const { resources: existing } = await cyclesC.items.query({
-        query: "SELECT TOP 1 * FROM c WHERE c.appId=@a AND c.status <> 'COMPLETED'",
+        query: "SELECT TOP 1 * FROM c WHERE c.appId=@a AND c.status <> 'COMPLETED' ORDER BY c.launchedAt DESC",
         parameters: [{ name: "@a", value: appId }]
       }).fetchAll();
       if (existing.length > 0) {
-        return bad(409, `Cycle already exists for appId=${appId} (not completed). Pass launchIfExists=true to force.`, req);
+        const existingCycle = existing[0];
+        const { resources: existingItems } = await itemsC.items.query({
+          query: "SELECT c.status FROM c WHERE c.reviewCycleId=@cycleId",
+          parameters: [{ name: "@cycleId", value: existingCycle.id || existingCycle.cycleId }]
+        }).fetchAll();
+
+        const pendingCount = existingItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
+        const openRemediationCount = existingItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+
+        if (pendingCount === 0 && openRemediationCount === 0) {
+          // Previous cycle is effectively closed; normalize it to COMPLETED and continue launch.
+          const normalizedCompletedAt = existingCycle.completedAt || nowIso;
+          await cyclesC
+            .item(existingCycle.id || existingCycle.cycleId, appId)
+            .patch(
+              [
+                { op: "set", path: "/status", value: "COMPLETED" },
+                { op: "set", path: "/pendingItems", value: 0 },
+                { op: "set", path: "/pendingRemediationItems", value: 0 },
+                { op: "set", path: "/completedAt", value: normalizedCompletedAt },
+                { op: "set", path: "/archivedAt", value: existingCycle.archivedAt || nowIso }
+              ],
+              { accessCondition: { type: "IfMatch", condition: existingCycle._etag } }
+            );
+        } else {
+          return bad(409, `Cycle already exists for appId=${appId} (not completed). Pass launchIfExists=true to force.`, req);
+        }
       }
     }
 
@@ -225,6 +251,7 @@ module.exports = async function (context, req) {
       status: "ACTIVE",
       totalItems: total,
       pendingItems: total,
+      pendingRemediationItems: 0,
       launchedAt: nowIso,
       dueDate,
       confirmedManagers: [],

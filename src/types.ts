@@ -82,6 +82,7 @@ export interface ReviewCycle {
   completedAt?: string;
   totalItems: number;
   pendingItems: number;
+  pendingRemediationItems?: number;
   confirmedManagers: string[]; // List of manager IDs who submitted
 }
 

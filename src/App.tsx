@@ -75,6 +75,7 @@ const App: React.FC = () => {
       appId: normalizedAppId,
       status: normalizedStatus,
       appName: cycle?.appName || getApplicationNameById(normalizedAppId),
+      pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
       confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
     };
   };
@@ -440,17 +441,17 @@ useEffect(() => {
         const cycleItems = reviewItems.filter(i => i.reviewCycleId === cycle.id);
         if (cycleItems.length === 0) return cycle;
         const pendingReviewCount = cycleItems.filter(i => i.status === ActionStatus.PENDING).length;
-        const activeRevokeCount = cycleItems.filter(i => i.status === ActionStatus.REVOKED).length;
+        const pendingRemediationCount = cycleItems.filter(i => i.status === ActionStatus.REVOKED).length;
         const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId)));
         const allManagersConfirmed = managersInCycle.length > 0 && managersInCycle.every(mId => cycle.confirmedManagers.includes(mId));
         let nextStatus: ReviewStatus = ReviewStatus.ACTIVE;
         let completedAt = cycle.completedAt;
         let needsArchive = false;
 
-        if (allManagersConfirmed && pendingReviewCount === 0 && activeRevokeCount > 0) {
+        if (allManagersConfirmed && pendingReviewCount === 0 && pendingRemediationCount > 0) {
           nextStatus = ReviewStatus.REMEDIATION;
           completedAt = undefined;
-        } else if (allManagersConfirmed && pendingReviewCount === 0 && activeRevokeCount === 0) {
+        } else if (allManagersConfirmed && pendingReviewCount === 0 && pendingRemediationCount === 0) {
           nextStatus = ReviewStatus.COMPLETED;
           completedAt = completedAt || new Date().toISOString();
           if (cycle.status !== ReviewStatus.COMPLETED) {
@@ -463,9 +464,9 @@ useEffect(() => {
         if (needsArchive) {
           cyclesToArchive.push({ cycleId: cycle.id, appId: cycle.appId });
         }
-        if (nextStatus !== cycle.status || cycle.pendingItems !== pendingReviewCount || cycle.completedAt !== completedAt) {
+        if (nextStatus !== cycle.status || cycle.pendingItems !== pendingReviewCount || cycle.pendingRemediationItems !== pendingRemediationCount || cycle.completedAt !== completedAt) {
           hasGlobalChanges = true;
-          return { ...cycle, status: nextStatus, pendingItems: pendingReviewCount, completedAt };
+          return { ...cycle, status: nextStatus, pendingItems: pendingReviewCount, pendingRemediationItems: pendingRemediationCount, completedAt };
         }
         return cycle;
       });

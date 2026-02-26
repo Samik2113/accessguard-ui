@@ -37,7 +37,6 @@ module.exports = async function (context, req) {
     const { resource: itm } = await itemsC.item(body.itemId, body.managerId).read();
     if (!itm) return bad(404, "Item not found", req);
 
-    const oldWasPending = String(itm.status).toUpperCase() === "PENDING";
     const newStatus = String(body.status).toUpperCase();
     const now = new Date().toISOString();
 
@@ -65,20 +64,46 @@ module.exports = async function (context, req) {
       .item(body.itemId, body.managerId)
       .patch(ops, { accessCondition: { type: "IfMatch", condition: itm._etag } });
 
-    // Only maintain pending counter here; cycle stage transitions happen on manager finalize flow.
-    if (oldWasPending && newStatus !== "PENDING") {
-      const cycleId = itm.reviewCycleId;
-      const appId = itm.appId;
+    // Recompute cycle counters after action so backend remains source-of-truth.
+    const cycleId = itm.reviewCycleId;
+    const appId = itm.appId;
+    const { resource: cyc } = await cyclesC.item(cycleId, appId).read();
+    if (cyc) {
+      const { resources: cycleItems } = await itemsC.items.query({
+        query: "SELECT c.status, c.managerId FROM c WHERE c.reviewCycleId=@cycleId",
+        parameters: [{ name: "@cycleId", value: cycleId }]
+      }).fetchAll();
 
-      const { resource: cyc } = await cyclesC.item(cycleId, appId).read();
-      if (cyc) {
-        await cyclesC
-          .item(cycleId, appId)
-          .patch(
-            [{ op: "incr", path: "/pendingItems", value: -1 }],
-            { accessCondition: { type: "IfMatch", condition: cyc._etag } }
-          );
+      const pendingItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
+      const pendingRemediationItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+
+      const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId).filter(Boolean)));
+      const confirmedManagers = Array.isArray(cyc.confirmedManagers) ? cyc.confirmedManagers : [];
+      const allManagersConfirmed = managersInCycle.length > 0 && managersInCycle.every(m => confirmedManagers.includes(m));
+
+      let nextStatus = "ACTIVE";
+      if (allManagersConfirmed && pendingItems === 0 && pendingRemediationItems > 0) {
+        nextStatus = "REMEDIATION";
+      } else if (allManagersConfirmed && pendingItems === 0 && pendingRemediationItems === 0) {
+        nextStatus = "COMPLETED";
       }
+
+      const cycleOps = [
+        { op: "set", path: "/pendingItems", value: pendingItems },
+        { op: "set", path: "/pendingRemediationItems", value: pendingRemediationItems },
+        { op: "set", path: "/status", value: nextStatus }
+      ];
+
+      if (nextStatus === "COMPLETED") {
+        cycleOps.push({ op: "set", path: "/completedAt", value: cyc.completedAt || now });
+      }
+
+      await cyclesC
+        .item(cycleId, appId)
+        .patch(
+          cycleOps,
+          { accessCondition: { type: "IfMatch", condition: cyc._etag } }
+        );
     }
 
     const actorId = req.headers["x-actor-id"] || body.managerId;
