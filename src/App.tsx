@@ -285,7 +285,10 @@ useEffect(() => {
       const cyclesRes = await getReviewCycles({ top: 200 });
       const itemsRes = await getReviewItems({ top: 500 });
       if (!alive) return;
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles : []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(c => ({
+        ...c,
+        confirmedManagers: Array.isArray(c?.confirmedManagers) ? c.confirmedManagers : [],
+      })) : []);
       setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []); // keep as items, unless backend returns differently
     } catch (e) {
       console.error("Failed to load UAR data:", e);
@@ -449,7 +452,10 @@ useEffect(() => {
 
       // Refresh cycles from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles : []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(c => ({
+        ...c,
+        confirmedManagers: Array.isArray(c?.confirmedManagers) ? c.confirmedManagers : [],
+      })) : []);
 
       // Also refresh items in case cycle status changed to COMPLETED and items need refresh
       const itemsRes = await getReviewItems({ top: 500 });
