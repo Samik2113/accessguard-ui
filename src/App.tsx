@@ -696,22 +696,28 @@ useEffect(() => {
   const handleAction = async (itemId: string, status: ActionStatus, comment?: string) => {
     setActingOnItem(itemId);
     try {
+      console.log('[handleAction] Start', { itemId, status, comment });
       const item = reviewItems.find(i => i.id === itemId);
+      console.log('[handleAction] Found item:', item);
       if (!item) {
         throw new Error('Item not found');
       }
-      
+
       // Call backend to update item status
+      console.log('[handleAction] Calling actOnItem');
       await actOnItem({
         itemId,
         managerId: currentUser.id,
         status,
         comment
       });
+      console.log('[handleAction] actOnItem complete');
 
       // Refresh items from backend
+      console.log('[handleAction] Fetching review items from backend');
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(Array.isArray(itemsRes?.items)
+      console.log('[handleAction] itemsRes:', itemsRes);
+      const mappedItems = Array.isArray(itemsRes?.items)
         ? itemsRes.items.map(item => ({
             ...item,
             isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
@@ -720,14 +726,18 @@ useEffect(() => {
             violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
             violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
           }))
-        : []);
-      
+        : [];
+      console.log('[handleAction] mappedItems:', mappedItems);
+      setReviewItems(mappedItems);
+
       await addAuditLog('ITEM_ACTION', `${status} on review item ${itemId}`);
+      console.log('[handleAction] addAuditLog complete');
     } catch (e: any) {
-      console.error('Failed to action item:', e);
+      console.error('[handleAction] Failed to action item:', e);
       alert(`Failed to update item: ${e?.message || 'Unknown error'}`);
     } finally {
       setActingOnItem(null);
+      console.log('[handleAction] End');
     }
   };
 
