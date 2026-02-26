@@ -449,7 +449,7 @@ useEffect(() => {
 
       // Refresh cycles from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
-      setCycles(cyclesRes?.items ?? []);
+      setCycles(cyclesRes?.cycles ?? []);
 
       // Also refresh items in case cycle status changed to COMPLETED and items need refresh
       const itemsRes = await getReviewItems({ top: 500 });
