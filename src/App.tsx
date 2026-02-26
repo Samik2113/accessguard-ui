@@ -289,7 +289,16 @@ useEffect(() => {
         ...c,
         confirmedManagers: Array.isArray(c?.confirmedManagers) ? c.confirmedManagers : [],
       })) : []);
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []); // keep as items, unless backend returns differently
+      setReviewItems(Array.isArray(itemsRes?.items)
+        ? itemsRes.items.map(item => ({
+            ...item,
+            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
+            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
+            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
+            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
+            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
+          }))
+        : []);
     } catch (e) {
       console.error("Failed to load UAR data:", e);
       if (alive) {
@@ -702,7 +711,16 @@ useEffect(() => {
 
       // Refresh items from backend
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(itemsRes?.items ?? []);
+      setReviewItems(Array.isArray(itemsRes?.items)
+        ? itemsRes.items.map(item => ({
+            ...item,
+            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
+            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
+            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
+            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
+            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
+          }))
+        : []);
       
       await addAuditLog('ITEM_ACTION', `${status} on review item ${itemId}`);
     } catch (e: any) {
@@ -730,7 +748,16 @@ useEffect(() => {
 
       // Refresh items from backend
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(itemsRes?.items ?? []);
+      setReviewItems(Array.isArray(itemsRes?.items)
+        ? itemsRes.items.map(item => ({
+            ...item,
+            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
+            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
+            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
+            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
+            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
+          }))
+        : []);
       
       await addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} items`);
     } catch (e: any) {
