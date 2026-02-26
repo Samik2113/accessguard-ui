@@ -162,8 +162,10 @@ module.exports = async function (context, req) {
           parameters: [{ name: "@cycleId", value: existingCycle.id || existingCycle.cycleId }]
         }).fetchAll();
 
-        const pendingCount = existingItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
-        const openRemediationCount = existingItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+        const pendingCountFromItems = existingItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
+        const openRemediationCountFromItems = existingItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+        const pendingCount = Math.max(pendingCountFromItems, Number(existingCycle.pendingItems || 0));
+        const openRemediationCount = Math.max(openRemediationCountFromItems, Number(existingCycle.pendingRemediationItems || 0));
 
         if (pendingCount === 0 && openRemediationCount === 0) {
           // Previous cycle is effectively closed; normalize it to COMPLETED and continue launch.

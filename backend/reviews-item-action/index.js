@@ -74,8 +74,10 @@ module.exports = async function (context, req) {
         parameters: [{ name: "@cycleId", value: cycleId }]
       }).fetchAll();
 
-      const pendingItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
-      const pendingRemediationItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+      const pendingItemsFromItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
+      const pendingRemediationFromItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
+      const pendingItems = Math.max(pendingItemsFromItems, Number(cyc.pendingItems || 0));
+      const pendingRemediationItems = Math.max(pendingRemediationFromItems, Number(cyc.pendingRemediationItems || 0));
 
       const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId).filter(Boolean)));
       const confirmedManagers = Array.isArray(cyc.confirmedManagers) ? cyc.confirmedManagers : [];
