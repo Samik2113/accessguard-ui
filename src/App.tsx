@@ -47,6 +47,52 @@ const App: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
 
+  const getApplicationId = (app: any): string => String(app?.id ?? app?.appId ?? '');
+  const getApplicationById = (appId?: string | null): Application | undefined => {
+    if (!appId) return undefined;
+    const target = String(appId);
+    return applications.find((app: any) => String(app?.id ?? app?.appId ?? '') === target);
+  };
+  const getApplicationNameById = (appId?: string | null): string => {
+    const app = getApplicationById(appId);
+    return app?.name || String(appId || 'Unknown App');
+  };
+  const getApplicationOwnerById = (appId?: string | null): string => {
+    const app = getApplicationById(appId);
+    return String((app as any)?.ownerId ?? '');
+  };
+  const shouldResolveToAppOwner = (managerId?: string | null): boolean => {
+    const value = String(managerId || '').trim().toUpperCase();
+    return !value || value === 'APP_OWNER' || value === 'APP-OWNER' || value === 'APP OWNER';
+  };
+  const normalizeCycle = (cycle: any): ReviewCycle => {
+    const normalizedAppId = String(cycle?.appId ?? cycle?.applicationId ?? '');
+    return {
+      ...cycle,
+      appId: normalizedAppId,
+      appName: cycle?.appName || getApplicationNameById(normalizedAppId),
+      confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
+    };
+  };
+  const normalizeReviewItem = (item: any): ReviewItem => {
+    const parentCycle = cycles.find(c => c.id === item?.reviewCycleId);
+    const normalizedAppId = String(item?.appId ?? item?.applicationId ?? parentCycle?.appId ?? '');
+    const isOrphan = typeof item?.isOrphan === 'boolean' ? item.isOrphan : false;
+    const resolvedManagerId = (isOrphan && shouldResolveToAppOwner(item?.managerId))
+      ? (getApplicationOwnerById(normalizedAppId) || String(item?.managerId || ''))
+      : String(item?.managerId || '');
+    return {
+      ...item,
+      appName: item?.appName || parentCycle?.appName || getApplicationNameById(normalizedAppId),
+      managerId: resolvedManagerId,
+      isSoDConflict: typeof item?.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
+      isOrphan,
+      isPrivileged: typeof item?.isPrivileged === 'boolean' ? item.isPrivileged : false,
+      violatedPolicyNames: Array.isArray(item?.violatedPolicyNames) ? item.violatedPolicyNames : [],
+      violatedPolicyIds: Array.isArray(item?.violatedPolicyIds) ? item.violatedPolicyIds : [],
+    };
+  };
+
   // UAR Loading/Error States
   const [uarLoading, setUarLoading] = useState(false);
   const [uarError, setUarError] = useState<string | null>(null);
@@ -160,7 +206,7 @@ useEffect(() => {
 
 useEffect(() => {
   if (!selectedAppId && applications.length > 0) {
-    setSelectedAppId(applications[0].appId);
+    setSelectedAppId(getApplicationId(applications[0]));
   }
 }, [applications, selectedAppId]);
 
@@ -285,19 +331,9 @@ useEffect(() => {
       const cyclesRes = await getReviewCycles({ top: 200 });
       const itemsRes = await getReviewItems({ top: 500 });
       if (!alive) return;
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(c => ({
-        ...c,
-        confirmedManagers: Array.isArray(c?.confirmedManagers) ? c.confirmedManagers : [],
-      })) : []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
       setReviewItems(Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(item => ({
-            ...item,
-            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
-            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
-            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
-            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
-            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
-          }))
+        ? itemsRes.items.map(normalizeReviewItem)
         : []);
     } catch (e) {
       console.error("Failed to load UAR data:", e);
@@ -312,6 +348,12 @@ useEffect(() => {
   })();
   return () => { alive = false; };
 }, []);
+
+useEffect(() => {
+  if (applications.length === 0) return;
+  setCycles(prev => prev.map(normalizeCycle));
+  setReviewItems(prev => prev.map(normalizeReviewItem));
+}, [applications]);
 
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
@@ -461,14 +503,11 @@ useEffect(() => {
 
       // Refresh cycles from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(c => ({
-        ...c,
-        confirmedManagers: Array.isArray(c?.confirmedManagers) ? c.confirmedManagers : [],
-      })) : []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
 
       // Also refresh items in case cycle status changed to COMPLETED and items need refresh
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(itemsRes?.items ?? []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
 
       await addAuditLog('MANAGER_CONFIRM', `Manager ${managerId} locked decisions for campaign: ${cycleId}.`);
       alert('✓ Review finalized successfully!');
@@ -653,11 +692,12 @@ useEffect(() => {
   };
 
   const handleLaunchReview = async (appId: string, dueDateStr?: string) => {
-    const targetApp = applications.find(a => a.id === appId);
+    const targetApp = getApplicationById(appId);
     if (!targetApp) return;
-    const existingActive = cycles.find(c => c.appId === appId && c.status !== ReviewStatus.COMPLETED);
+    const normalizedAppId = getApplicationId(targetApp);
+    const existingActive = cycles.find(c => c.appId === normalizedAppId && c.status !== ReviewStatus.COMPLETED);
     if (existingActive) { alert(`A campaign for ${targetApp.name} is already running.`); return; }
-    const appAccess = access.filter(a => a.appId === appId);
+    const appAccess = access.filter(a => a.appId === normalizedAppId);
     if (appAccess.length === 0) { alert(`No accounts found for ${targetApp.name}.`); return; }
 
     setLaunchingReview(true);
@@ -667,11 +707,12 @@ useEffect(() => {
       if (!dueDateStr) dueDate.setDate(dueDate.getDate() + 14);
 
       // Call backend to launch review
-      if (!appId || typeof appId !== 'string' || appId.trim().length === 0) {
+      if (!normalizedAppId || typeof normalizedAppId !== 'string' || normalizedAppId.trim().length === 0) {
         throw new Error('No valid appId provided for UAR launch');
       }
       const response = await launchReview({
-        appId: appId.trim(),
+        appId: normalizedAppId.trim(),
+        name: targetApp.name,
         dueDate: dueDate.toISOString()
       });
 
@@ -680,8 +721,8 @@ useEffect(() => {
       const itemsRes = await getReviewItems({ top: 500 });
       console.debug('UAR: cycles after launch', cyclesRes);
       console.debug('UAR: items after launch', itemsRes);
-      setCycles(Array.isArray(cyclesRes?.items) ? cyclesRes.items : []);
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
 
       await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign for ${targetApp.name}. Cycle ID: ${response?.id || 'N/A'}`);
       alert(`✓ Review campaign launched for ${targetApp.name}!`);
@@ -718,14 +759,7 @@ useEffect(() => {
       const itemsRes = await getReviewItems({ top: 500 });
       console.log('[handleAction] itemsRes:', itemsRes);
       const mappedItems = Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(item => ({
-            ...item,
-            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
-            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
-            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
-            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
-            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
-          }))
+        ? itemsRes.items.map(normalizeReviewItem)
         : [];
       console.log('[handleAction] mappedItems:', mappedItems);
       setReviewItems(mappedItems);
@@ -759,14 +793,7 @@ useEffect(() => {
       // Refresh items from backend
       const itemsRes = await getReviewItems({ top: 500 });
       setReviewItems(Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(item => ({
-            ...item,
-            isSoDConflict: typeof item.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
-            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : false,
-            isPrivileged: typeof item.isPrivileged === 'boolean' ? item.isPrivileged : false,
-            violatedPolicyNames: Array.isArray(item.violatedPolicyNames) ? item.violatedPolicyNames : [],
-            violatedPolicyIds: Array.isArray(item.violatedPolicyIds) ? item.violatedPolicyIds : [],
-          }))
+        ? itemsRes.items.map(normalizeReviewItem)
         : []);
       
       await addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} items`);
