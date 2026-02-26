@@ -7,6 +7,7 @@ export enum UserRole {
 export enum ReviewStatus {
   DRAFT = 'DRAFT',
   ACTIVE = 'ACTIVE',
+  REMEDIATION = 'REMEDIATION',
   PENDING_VERIFICATION = 'PENDING_VERIFICATION',
   COMPLETED = 'COMPLETED'
 }

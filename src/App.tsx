@@ -67,9 +67,13 @@ const App: React.FC = () => {
   };
   const normalizeCycle = (cycle: any): ReviewCycle => {
     const normalizedAppId = String(cycle?.appId ?? cycle?.applicationId ?? '');
+    const normalizedStatus = cycle?.status === ReviewStatus.PENDING_VERIFICATION
+      ? ReviewStatus.REMEDIATION
+      : cycle?.status;
     return {
       ...cycle,
       appId: normalizedAppId,
+      status: normalizedStatus,
       appName: cycle?.appName || getApplicationNameById(normalizedAppId),
       confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
     };
@@ -439,25 +443,22 @@ useEffect(() => {
         const activeRevokeCount = cycleItems.filter(i => i.status === ActionStatus.REVOKED).length;
         const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId)));
         const allManagersConfirmed = managersInCycle.length > 0 && managersInCycle.every(mId => cycle.confirmedManagers.includes(mId));
-        let nextStatus: ReviewStatus = cycle.status;
+        let nextStatus: ReviewStatus = ReviewStatus.ACTIVE;
         let completedAt = cycle.completedAt;
         let needsArchive = false;
-        if (allManagersConfirmed && pendingReviewCount === 0) {
-          if (activeRevokeCount > 0) {
-            nextStatus = ReviewStatus.PENDING_VERIFICATION;
-          } else {
-            nextStatus = ReviewStatus.COMPLETED;
-            completedAt = completedAt || new Date().toISOString();
-            if (cycle.status !== ReviewStatus.COMPLETED) {
-              needsArchive = true;
-            }
-          }
-        } else if (cycle.status === ReviewStatus.PENDING_VERIFICATION && activeRevokeCount === 0) {
+
+        if (allManagersConfirmed && pendingReviewCount === 0 && activeRevokeCount > 0) {
+          nextStatus = ReviewStatus.REMEDIATION;
+          completedAt = undefined;
+        } else if (allManagersConfirmed && pendingReviewCount === 0 && activeRevokeCount === 0) {
           nextStatus = ReviewStatus.COMPLETED;
           completedAt = completedAt || new Date().toISOString();
           if (cycle.status !== ReviewStatus.COMPLETED) {
             needsArchive = true;
           }
+        } else {
+          nextStatus = ReviewStatus.ACTIVE;
+          completedAt = undefined;
         }
         if (needsArchive) {
           cyclesToArchive.push({ cycleId: cycle.id, appId: cycle.appId });
@@ -584,17 +585,31 @@ useEffect(() => {
         return [...otherAppEnts, ...synchronizedEnts];
       });
 
-      // Update review items: mark revoked items as remediated if they no longer exist
-      setReviewItems(prevItems => {
-        return prevItems.map(item => {
-          const cycle = cycles.find(c => c.id === item.reviewCycleId);
-          if (cycle?.appId === appId && item.status === ActionStatus.REVOKED) {
-            const stillExists = newAccessList.some(acc => acc.userId === item.appUserId && acc.entitlement === item.entitlement);
-            if (!stillExists) return { ...item, status: ActionStatus.REMEDIATED, remediatedAt: new Date().toISOString() };
-          }
-          return item;
-        });
+      // Update review items in backend: mark revoked items as remediated if they no longer exist
+      const remediatedCandidates = reviewItems.filter(item => {
+        const cycle = cycles.find(c => c.id === item.reviewCycleId);
+        if (!cycle || cycle.appId !== appId || item.status !== ActionStatus.REVOKED) return false;
+        const stillExists = newAccessList.some(acc => acc.userId === item.appUserId && acc.entitlement === item.entitlement);
+        return !stillExists;
       });
+
+      if (remediatedCandidates.length > 0) {
+        await Promise.all(
+          remediatedCandidates.map(item =>
+            actOnItem({
+              itemId: item.id,
+              managerId: item.managerId || currentUser.id,
+              status: ActionStatus.REMEDIATED,
+              comment: 'Verified removed via account upload'
+            })
+          )
+        );
+      }
+
+      const refreshedItemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(Array.isArray(refreshedItemsRes?.items)
+        ? refreshedItemsRes.items.map(normalizeReviewItem)
+        : []);
 
       // Recalculate SoD and set access state
       setAccess(prev => recalculateSoD([...prev.filter(a => a.appId !== appId), ...newAccessList], sodPolicies));
