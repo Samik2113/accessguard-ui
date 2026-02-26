@@ -387,7 +387,9 @@ useEffect(() => {
   useEffect(() => {
     setCycles(prevCycles => {
       let hasGlobalChanges = false;
-      const nextCycles = prevCycles.map(async cycle => {
+      // Collect cycles that need archiving and update cycles synchronously
+      const cyclesToArchive = [];
+      const nextCycles = prevCycles.map(cycle => {
         if (cycle.status === ReviewStatus.COMPLETED) return cycle;
         const cycleItems = reviewItems.filter(i => i.reviewCycleId === cycle.id);
         if (cycleItems.length === 0) return cycle;
@@ -397,34 +399,26 @@ useEffect(() => {
         const allManagersConfirmed = managersInCycle.length > 0 && managersInCycle.every(mId => cycle.confirmedManagers.includes(mId));
         let nextStatus: ReviewStatus = cycle.status;
         let completedAt = cycle.completedAt;
+        let needsArchive = false;
         if (allManagersConfirmed && pendingReviewCount === 0) {
           if (activeRevokeCount > 0) {
             nextStatus = ReviewStatus.PENDING_VERIFICATION;
           } else {
             nextStatus = ReviewStatus.COMPLETED;
             completedAt = completedAt || new Date().toISOString();
-            // Archive the cycle if not already archived
             if (cycle.status !== ReviewStatus.COMPLETED) {
-              try {
-                await archiveCycle({ cycleId: cycle.id, appId: cycle.appId });
-                // Optionally, refresh cycles from backend here
-              } catch (e) {
-                console.error('Failed to archive cycle:', e);
-              }
+              needsArchive = true;
             }
           }
         } else if (cycle.status === ReviewStatus.PENDING_VERIFICATION && activeRevokeCount === 0) {
           nextStatus = ReviewStatus.COMPLETED;
           completedAt = completedAt || new Date().toISOString();
-          // Archive the cycle if not already archived
           if (cycle.status !== ReviewStatus.COMPLETED) {
-            try {
-              await archiveCycle({ cycleId: cycle.id, appId: cycle.appId });
-              // Optionally, refresh cycles from backend here
-            } catch (e) {
-              console.error('Failed to archive cycle:', e);
-            }
+            needsArchive = true;
           }
+        }
+        if (needsArchive) {
+          cyclesToArchive.push({ cycleId: cycle.id, appId: cycle.appId });
         }
         if (nextStatus !== cycle.status || cycle.pendingItems !== pendingReviewCount || cycle.completedAt !== completedAt) {
           hasGlobalChanges = true;
@@ -432,6 +426,12 @@ useEffect(() => {
         }
         return cycle;
       });
+      // Fire-and-forget archive requests (do not await in map)
+      if (cyclesToArchive.length > 0) {
+        cyclesToArchive.forEach(({ cycleId, appId }) => {
+          archiveCycle({ cycleId, appId }).catch(e => console.error('Failed to archive cycle:', e));
+        });
+      }
       return hasGlobalChanges ? nextCycles : prevCycles;
     });
   }, [reviewItems, cycles.map(c => c.confirmedManagers.length).join(',')]);
