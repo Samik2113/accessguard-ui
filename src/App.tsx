@@ -285,8 +285,8 @@ useEffect(() => {
       const cyclesRes = await getReviewCycles({ top: 200 });
       const itemsRes = await getReviewItems({ top: 500 });
       if (!alive) return;
-      setCycles(cyclesRes?.cycles ?? []);
-      setReviewItems(itemsRes?.items ?? []); // keep as items, unless backend returns differently
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []); // keep as items, unless backend returns differently
     } catch (e) {
       console.error("Failed to load UAR data:", e);
       if (alive) {
@@ -449,7 +449,7 @@ useEffect(() => {
 
       // Refresh cycles from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
-      setCycles(cyclesRes?.cycles ?? []);
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles : []);
 
       // Also refresh items in case cycle status changed to COMPLETED and items need refresh
       const itemsRes = await getReviewItems({ top: 500 });
