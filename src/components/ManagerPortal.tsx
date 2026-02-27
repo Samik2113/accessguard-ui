@@ -44,9 +44,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
 
   const managerItems = useMemo(() => {
-    if (isAdmin) return items;
     return items.filter(i => i.managerId === currentManagerId);
-  }, [items, currentManagerId, isAdmin]);
+  }, [items, currentManagerId]);
 
   const uniqueUsersInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.userName))).sort(), [managerItems]);
   const uniqueEntsInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.entitlement))).sort(), [managerItems]);
@@ -83,7 +82,6 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   }, [filteredItems, dueDateSort, cycles]);
 
   const submissionTargets = useMemo(() => {
-    if (isAdmin) return [];
     const isPending = (status: any) => String(status || '').trim().toUpperCase() === ActionStatus.PENDING;
     const cycleIds = Array.from(new Set(managerItems.map(i => i.reviewCycleId)));
     return cycleIds.map(cycleId => {
@@ -95,7 +93,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
       const appName = cycle?.appName || 'Unknown App';
       return { cycleId, appName, isAvailable: !isAlreadySubmitted && allActioned && cycleItems.length > 0 };
     }).filter(t => t.isAvailable);
-  }, [managerItems, cycles, currentManagerId, isAdmin]);
+  }, [managerItems, cycles, currentManagerId]);
 
   const isHighRisk = (item: ReviewItem) => item.isSoDConflict || item.isOrphan;
 
@@ -128,9 +126,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   };
 
   const isLocked = (item: ReviewItem) => {
-    if (isAdmin) return false;
     const cycle = cycles.find(c => c.id === item.reviewCycleId);
-    return cycle?.confirmedManagers.includes(currentManagerId);
+    return Array.isArray(cycle?.confirmedManagers) && cycle.confirmedManagers.includes(currentManagerId);
   };
 
   const selectableItems = useMemo(() => filteredItems.filter(i => !isLocked(i)), [filteredItems, cycles, currentManagerId]);
