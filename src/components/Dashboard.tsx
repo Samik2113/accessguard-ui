@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy } from '../types';
-import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send } from 'lucide-react';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -10,9 +10,11 @@ interface DashboardProps {
   reviewItems: ReviewItem[];
   users: User[];
   sodPolicies: SoDPolicy[];
+  isAdmin?: boolean;
+  onReassign?: (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [launchDueDate, setLaunchDueDate] = useState<string>(() => {
@@ -31,6 +33,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [campaignRemediationFilter, setCampaignRemediationFilter] = useState('ALL');
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
+  const [reassignModal, setReassignModal] = useState<{ itemId: string; fromManagerId: string; appUserId: string } | null>(null);
+  const [reassignSearch, setReassignSearch] = useState('');
+  const [reassignToManagerId, setReassignToManagerId] = useState('');
+  const [reassignComment, setReassignComment] = useState('');
+  const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
 
   const activeCyclesList = useMemo(() => {
     return cycles.filter(c => c.status !== ReviewStatus.COMPLETED)
@@ -63,6 +70,36 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter]);
 
   const selectedCampaign = cycles.find(c => c.id === selectedCampaignId);
+
+  const reassignmentCandidates = useMemo(() => {
+    if (!reassignModal) return [];
+    const term = reassignSearch.trim().toLowerCase();
+    return users
+      .filter(user => user.id !== reassignModal.appUserId)
+      .filter(user => {
+        if (!term) return true;
+        const blob = `${user.id} ${user.name} ${user.email}`.toLowerCase();
+        return blob.includes(term);
+      });
+  }, [users, reassignModal, reassignSearch]);
+
+  const submitReassignment = () => {
+    if (!reassignModal || !onReassign) return;
+    const targetManagerId = String(reassignToManagerId || '').trim();
+    if (!targetManagerId) {
+      alert('Select a reviewer to reassign.');
+      return;
+    }
+    if (targetManagerId === reassignModal.appUserId) {
+      alert('Reviewer cannot be the same user whose access is being reviewed.');
+      return;
+    }
+    onReassign(reassignModal.itemId, reassignModal.fromManagerId, targetManagerId, reassignComment.trim());
+    setReassignModal(null);
+    setReassignSearch('');
+    setReassignToManagerId('');
+    setReassignComment('');
+  };
 
   const exportCampaignDetail = () => {
     if (!selectedCampaign) return;
@@ -351,6 +388,23 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                                     <div className="text-[9px] text-slate-400 uppercase">Count: {item.reassignmentCount || 1}</div>
                                   </div>
                                 )}
+                                {isAdmin && onReassign && (
+                                  <button
+                                    onClick={() => {
+                                      if (selectedCampaign?.status === ReviewStatus.COMPLETED) return;
+                                      if (item.status !== ActionStatus.PENDING) return;
+                                      if (Number(item.reassignmentCount || 0) >= maxReassignments) return;
+                                      setReassignModal({ itemId: item.id, fromManagerId: item.managerId, appUserId: item.appUserId });
+                                      setReassignSearch('');
+                                      setReassignToManagerId('');
+                                      setReassignComment('');
+                                    }}
+                                    disabled={selectedCampaign?.status === ReviewStatus.COMPLETED || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments}
+                                    className={`mt-2 px-2.5 py-1 rounded text-[10px] font-bold uppercase inline-flex items-center gap-1 ${selectedCampaign?.status === ReviewStatus.COMPLETED || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100'}`}
+                                  >
+                                    <Send className="w-3 h-3" /> Reassign
+                                  </button>
+                                )}
                             </td>
                             <td className="px-6 py-4">
                                 <div className="flex items-center gap-2 mb-1">
@@ -380,6 +434,76 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Policy Details Modal */}
+      {reassignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[120] p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Reassign Certification Item</h3>
+            <p className="text-sm text-slate-500 mb-4">Select a different HR user as reviewer. The access owner cannot be assigned as reviewer.</p>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Search Reviewer</label>
+              <input
+                type="text"
+                value={reassignSearch}
+                onChange={(e) => setReassignSearch(e.target.value)}
+                placeholder="Search by ID, name, email"
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div className="mb-4 max-h-60 overflow-y-auto border border-slate-200 rounded-xl">
+              {reassignmentCandidates.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500">No users found.</p>
+              ) : (
+                reassignmentCandidates.map(user => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => setReassignToManagerId(user.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 ${reassignToManagerId === user.id ? 'bg-blue-50' : ''}`}
+                  >
+                    <div className="font-semibold text-slate-800">{user.name}</div>
+                    <div className="text-xs text-slate-500">{user.id} • {user.email}</div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="mb-6">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Comment (optional)</label>
+              <textarea
+                value={reassignComment}
+                onChange={(e) => setReassignComment(e.target.value)}
+                rows={3}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="Reason for reassignment"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setReassignModal(null);
+                  setReassignSearch('');
+                  setReassignToManagerId('');
+                  setReassignComment('');
+                }}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitReassignment}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+              >
+                Reassign
+              </button>
             </div>
           </div>
         </div>

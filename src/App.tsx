@@ -192,11 +192,14 @@ const App: React.FC = () => {
     setResettingPassword(true);
     try {
       await changePassword({ email, currentPassword: resetCurrentPassword, newPassword: resetNewPassword });
-      setResetSuccess('Password updated successfully. You can now sign in with your new password.');
+      setShowPasswordReset(false);
+      setResetSuccess(null);
+      setResetError(null);
       setResetCurrentPassword('');
       setResetNewPassword('');
       setResetConfirmPassword('');
       setLoginEmail(email);
+      setLoginPassword('');
     } catch (err: any) {
       setResetError(err?.message || 'Failed to reset password.');
     } finally {
@@ -916,6 +919,30 @@ useEffect(() => {
     }
   };
 
+  const handleBulkReassignReviewItems = async (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => {
+    try {
+      const results = await Promise.allSettled(
+        itemsToReassign.map(item => reassignReviewItem({ itemId: item.itemId, managerId: item.fromManagerId, reassignToManagerId: toManagerId, comment }))
+      );
+
+      const successCount = results.filter(result => result.status === 'fulfilled').length;
+      const failed = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
+
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+
+      await addAuditLog('ITEM_REASSIGN_BULK', `Bulk reassigned ${successCount}/${itemsToReassign.length} items to ${toManagerId}`);
+
+      if (failed.length > 0) {
+        const firstFailure = failed[0]?.reason?.message || 'Unknown error';
+        alert(`Bulk reassignment completed with partial failures. Success: ${successCount}, Failed: ${failed.length}. First error: ${firstFailure}`);
+      }
+    } catch (e: any) {
+      console.error('Failed to bulk reassign review items:', e);
+      alert(`Failed to bulk reassign items: ${e?.message || 'Unknown error'}`);
+    }
+  };
+
   // --- Audit Filter Logic ---
   const filteredAuditLogs = useMemo(() => {
     return auditLogs.filter(log => {
@@ -1198,7 +1225,7 @@ useEffect(() => {
 
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} />}
       {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
@@ -1237,7 +1264,7 @@ useEffect(() => {
             const cycle = cycles.find(c => c.id === i.reviewCycleId);
             return cycle?.status !== ReviewStatus.COMPLETED;
           })} 
-          onAction={handleAction} onBulkAction={handleBulkAction} onReassign={handleReassignReviewItem} currentManagerId={currentUser.id} isAdmin={false} 
+          onAction={handleAction} onBulkAction={handleBulkAction} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} currentManagerId={currentUser.id} isAdmin={currentUser.role === UserRole.ADMIN} 
           applications={applications} sodPolicies={sodPolicies} users={users} access={access} cycles={cycles} onConfirmReview={handleConfirmReview}
         />
       )}

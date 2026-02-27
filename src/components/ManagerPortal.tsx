@@ -8,6 +8,7 @@ interface ManagerPortalProps {
   onAction: (itemId: string, status: ActionStatus, comment?: string) => void;
   onBulkAction: (itemIds: string[], status: ActionStatus, comment?: string) => void;
   onReassign: (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => void;
+  onBulkReassign: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
   currentManagerId: string;
   isAdmin?: boolean;
   applications: Application[];
@@ -18,7 +19,7 @@ interface ManagerPortalProps {
   onConfirmReview: (cycleId: string, managerId: string) => void;
 }
 
-const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAction, onReassign, currentManagerId, isAdmin = false, applications, sodPolicies, users, access, cycles, onConfirmReview }) => {
+const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAction, onReassign, onBulkReassign, currentManagerId, isAdmin = false, applications, sodPolicies, users, access, cycles, onConfirmReview }) => {
   const [userFilter, setUserFilter] = useState('ALL');
   const [entitlementFilter, setEntitlementFilter] = useState('ALL');
   const [appFilter, setAppFilter] = useState('ALL');
@@ -34,13 +35,18 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const [reassignSearch, setReassignSearch] = useState('');
   const [reassignToManagerId, setReassignToManagerId] = useState('');
   const [reassignComment, setReassignComment] = useState('');
+  const [showBulkReassignModal, setShowBulkReassignModal] = useState(false);
+  const [bulkReassignSearch, setBulkReassignSearch] = useState('');
+  const [bulkReassignToManagerId, setBulkReassignToManagerId] = useState('');
+  const [bulkReassignComment, setBulkReassignComment] = useState('');
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
 
   const managerItems = useMemo(() => {
+    if (isAdmin) return items;
     return items.filter(i => i.managerId === currentManagerId);
-  }, [items, currentManagerId]);
+  }, [items, currentManagerId, isAdmin]);
 
   const uniqueUsersInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.userName))).sort(), [managerItems]);
   const uniqueEntsInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.entitlement))).sort(), [managerItems]);
@@ -77,6 +83,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   }, [filteredItems, dueDateSort, cycles]);
 
   const submissionTargets = useMemo(() => {
+    if (isAdmin) return [];
     const cycleIds = Array.from(new Set(managerItems.map(i => i.reviewCycleId)));
     return cycleIds.map(cycleId => {
       const cycleItems = managerItems.filter(i => i.reviewCycleId === cycleId);
@@ -86,7 +93,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
       const appName = cycle?.appName || 'Unknown App';
       return { cycleId, appName, isAvailable: !isAlreadySubmitted && allActioned && cycleItems.length > 0 };
     }).filter(t => t.isAvailable);
-  }, [managerItems, cycles, currentManagerId]);
+  }, [managerItems, cycles, currentManagerId, isAdmin]);
 
   const isHighRisk = (item: ReviewItem) => item.isSoDConflict || item.isOrphan;
 
@@ -119,11 +126,22 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   };
 
   const isLocked = (item: ReviewItem) => {
+    if (isAdmin) return false;
     const cycle = cycles.find(c => c.id === item.reviewCycleId);
     return cycle?.confirmedManagers.includes(currentManagerId);
   };
 
   const selectableItems = useMemo(() => filteredItems.filter(i => !isLocked(i)), [filteredItems, cycles, currentManagerId]);
+
+  const selectedItemObjects = useMemo(() => {
+    return selectedItems
+      .map(itemId => items.find(i => i.id === itemId && i.managerId === currentManagerId))
+      .filter(Boolean) as ReviewItem[];
+  }, [selectedItems, items, currentManagerId]);
+
+  const selectedReassignableCount = useMemo(() => {
+    return selectedItemObjects.filter(i => Number(i.reassignmentCount || 0) < maxReassignments).length;
+  }, [selectedItemObjects, maxReassignments]);
 
   const reassignmentCandidates = useMemo(() => {
     if (!reassignModal) return [];
@@ -159,6 +177,47 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     setReassignSearch('');
     setReassignToManagerId('');
     setReassignComment('');
+  };
+
+  const bulkReassignmentCandidates = useMemo(() => {
+    if (!showBulkReassignModal) return [];
+    const term = bulkReassignSearch.trim().toLowerCase();
+    return users.filter(user => {
+      if (!term) return true;
+      const blob = `${user.id} ${user.name} ${user.email}`.toLowerCase();
+      return blob.includes(term);
+    });
+  }, [users, showBulkReassignModal, bulkReassignSearch]);
+
+  const submitBulkReassignment = () => {
+    const targetManagerId = String(bulkReassignToManagerId || '').trim();
+    if (!targetManagerId) {
+      alert('Select a reviewer to reassign.');
+      return;
+    }
+    if (selectedItemObjects.length === 0) {
+      alert('Select items to reassign.');
+      return;
+    }
+
+    const selfReviewConflicts = selectedItemObjects.filter(i => String(i.appUserId).trim() === targetManagerId).length;
+    if (selfReviewConflicts > 0) {
+      alert(`Cannot bulk reassign. ${selfReviewConflicts} selected item(s) would assign reviewer to the same user being reviewed.`);
+      return;
+    }
+
+    const eligibleItems = selectedItemObjects.filter(i => Number(i.reassignmentCount || 0) < maxReassignments);
+    if (eligibleItems.length === 0) {
+      alert(`All selected items reached reassignment limit (${maxReassignments}).`);
+      return;
+    }
+
+    onBulkReassign(eligibleItems.map(i => ({ itemId: i.id, fromManagerId: i.managerId })), targetManagerId, bulkReassignComment.trim());
+    setShowBulkReassignModal(false);
+    setBulkReassignSearch('');
+    setBulkReassignToManagerId('');
+    setBulkReassignComment('');
+    setSelectedItems([]);
   };
 
   return (
@@ -233,8 +292,26 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-40 animate-in slide-in-from-bottom-8">
           <span className="text-sm font-bold">{selectedItems.length} Selected</span>
           <div className="flex gap-2">
-            <button onClick={() => setShowBulkModal({ status: ActionStatus.APPROVED, items: selectedItems })} className="px-4 py-2 bg-green-600 rounded-lg text-sm font-bold"><Check className="w-4 h-4 inline mr-1" /> Bulk Approve</button>
-            <button onClick={() => setShowBulkModal({ status: ActionStatus.REVOKED, items: selectedItems })} className="px-4 py-2 bg-red-600 rounded-lg text-sm font-bold"><X className="w-4 h-4 inline mr-1" /> Bulk Revoke</button>
+            {!isAdmin && (
+              <>
+                <button onClick={() => setShowBulkModal({ status: ActionStatus.APPROVED, items: selectedItems })} className="px-4 py-2 bg-green-600 rounded-lg text-sm font-bold"><Check className="w-4 h-4 inline mr-1" /> Bulk Approve</button>
+                <button onClick={() => setShowBulkModal({ status: ActionStatus.REVOKED, items: selectedItems })} className="px-4 py-2 bg-red-600 rounded-lg text-sm font-bold"><X className="w-4 h-4 inline mr-1" /> Bulk Revoke</button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                if (selectedReassignableCount === 0) return;
+                setShowBulkReassignModal(true);
+                setBulkReassignSearch('');
+                setBulkReassignToManagerId('');
+                setBulkReassignComment('');
+              }}
+              disabled={selectedReassignableCount === 0}
+              className={`px-4 py-2 rounded-lg text-sm font-bold ${selectedReassignableCount > 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-500 cursor-not-allowed'}`}
+              title={selectedReassignableCount > 0 ? `Bulk reassign ${selectedReassignableCount} eligible item(s)` : `No selected items eligible for reassignment (limit ${maxReassignments})`}
+            >
+              <Send className="w-4 h-4 inline mr-1" /> Bulk Reassign
+            </button>
             <button onClick={() => setSelectedItems([])} className="px-4 py-2 bg-slate-700 rounded-lg text-sm font-bold">Cancel</button>
           </div>
         </div>
@@ -344,8 +421,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                   <td className="px-6 py-4 text-center">
                      {!locked ? (
                        <div className="flex justify-center gap-2">
-                         <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.APPROVED })} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Approve"><Check className="w-4 h-4" /></button>
-                         <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.REVOKED })} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Revoke"><X className="w-4 h-4" /></button>
+                         {!isAdmin && <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.APPROVED })} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Approve"><Check className="w-4 h-4" /></button>}
+                         {!isAdmin && <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.REVOKED })} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Revoke"><X className="w-4 h-4" /></button>}
                          <button
                            onClick={() => {
                              if (!canReassign) return;
@@ -493,6 +570,77 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
               >
                 Reassign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkReassignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[125] p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
+            <p className="text-sm text-slate-500 mb-2">Selected items: {selectedItemObjects.length} • Eligible: {selectedReassignableCount}</p>
+            <p className="text-sm text-slate-500 mb-4">Select a reviewer for all eligible selected items. Items at reassignment limit are skipped.</p>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Search Reviewer</label>
+              <input
+                type="text"
+                value={bulkReassignSearch}
+                onChange={(e) => setBulkReassignSearch(e.target.value)}
+                placeholder="Search by ID, name, email"
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div className="mb-4 max-h-60 overflow-y-auto border border-slate-200 rounded-xl">
+              {bulkReassignmentCandidates.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500">No users found.</p>
+              ) : (
+                bulkReassignmentCandidates.map(user => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => setBulkReassignToManagerId(user.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 ${bulkReassignToManagerId === user.id ? 'bg-blue-50' : ''}`}
+                  >
+                    <div className="font-semibold text-slate-800">{user.name}</div>
+                    <div className="text-xs text-slate-500">{user.id} • {user.email}</div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="mb-6">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Comment (optional)</label>
+              <textarea
+                value={bulkReassignComment}
+                onChange={(e) => setBulkReassignComment(e.target.value)}
+                rows={3}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="Reason for bulk reassignment"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowBulkReassignModal(false);
+                  setBulkReassignSearch('');
+                  setBulkReassignToManagerId('');
+                  setBulkReassignComment('');
+                }}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitBulkReassignment}
+                disabled={selectedReassignableCount === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                Reassign Selected
               </button>
             </div>
           </div>
