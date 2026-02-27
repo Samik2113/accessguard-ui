@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy } from '../types';
-import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -12,9 +12,10 @@ interface DashboardProps {
   sodPolicies: SoDPolicy[];
   isAdmin?: boolean;
   onReassign?: (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => void;
+  onBulkReassign?: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [launchDueDate, setLaunchDueDate] = useState<string>(() => {
@@ -37,7 +38,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [reassignSearch, setReassignSearch] = useState('');
   const [reassignToManagerId, setReassignToManagerId] = useState('');
   const [reassignComment, setReassignComment] = useState('');
+  const [selectedCampaignItems, setSelectedCampaignItems] = useState<string[]>([]);
+  const [showBulkReassignModal, setShowBulkReassignModal] = useState(false);
+  const [bulkReassignSearch, setBulkReassignSearch] = useState('');
+  const [bulkReassignToManagerId, setBulkReassignToManagerId] = useState('');
+  const [bulkReassignComment, setBulkReassignComment] = useState('');
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
+
+  useEffect(() => {
+    setSelectedCampaignItems([]);
+  }, [selectedCampaignId]);
 
   const activeCyclesList = useMemo(() => {
     return cycles.filter(c => c.status !== ReviewStatus.COMPLETED)
@@ -99,6 +109,59 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     setReassignSearch('');
     setReassignToManagerId('');
     setReassignComment('');
+  };
+
+  const bulkReassignmentCandidates = useMemo(() => {
+    if (!showBulkReassignModal) return [];
+    const term = bulkReassignSearch.trim().toLowerCase();
+    return users.filter(user => {
+      if (!term) return true;
+      const blob = `${user.id} ${user.name} ${user.email}`.toLowerCase();
+      return blob.includes(term);
+    });
+  }, [users, showBulkReassignModal, bulkReassignSearch]);
+
+  const selectableCampaignItems = useMemo(() => {
+    if (!isAdmin || !onBulkReassign) return [];
+    if (selectedCampaign?.status === ReviewStatus.COMPLETED) return [];
+    return filteredViewingItems.filter(item => item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments);
+  }, [filteredViewingItems, isAdmin, onBulkReassign, selectedCampaign, maxReassignments]);
+
+  const selectedCampaignItemObjects = useMemo(() => {
+    return selectedCampaignItems
+      .map(itemId => filteredViewingItems.find(i => i.id === itemId))
+      .filter(Boolean) as ReviewItem[];
+  }, [selectedCampaignItems, filteredViewingItems]);
+
+  const submitBulkReassignment = () => {
+    if (!onBulkReassign) return;
+    const targetManagerId = String(bulkReassignToManagerId || '').trim();
+    if (!targetManagerId) {
+      alert('Select a reviewer to reassign.');
+      return;
+    }
+    if (selectedCampaignItemObjects.length === 0) {
+      alert('Select items to reassign.');
+      return;
+    }
+
+    const selfReviewConflicts = selectedCampaignItemObjects.filter(i => String(i.appUserId).trim() === targetManagerId).length;
+    if (selfReviewConflicts > 0) {
+      alert(`Cannot bulk reassign. ${selfReviewConflicts} selected item(s) would assign reviewer to the same user being reviewed.`);
+      return;
+    }
+
+    onBulkReassign(
+      selectedCampaignItemObjects.map(item => ({ itemId: item.id, fromManagerId: item.managerId })),
+      targetManagerId,
+      bulkReassignComment.trim()
+    );
+
+    setShowBulkReassignModal(false);
+    setBulkReassignSearch('');
+    setBulkReassignToManagerId('');
+    setBulkReassignComment('');
+    setSelectedCampaignItems([]);
   };
 
   const exportCampaignDetail = () => {
@@ -245,6 +308,21 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 <h3 className="text-xl font-bold text-slate-900">{selectedCampaign?.name}</h3>
               </div>
               <div className="flex gap-2">
+                {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                  <button
+                    onClick={() => {
+                      if (selectedCampaignItems.length === 0) return;
+                      setShowBulkReassignModal(true);
+                      setBulkReassignSearch('');
+                      setBulkReassignToManagerId('');
+                      setBulkReassignComment('');
+                    }}
+                    disabled={selectedCampaignItems.length === 0}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedCampaignItems.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                  >
+                    <Send className="w-4 h-4" /> Bulk Reassign ({selectedCampaignItems.length})
+                  </button>
+                )}
                 <button 
                   onClick={exportCampaignDetail}
                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 transition-all"
@@ -332,6 +410,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold sticky top-0 border-b z-10">
                   <tr>
+                    {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                      <th className="px-6 py-3 w-12">
+                        <button onClick={() => setSelectedCampaignItems(selectedCampaignItems.length === selectableCampaignItems.length ? [] : selectableCampaignItems.map(i => i.id))}>
+                          {selectedCampaignItems.length > 0 && selectedCampaignItems.length === selectableCampaignItems.length ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
+                        </button>
+                      </th>
+                    )}
                     <th className="px-6 py-3">User / Account</th>
                     <th className="px-6 py-3">Entitlement & Risks</th>
                     <th className="px-6 py-3">Reviewer</th>
@@ -341,12 +426,24 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 </thead>
                 <tbody className="divide-y text-sm">
                   {filteredViewingItems.length === 0 ? (
-                    <tr><td colSpan={5} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
+                    <tr><td colSpan={isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED ? 6 : 5} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
                   ) : (
                     filteredViewingItems.map(item => {
                         const reviewer = users.find(u => u.id === item.managerId);
+                        const canSelectForBulk = selectedCampaign?.status !== ReviewStatus.COMPLETED && item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments;
                         return (
                         <tr key={item.id} className="hover:bg-slate-50">
+                            {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                              <td className="px-6 py-4">
+                                {canSelectForBulk ? (
+                                  <button onClick={() => setSelectedCampaignItems(prev => prev.includes(item.id) ? prev.filter(i => i !== item.id) : [...prev, item.id])}>
+                                    {selectedCampaignItems.includes(item.id) ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                  </button>
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-200" />
+                                )}
+                              </td>
+                            )}
                             <td className="px-6 py-4">
                                 <div className="font-bold">{item.userName}</div>
                                 <div className="text-[10px] text-slate-400 font-mono">ID: {item.appUserId}</div>
@@ -503,6 +600,76 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
               >
                 Reassign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkReassignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[125] p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
+            <p className="text-sm text-slate-500 mb-4">Selected items: {selectedCampaignItemObjects.length}</p>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Search Reviewer</label>
+              <input
+                type="text"
+                value={bulkReassignSearch}
+                onChange={(e) => setBulkReassignSearch(e.target.value)}
+                placeholder="Search by ID, name, email"
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div className="mb-4 max-h-60 overflow-y-auto border border-slate-200 rounded-xl">
+              {bulkReassignmentCandidates.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500">No users found.</p>
+              ) : (
+                bulkReassignmentCandidates.map(user => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => setBulkReassignToManagerId(user.id)}
+                    className={`w-full text-left px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 ${bulkReassignToManagerId === user.id ? 'bg-blue-50' : ''}`}
+                  >
+                    <div className="font-semibold text-slate-800">{user.name}</div>
+                    <div className="text-xs text-slate-500">{user.id} • {user.email}</div>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="mb-6">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Comment (optional)</label>
+              <textarea
+                value={bulkReassignComment}
+                onChange={(e) => setBulkReassignComment(e.target.value)}
+                rows={3}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="Reason for bulk reassignment"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowBulkReassignModal(false);
+                  setBulkReassignSearch('');
+                  setBulkReassignToManagerId('');
+                  setBulkReassignComment('');
+                }}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitBulkReassignment}
+                disabled={selectedCampaignItemObjects.length === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+              >
+                Reassign Selected
               </button>
             </div>
           </div>

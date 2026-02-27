@@ -292,12 +292,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-6 z-40 animate-in slide-in-from-bottom-8">
           <span className="text-sm font-bold">{selectedItems.length} Selected</span>
           <div className="flex gap-2">
-            {!isAdmin && (
-              <>
-                <button onClick={() => setShowBulkModal({ status: ActionStatus.APPROVED, items: selectedItems })} className="px-4 py-2 bg-green-600 rounded-lg text-sm font-bold"><Check className="w-4 h-4 inline mr-1" /> Bulk Approve</button>
-                <button onClick={() => setShowBulkModal({ status: ActionStatus.REVOKED, items: selectedItems })} className="px-4 py-2 bg-red-600 rounded-lg text-sm font-bold"><X className="w-4 h-4 inline mr-1" /> Bulk Revoke</button>
-              </>
-            )}
+            <button onClick={() => setShowBulkModal({ status: ActionStatus.APPROVED, items: selectedItems })} className="px-4 py-2 bg-green-600 rounded-lg text-sm font-bold"><Check className="w-4 h-4 inline mr-1" /> Bulk Approve</button>
+            <button onClick={() => setShowBulkModal({ status: ActionStatus.REVOKED, items: selectedItems })} className="px-4 py-2 bg-red-600 rounded-lg text-sm font-bold"><X className="w-4 h-4 inline mr-1" /> Bulk Revoke</button>
             <button
               onClick={() => {
                 if (selectedReassignableCount === 0) return;
@@ -421,8 +417,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                   <td className="px-6 py-4 text-center">
                      {!locked ? (
                        <div className="flex justify-center gap-2">
-                         {!isAdmin && <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.APPROVED })} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Approve"><Check className="w-4 h-4" /></button>}
-                         {!isAdmin && <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.REVOKED })} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Revoke"><X className="w-4 h-4" /></button>}
+                         <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.APPROVED })} className="p-1.5 text-green-600 hover:bg-green-50 rounded" title="Approve"><Check className="w-4 h-4" /></button>
+                         <button onClick={() => setSingleActionModal({ id: item.id, status: ActionStatus.REVOKED })} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Revoke"><X className="w-4 h-4" /></button>
                          <button
                            onClick={() => {
                              if (!canReassign) return;

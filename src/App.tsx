@@ -1225,7 +1225,7 @@ useEffect(() => {
 
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} />}
       {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
