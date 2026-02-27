@@ -19,6 +19,28 @@ const Layout: React.FC<LayoutProps> = ({
   currentUser, 
   onLogout
 }) => {
+  const visibleItems = NAV_ITEMS.filter((item: any) => !Array.isArray(item.roles) || item.roles.includes(currentUser.role));
+  const workspaceItems = visibleItems.filter((item: any) => item.panel === 'workspace');
+  const adminItems = visibleItems.filter((item: any) => item.panel === 'admin-auditor');
+
+  const renderNavButton = (item: any) => {
+    const isActive = activeTab === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => setActiveTab(item.id)}
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
+          isActive
+            ? 'bg-blue-600 text-white'
+            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+        }`}
+      >
+        {item.icon}
+        {item.label}
+      </button>
+    );
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Sidebar */}
@@ -30,26 +52,20 @@ const Layout: React.FC<LayoutProps> = ({
           <h1 className="text-xl font-bold tracking-tight">AccessGuard</h1>
         </div>
 
-        <nav className="flex-1 mt-6 px-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
-            if (Array.isArray((item as any).roles) && !(item as any).roles.includes(currentUser.role)) return null;
-            
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
-                  isActive 
-                    ? 'bg-blue-600 text-white' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            );
-          })}
+        <nav className="flex-1 mt-6 px-4 space-y-4 overflow-y-auto">
+          {workspaceItems.length > 0 && (
+            <div className="space-y-1">
+              <p className="px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500">My Workspace</p>
+              {workspaceItems.map(renderNavButton)}
+            </div>
+          )}
+
+          {adminItems.length > 0 && (
+            <div className="space-y-1">
+              <p className="px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500">Admin / Auditor Panel</p>
+              {adminItems.map(renderNavButton)}
+            </div>
+          )}
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -82,7 +98,7 @@ const Layout: React.FC<LayoutProps> = ({
           </h2>
           <div className="flex items-center gap-4">
              <div className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100">
-               Environment: Production
+               Environment: Development
              </div>
           </div>
         </header>
