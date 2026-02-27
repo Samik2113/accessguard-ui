@@ -46,6 +46,8 @@ module.exports = async function (context, req) {
     const logsC = db.container("auditLogs");
     const appsC = db.container("applications");
 
+    const parseBool = (value) => value === true || value === 1 || String(value || "").toLowerCase() === "true" || String(value || "").toLowerCase() === "yes";
+
     const now = new Date();
     const nowIso = now.toISOString();
     const appId = body.appId.trim();
@@ -213,16 +215,44 @@ module.exports = async function (context, req) {
 
     // Pre-load SoD policies and compute per-user entitlements for conflict checks
     const { resources: policies } = await sodC.items.query("SELECT * FROM c").fetchAll();
+    const privilegedEntitlementSet = new Set();
+    try {
+      const entC = db.container("entitlements");
+      const { resources: entitlementRows } = await entC.items.query({
+        query: "SELECT c.entitlement, c.isPrivileged FROM c WHERE c.appId=@a",
+        parameters: [{ name: "@a", value: appId }]
+      }).fetchAll();
+      (entitlementRows || []).forEach((row) => {
+        if (parseBool(row?.isPrivileged)) privilegedEntitlementSet.add(SAFE(row?.entitlement));
+      });
+    } catch (_) {
+    }
+
     const perUserEnts = new Map();
+    const riskIdentityKey = (account) => {
+      const correlatedUserId = String(account?.correlatedUserId || "").trim();
+      if (correlatedUserId) return `u:${correlatedUserId}`;
+      const userId = String(account?.userId || "").trim();
+      if (userId) return `id:${userId}`;
+      const email = String(account?.email || "").trim().toLowerCase();
+      if (email) return `e:${email}`;
+      const userName = String(account?.userName || "").trim().toLowerCase();
+      if (userName) return `n:${userName}`;
+      return null;
+    };
     for (const account of accounts) {
-      const arr = perUserEnts.get(account.userId) || [];
+      const key = riskIdentityKey(account);
+      if (!key) continue;
+      const arr = perUserEnts.get(key) || [];
       arr.push({ appId: account.appId, entitlement: account.entitlement });
-      perUserEnts.set(account.userId, arr);
+      perUserEnts.set(key, arr);
     }
 
     // Returns policy IDs violated by a given user/account entitlement
-    const conflictsFor = (userId, appIdX, entX) => {
-      const userEnts = perUserEnts.get(userId) || [];
+    const conflictsFor = (account, appIdX, entX) => {
+      const key = riskIdentityKey(account);
+      if (!key) return [];
+      const userEnts = perUserEnts.get(key) || [];
       const hits = [];
       for (const policy of policies) {
         const has1 = userEnts.some(entry => entry.appId === policy.appId1 && SAFE(entry.entitlement) === SAFE(policy.entitlement1));
@@ -281,12 +311,12 @@ module.exports = async function (context, req) {
             managerId = `OWNER_${appIdSafe}`;
           }
 
-          const conflictIds = conflictsFor(account.userId, account.appId, account.entitlement);
+          const conflictIds = conflictsFor(account, account.appId, account.entitlement);
           const conflictNames = conflictIds.map(id => {
             const hit = policies.find(policy => (policy.id || policy.policyId) === id);
             return hit?.policyName || String(id);
           });
-          const isPrivileged = account.isPrivileged === true || String(account.isPrivileged || '').toLowerCase() === 'true' || String(account.isPrivileged || '').toLowerCase() === 'yes' || String(account.isPrivileged || '') === '1';
+          const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
 
           // Item payload is shaped for manager-portal rendering and action lifecycle tracking
           const item = {

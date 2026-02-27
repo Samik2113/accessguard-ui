@@ -102,8 +102,8 @@ const App: React.FC = () => {
   const normalizeReviewItem = (item: any): ReviewItem => {
     const parentCycle = cycles.find(c => c.id === item?.reviewCycleId);
     const normalizedAppId = String(item?.appId ?? item?.applicationId ?? parentCycle?.appId ?? '');
-    const isOrphan = typeof item?.isOrphan === 'boolean' ? item.isOrphan : false;
     const parseBool = (value: any): boolean => value === true || value === 1 || String(value || '').toLowerCase() === 'true' || String(value || '').toLowerCase() === 'yes';
+    const isOrphan = parseBool(item?.isOrphan);
     const resolvedManagerId = (isOrphan && shouldResolveToAppOwner(item?.managerId))
       ? (getApplicationOwnerById(normalizedAppId) || String(item?.managerId || ''))
       : String(item?.managerId || '');
@@ -118,9 +118,11 @@ const App: React.FC = () => {
     const resolvedPolicyNames = violatedPolicyNames.length > 0
       ? violatedPolicyNames
       : violatedPolicyIds.map((id: string) => sodPolicies.find(policy => policy.id === id)?.policyName || id);
-    const isPrivileged = parseBool(item?.isPrivileged);
+    const isPrivilegedByCatalog = entitlements.some(ent => ent.appId === normalizedAppId && String(ent.entitlement || '').trim().toLowerCase() === String(item?.entitlement || '').trim().toLowerCase() && !!ent.isPrivileged);
+    const isPrivileged = parseBool(item?.isPrivileged) || isPrivilegedByCatalog;
     return {
       ...item,
+      appId: normalizedAppId,
       appName: item?.appName || parentCycle?.appName || getApplicationNameById(normalizedAppId),
       managerId: resolvedManagerId,
       isSoDConflict: parseBool(item?.isSoDConflict) || violatedPolicyIds.length > 0,
@@ -130,6 +132,48 @@ const App: React.FC = () => {
       violatedPolicyIds,
       reassignmentCount: typeof item?.reassignmentCount === 'number' ? item.reassignmentCount : 0,
     };
+  };
+
+  const normalizeReviewItems = (items: any[]): ReviewItem[] => {
+    const normalized = items.map(normalizeReviewItem);
+    const normEnt = (value: any) => String(value || '').trim().toLowerCase();
+    const identityKey = (item: ReviewItem) => {
+      const appUserId = normEnt(item.appUserId);
+      if (appUserId) return `${item.reviewCycleId}|u:${appUserId}`;
+      const userName = normEnt(item.userName);
+      if (userName) return `${item.reviewCycleId}|n:${userName}`;
+      return `${item.reviewCycleId}|id:${item.id}`;
+    };
+
+    const groupedEntitlements: Record<string, Array<{ appId: string; entitlement: string }>> = {};
+    normalized.forEach(item => {
+      const key = identityKey(item);
+      if (!groupedEntitlements[key]) groupedEntitlements[key] = [];
+      groupedEntitlements[key].push({ appId: String((item as any).appId || ''), entitlement: item.entitlement });
+    });
+
+    return normalized.map(item => {
+      const group = groupedEntitlements[identityKey(item)] || [];
+      const violatedPolicies = sodPolicies.filter(policy => {
+        const has1 = group.some(entry => entry.appId === policy.appId1 && normEnt(entry.entitlement) === normEnt(policy.entitlement1));
+        const has2 = group.some(entry => entry.appId === policy.appId2 && normEnt(entry.entitlement) === normEnt(policy.entitlement2));
+        if (!has1 || !has2) return false;
+        return (
+          (String((item as any).appId || '') === policy.appId1 && normEnt(item.entitlement) === normEnt(policy.entitlement1)) ||
+          (String((item as any).appId || '') === policy.appId2 && normEnt(item.entitlement) === normEnt(policy.entitlement2))
+        );
+      });
+
+      const fallbackPolicyIds = violatedPolicies.map(policy => policy.id);
+      const fallbackPolicyNames = violatedPolicies.map(policy => policy.policyName);
+
+      return {
+        ...item,
+        isSoDConflict: item.isSoDConflict || fallbackPolicyIds.length > 0,
+        violatedPolicyIds: item.violatedPolicyIds && item.violatedPolicyIds.length > 0 ? item.violatedPolicyIds : fallbackPolicyIds,
+        violatedPolicyNames: item.violatedPolicyNames && item.violatedPolicyNames.length > 0 ? item.violatedPolicyNames : fallbackPolicyNames
+      };
+    });
   };
 
   // UAR Loading/Error States
@@ -416,7 +460,7 @@ useEffect(() => {
       if (!alive) return;
       setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
       setReviewItems(Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(normalizeReviewItem)
+        ? normalizeReviewItems(itemsRes.items)
         : []);
     } catch (e) {
       console.error("Failed to load UAR data:", e);
@@ -435,8 +479,13 @@ useEffect(() => {
 useEffect(() => {
   if (applications.length === 0) return;
   setCycles(prev => prev.map(normalizeCycle));
-  setReviewItems(prev => prev.map(normalizeReviewItem));
+  setReviewItems(prev => normalizeReviewItems(prev));
 }, [applications]);
+
+useEffect(() => {
+  if (reviewItems.length === 0) return;
+  setReviewItems(prev => normalizeReviewItems(prev));
+}, [entitlements, sodPolicies]);
 
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
@@ -587,7 +636,7 @@ useEffect(() => {
 
       // Also refresh items in case cycle status changed to COMPLETED and items need refresh
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
 
       await addAuditLog('MANAGER_CONFIRM', `Manager ${managerId} locked decisions for campaign: ${cycleId}.`);
       alert('✓ Review finalized successfully!');
@@ -708,7 +757,7 @@ useEffect(() => {
 
       const refreshedItemsRes = await getReviewItems({ top: 500 });
       setReviewItems(Array.isArray(refreshedItemsRes?.items)
-        ? refreshedItemsRes.items.map(normalizeReviewItem)
+        ? normalizeReviewItems(refreshedItemsRes.items)
         : []);
 
       // Recalculate SoD and set access state
@@ -837,7 +886,7 @@ useEffect(() => {
       console.debug('UAR: cycles after launch', cyclesRes);
       console.debug('UAR: items after launch', itemsRes);
       setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
 
       await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign for ${targetApp.name}. Cycle ID: ${response?.id || 'N/A'}`);
       alert(`✓ Review campaign launched for ${targetApp.name}!`);
@@ -874,7 +923,7 @@ useEffect(() => {
       const itemsRes = await getReviewItems({ top: 500 });
       console.log('[handleAction] itemsRes:', itemsRes);
       const mappedItems = Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(normalizeReviewItem)
+        ? normalizeReviewItems(itemsRes.items)
         : [];
       console.log('[handleAction] mappedItems:', mappedItems);
       setReviewItems(mappedItems);
@@ -908,7 +957,7 @@ useEffect(() => {
       // Refresh items from backend
       const itemsRes = await getReviewItems({ top: 500 });
       setReviewItems(Array.isArray(itemsRes?.items)
-        ? itemsRes.items.map(normalizeReviewItem)
+        ? normalizeReviewItems(itemsRes.items)
         : []);
       
       await addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} items`);
@@ -924,7 +973,7 @@ useEffect(() => {
     try {
       await reassignReviewItem({ itemId, managerId: fromManagerId, reassignToManagerId: toManagerId, comment });
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
       await addAuditLog('ITEM_REASSIGN', `Reassigned review item ${itemId} from ${fromManagerId} to ${toManagerId}`);
     } catch (e: any) {
       console.error('Failed to reassign review item:', e);
@@ -942,7 +991,7 @@ useEffect(() => {
       const failed = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
 
       const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
 
       await addAuditLog('ITEM_REASSIGN_BULK', `Bulk reassigned ${successCount}/${itemsToReassign.length} items to ${toManagerId}`);
 
