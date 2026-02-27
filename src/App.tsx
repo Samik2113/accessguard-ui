@@ -26,7 +26,9 @@ import {
   launchReview,
   actOnItem,
   confirmManager,
-  archiveCycle
+  archiveCycle,
+  loginUser,
+  resetUserPassword
 } from "./services/api";
 
 
@@ -34,6 +36,11 @@ import {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
   
   const [users, setUsers] = useState<User[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -111,35 +118,42 @@ const App: React.FC = () => {
   const [auditFilterDateFrom, setAuditFilterDateFrom] = useState('');
   const [auditFilterDateTo, setAuditFilterDateTo] = useState('');
 
-  const activeManagers = useMemo(() => {
-    const managerIds = new Set(reviewItems.filter(i => {
-      const cycle = cycles.find(c => c.id === i.reviewCycleId);
-      return cycle?.status !== ReviewStatus.COMPLETED;
-    }).map(item => item.managerId));
-    return users.filter(u => managerIds.has(u.id));
-  }, [reviewItems, users, cycles]);
+  const handleLogin = async () => {
+    setLoginError(null);
+    const email = loginEmail.trim().toLowerCase();
+    const password = loginPassword;
 
-  const toggleRole = () => {
-    if (currentUser.role === UserRole.ADMIN) {
-      const firstManager = activeManagers.length > 0 ? activeManagers[0] : null;
-      setCurrentUser({ 
-        name: firstManager ? firstManager.name : 'No Managers Found', 
-        id: firstManager ? firstManager.id : 'MGR_AUTO', 
-        role: UserRole.MANAGER 
+    if (!email || !password) {
+      setLoginError('Enter emailId and password.');
+      return;
+    }
+
+    setLoggingIn(true);
+    try {
+      const res: any = await loginUser({ email, password });
+      const role = String(res?.user?.role || '').toUpperCase() === UserRole.ADMIN ? UserRole.ADMIN : UserRole.MANAGER;
+      setCurrentUser({
+        name: String(res?.user?.name || res?.user?.userId || 'User'),
+        id: String(res?.user?.id || res?.user?.userId || ''),
+        role
       });
-      setActiveTab('reviews');
-    } else {
-      setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
-      setActiveTab('dashboard');
+      setActiveTab(role === UserRole.ADMIN ? 'dashboard' : 'reviews');
+      setIsAuthenticated(true);
+    } catch (err: any) {
+      setLoginError(err?.message || 'Invalid emailId or password.');
+    } finally {
+      setLoggingIn(false);
     }
   };
 
-  const handleSwitchManager = (managerId: string) => {
-    const target = users.find(u => u.id === managerId);
-    if (target) {
-      setCurrentUser(prev => ({ ...prev, id: target.id, name: target.name }));
-      addAuditLog('MANAGER_SWITCH', `Admin impersonated view for manager: ${target.name} (${target.id})`);
-    }
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setActiveTab('dashboard');
+    setLoginEmail('');
+    setLoginPassword('');
+    setLoginError(null);
+    setLoggingIn(false);
+    setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
   };
 
   /*const addAuditLog = (action: string, details: string) => {
@@ -545,7 +559,26 @@ useEffect(() => {
 	  });
 	  
 	  
-    await importHrUsers(normalized, { replaceAll: true, debug: true });            // POST to /api/hr/import
+    const importResult: any = await importHrUsers(normalized, { replaceAll: true, debug: true, resetPasswords: false, returnCredentials: true });            // POST to /api/hr/import
+      if (Array.isArray(importResult?.credentials) && importResult.credentials.length > 0) {
+        const headers = ['userId', 'name', 'email', 'temporaryPassword', 'mustChangePassword'];
+        const rows = importResult.credentials.map((cred: any) => [
+          cred.userId,
+          cred.name,
+          cred.email,
+          cred.temporaryPassword,
+          String(!!cred.mustChangePassword)
+        ]);
+        const csv = [headers.join(','), ...rows.map((row: string[]) => row.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `new_user_credentials_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(`Generated ${importResult.credentials.length} temporary passwords. CSV downloaded for secure sharing.`);
+      }
       const res = await getHrUsers({ top: 200 }); // refresh
       setUsers(res.items ?? []);
       setAccess(prev => recalculateSoD(prev, sodPolicies));
@@ -927,8 +960,73 @@ useEffect(() => {
   }
 };
 
+  const handleResetUserPassword = async (userId: string) => {
+    const res: any = await resetUserPassword({ userId });
+    await addAuditLog('PASSWORD_RESET', `Temporary password reset for user ${userId}`);
+    return {
+      temporaryPassword: String(res?.temporaryPassword || ''),
+      user: res?.user || { userId }
+    };
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">AccessGuard Login</h1>
+            <p className="text-sm text-slate-500 mt-1">Sign in with emailId and password.</p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Email Id</label>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(event) => {
+                  setLoginEmail(event.target.value);
+                  setLoginError(null);
+                }}
+                placeholder="name@company.com"
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Password</label>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => {
+                  setLoginPassword(event.target.value);
+                  setLoginError(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleLogin();
+                }}
+                placeholder="Enter password"
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+
+            {loginError && <p className="text-sm text-red-600">{loginError}</p>}
+
+            <button
+              onClick={handleLogin}
+              disabled={loggingIn}
+              className="w-full px-4 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+            >
+              {loggingIn ? 'Signing In...' : 'Sign In'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} toggleRole={toggleRole} availableManagers={activeManagers} onSwitchManager={handleSwitchManager}>
+    <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
@@ -937,6 +1035,7 @@ useEffect(() => {
     applications={applications}
     entitlements={entitlements}
     sodPolicies={sodPolicies}
+    onResetUserPassword={handleResetUserPassword}
     onSelectApp={setSelectedAppId}         // <-- add this if Inventory can drive selection
     onDataImport={handleDataImport}
     onAddApp={app => { createApplication(app); }}

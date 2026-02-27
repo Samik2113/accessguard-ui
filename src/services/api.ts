@@ -104,14 +104,22 @@ export const archiveCycle         = (payload: { cycleId: string; appId: string }
   postJson("/api/reviews-archive", payload);
 
 // -------------------- Ingest (admin screens) --------------------
-type ImportOpts = { replaceAll?: boolean; debug?: boolean };
+type ImportOpts = { replaceAll?: boolean; debug?: boolean; resetPasswords?: boolean; returnCredentials?: boolean };
 
 export const importHrUsers = (items: any[], opts?: ImportOpts) => {
   const query: Record<string, string> = {};
   if (opts?.replaceAll) query.replaceAll = "true";
   if (opts?.debug) query.debug = "true";
+  if (opts?.resetPasswords) query.resetPasswords = "true";
+  if (opts?.returnCredentials) query.returnCredentials = "true";
   return postJson("/api/hr-import", items, query);
 };
+
+export const loginUser = (payload: { email: string; password: string }) =>
+  postJson("/api/auth-login", payload);
+
+export const resetUserPassword = (payload: { userId: string }) =>
+  postJson("/api/auth-reset-password", payload);
 
 export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts-import", items, { appId });
 export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements-import", items, { appId });

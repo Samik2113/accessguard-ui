@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getAccountsByUser, importSodPolicies } from '../services/api';
-import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package } from 'lucide-react';
+import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
 
@@ -15,10 +15,11 @@ interface InventoryProps {
   onRemoveApp: (appId: string) => void;
   onUpdateEntitlement: (ent: EntitlementDefinition) => void;
   onUpdateSoD: (policies: SoDPolicy[]) => void;
+  onResetUserPassword: (userId: string) => Promise<{ temporaryPassword: string; user?: any }>;
   onSelectApp?: (appId: string) => void;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSelectApp }) => {
+const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onResetUserPassword, onSelectApp }) => {
   const [activeSubTab, setActiveSubTab] = useState<'identities' | 'applications' | 'sod'>('identities');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [appManagementTab, setAppManagementTab] = useState<'accounts' | 'definitions'>('accounts');
@@ -28,6 +29,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [groupInApp, setGroupInApp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [userAllAccess, setUserAllAccess] = useState<ApplicationAccess[] | null>(null);
+  const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{ userId: string; name: string; temporaryPassword: string } | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState(false);
   
   // Editing state for Entitlements
   const [editingEnt, setEditingEnt] = useState<EntitlementDefinition | null>(null);
@@ -516,6 +520,39 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const viewingUser = users.find(u => u.id === viewingUserId);
 
+  const handleResetPassword = async (u: User) => {
+    try {
+      setResettingUserId(u.id);
+      setCopiedPassword(false);
+      const res = await onResetUserPassword(u.id);
+      const temporaryPassword = String(res?.temporaryPassword || '');
+      if (!temporaryPassword) {
+        alert('Password reset completed, but no temporary password was returned.');
+        return;
+      }
+      setResetResult({ userId: u.id, name: u.name, temporaryPassword });
+    } catch (e: any) {
+      alert(`Failed to reset password: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setResettingUserId(null);
+    }
+  };
+
+  const copyResetPassword = async () => {
+    if (!resetResult?.temporaryPassword) return;
+    try {
+      await navigator.clipboard.writeText(resetResult.temporaryPassword);
+      setCopiedPassword(true);
+    } catch {
+      alert('Copy failed. Please copy the password manually before clicking OK.');
+    }
+  };
+
+  const closeResetPasswordModal = () => {
+    setResetResult(null);
+    setCopiedPassword(false);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex border-b border-slate-200">
@@ -621,9 +658,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <button onClick={() => setViewingUserId(u.id)} className="text-blue-600 hover:text-blue-800 flex items-center gap-1.5 ml-auto font-bold text-xs">
-                              <Eye className="w-3.5 h-3.5" /> Drill Down
-                            </button>
+                            <div className="flex items-center justify-end gap-3">
+                              <button
+                                onClick={() => handleResetPassword(u)}
+                                disabled={resettingUserId === u.id}
+                                className="text-orange-600 hover:text-orange-800 flex items-center gap-1.5 font-bold text-xs disabled:text-slate-300 disabled:cursor-not-allowed"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" /> {resettingUserId === u.id ? 'Resetting...' : 'Reset Password'}
+                              </button>
+                              <button onClick={() => setViewingUserId(u.id)} className="text-blue-600 hover:text-blue-800 flex items-center gap-1.5 font-bold text-xs">
+                                <Eye className="w-3.5 h-3.5" /> Drill Down
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -631,6 +677,35 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetResult && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">Password updated successfully</h3>
+            <p className="text-sm text-slate-600 mt-1">Share this temporary password with {resetResult.name} ({resetResult.userId}). It will not be shown again after you click OK.</p>
+
+            <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Temporary Password</p>
+              <p className="mt-1 text-sm font-mono text-slate-800 break-all">{resetResult.temporaryPassword}</p>
+            </div>
+
+            <div className="mt-5 flex items-center gap-3 justify-end">
+              <button
+                onClick={copyResetPassword}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 inline-flex items-center gap-2"
+              >
+                <Copy className="w-4 h-4" /> {copiedPassword ? 'Copied' : 'Copy Password'}
+              </button>
+              <button
+                onClick={closeResetPasswordModal}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>

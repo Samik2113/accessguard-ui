@@ -1,17 +1,15 @@
 
 import React from 'react';
 import { NAV_ITEMS } from '../constants';
-import { UserRole, User } from '../types';
-import { ShieldCheck, User as UserIcon, ChevronDown } from 'lucide-react';
+import { UserRole } from '../types';
+import { ShieldCheck, User as UserIcon, LogOut } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   currentUser: { name: string; id: string; role: UserRole };
-  toggleRole: () => void;
-  availableManagers: User[];
-  onSwitchManager: (managerId: string) => void;
+  onLogout: () => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -19,9 +17,7 @@ const Layout: React.FC<LayoutProps> = ({
   activeTab, 
   setActiveTab, 
   currentUser, 
-  toggleRole, 
-  availableManagers,
-  onSwitchManager 
+  onLogout
 }) => {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
@@ -58,24 +54,6 @@ const Layout: React.FC<LayoutProps> = ({
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          {currentUser.role === UserRole.MANAGER && availableManagers.length > 0 && (
-            <div className="mb-4 px-2">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 px-1">Active Manager View</label>
-              <div className="relative">
-                <select 
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-3 py-2 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  value={currentUser.id}
-                  onChange={(e) => onSwitchManager(e.target.value)}
-                >
-                  {availableManagers.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-          )}
-
           <div className="flex items-center gap-3 px-4 py-3 bg-slate-800 rounded-xl mb-4">
             <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center">
               <UserIcon className="w-4 h-4 text-white" />
@@ -86,10 +64,13 @@ const Layout: React.FC<LayoutProps> = ({
             </div>
           </div>
           <button 
-            onClick={toggleRole}
+            onClick={onLogout}
             className="w-full text-center text-xs font-bold bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 py-2 rounded-lg transition-colors"
           >
-            Switch to {currentUser.role === UserRole.ADMIN ? 'Manager' : 'Admin'} View
+            <span className="inline-flex items-center gap-1.5">
+              <LogOut className="w-3.5 h-3.5" />
+              Logout
+            </span>
           </button>
         </div>
       </aside>
