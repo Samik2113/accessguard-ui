@@ -73,7 +73,8 @@ module.exports = async function (context, req) {
     } catch (_) {
     }
 
-    const role = String(authUser.role || "MANAGER").toUpperCase();
+    const roleRaw = String(authUser.role || "USER").toUpperCase();
+    const role = roleRaw === "MANAGER" ? "USER" : roleRaw;
 
     return {
       status: 200,
@@ -85,7 +86,7 @@ module.exports = async function (context, req) {
           userId: String(authUser.userId),
           name: String(hrProfile?.name || authUser.userId),
           email,
-          role: role === "ADMIN" ? "ADMIN" : "MANAGER"
+          role: role === "ADMIN" || role === "AUDITOR" ? role : "USER"
         },
         mustChangePassword: !!authUser.mustChangePassword
       }

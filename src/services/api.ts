@@ -121,6 +121,12 @@ export const loginUser = (payload: { email: string; password: string }) =>
 export const resetUserPassword = (payload: { userId: string }) =>
   postJson("/api/auth-reset-password", payload);
 
+export const setUserRole = (payload: { userId: string; role: 'ADMIN' | 'AUDITOR' | 'USER' }) =>
+  postJson("/api/auth-set-role", payload);
+
+export const setUserRolesBulk = (payload: Array<{ userId: string; role: 'ADMIN' | 'AUDITOR' | 'USER' }>) =>
+  postJson("/api/auth-set-role", payload);
+
 export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts-import", items, { appId });
 export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements-import", items, { appId });
 export const importSodPolicies    = (items: any[]) => postJson("/api/sod-import", items);

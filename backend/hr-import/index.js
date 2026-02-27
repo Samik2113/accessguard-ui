@@ -50,9 +50,10 @@ function parseBoolean(v) {
 
 function normalizeRole(inputRole, userId) {
   const role = String(inputRole || "").trim().toUpperCase();
-  if (role === "ADMIN" || role === "MANAGER" || role === "APP_OWNER") return role;
+  if (role === "ADMIN" || role === "AUDITOR" || role === "USER") return role;
+  if (role === "MANAGER") return "USER";
   if (String(userId || "").trim().toUpperCase() === "ADM001") return "ADMIN";
-  return "MANAGER";
+  return "USER";
 }
 
 function generateTempPassword(length = 12) {
@@ -136,6 +137,7 @@ module.exports = async function (context, req) {
         ...u,
         userId,
         email,
+        role: normalizeRole(u.role, userId),
         id: userId,            // keep id == userId
         createdAt: u.createdAt || now,
         updatedAt: now,

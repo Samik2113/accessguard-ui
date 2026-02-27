@@ -44,7 +44,7 @@ function bad(status, error, req) {
 }
 
 function defaultRoleFor(userId) {
-  return String(userId || "").trim().toUpperCase() === "ADM001" ? "ADMIN" : "MANAGER";
+  return String(userId || "").trim().toUpperCase() === "ADM001" ? "ADMIN" : "USER";
 }
 
 module.exports = async function (context, req) {

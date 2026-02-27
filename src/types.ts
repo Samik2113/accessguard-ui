@@ -1,7 +1,7 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
-  MANAGER = 'MANAGER',
-  APP_OWNER = 'APP_OWNER'
+  AUDITOR = 'AUDITOR',
+  USER = 'USER'
 }
 
 export enum ReviewStatus {

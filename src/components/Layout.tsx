@@ -32,8 +32,7 @@ const Layout: React.FC<LayoutProps> = ({
 
         <nav className="flex-1 mt-6 px-4 space-y-1">
           {NAV_ITEMS.map((item) => {
-            // Only show items that match user's role OR have no role restriction
-            if (item.role && item.role !== currentUser.role) return null;
+            if (Array.isArray((item as any).roles) && !(item as any).roles.includes(currentUser.role)) return null;
             
             const isActive = activeTab === item.id;
             return (

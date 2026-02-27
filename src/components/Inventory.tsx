@@ -15,11 +15,13 @@ interface InventoryProps {
   onRemoveApp: (appId: string) => void;
   onUpdateEntitlement: (ent: EntitlementDefinition) => void;
   onUpdateSoD: (policies: SoDPolicy[]) => void;
+  onSetUserRole: (userId: string, role: 'ADMIN' | 'AUDITOR' | 'USER') => Promise<void>;
+  onBulkSetUserRole: (userIds: string[], role: 'ADMIN' | 'AUDITOR' | 'USER') => Promise<void>;
   onResetUserPassword: (userId: string) => Promise<{ temporaryPassword: string; user?: any }>;
   onSelectApp?: (appId: string) => void;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onResetUserPassword, onSelectApp }) => {
+const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
   const [activeSubTab, setActiveSubTab] = useState<'identities' | 'applications' | 'sod'>('identities');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [appManagementTab, setAppManagementTab] = useState<'accounts' | 'definitions'>('accounts');
@@ -30,6 +32,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [userAllAccess, setUserAllAccess] = useState<ApplicationAccess[] | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [bulkRole, setBulkRole] = useState<'ADMIN' | 'AUDITOR' | 'USER'>('USER');
+  const [bulkUpdatingRole, setBulkUpdatingRole] = useState(false);
   const [resetResult, setResetResult] = useState<{ userId: string; name: string; temporaryPassword: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   
@@ -520,6 +526,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const viewingUser = users.find(u => u.id === viewingUserId);
 
+  const getUserRole = (u: any): 'ADMIN' | 'AUDITOR' | 'USER' => {
+    const role = String(u?.role || '').toUpperCase();
+    if (role === 'ADMIN' || role === 'AUDITOR') return role;
+    return 'USER';
+  };
+
   const handleResetPassword = async (u: User) => {
     try {
       setResettingUserId(u.id);
@@ -551,6 +563,46 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const closeResetPasswordModal = () => {
     setResetResult(null);
     setCopiedPassword(false);
+  };
+
+  const handleRoleChange = async (userId: string, role: 'ADMIN' | 'AUDITOR' | 'USER') => {
+    try {
+      setUpdatingRoleUserId(userId);
+      await onSetUserRole(userId, role);
+    } catch (e: any) {
+      alert(`Failed to update role: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setUpdatingRoleUserId(null);
+    }
+  };
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUserIds(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  };
+
+  const toggleSelectAllUsers = () => {
+    if (selectedUserIds.length === users.length) {
+      setSelectedUserIds([]);
+      return;
+    }
+    setSelectedUserIds(users.map(user => user.id));
+  };
+
+  const handleBulkRoleApply = async () => {
+    if (selectedUserIds.length === 0) {
+      alert('Select at least one user.');
+      return;
+    }
+    try {
+      setBulkUpdatingRole(true);
+      await onBulkSetUserRole(selectedUserIds, bulkRole);
+      alert(`Updated role to ${bulkRole} for ${selectedUserIds.length} user(s).`);
+      setSelectedUserIds([]);
+    } catch (e: any) {
+      alert(`Bulk role update failed: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setBulkUpdatingRole(false);
+    }
   };
 
   return (
@@ -602,6 +654,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button onClick={() => hrInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800">
                 <Upload className="w-4 h-4" /> Upload HR Data
               </button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkRole}
+                  onChange={(e) => setBulkRole(e.target.value as 'ADMIN' | 'AUDITOR' | 'USER')}
+                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white"
+                >
+                  <option value="ADMIN">Admin</option>
+                  <option value="AUDITOR">Auditor</option>
+                  <option value="USER">User</option>
+                </select>
+                <button
+                  onClick={handleBulkRoleApply}
+                  disabled={bulkUpdatingRole || selectedUserIds.length === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  {bulkUpdatingRole ? 'Updating...' : `Set Role (${selectedUserIds.length})`}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -616,11 +686,20 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 <table className="w-full text-left">
                   <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider font-bold border-b border-slate-200">
                     <tr>
+                      <th className="px-6 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={users.length > 0 && selectedUserIds.length === users.length}
+                          onChange={toggleSelectAllUsers}
+                          className="rounded text-blue-600"
+                        />
+                      </th>
                       <th className="px-6 py-3">Employee ID</th>
                       <th className="px-6 py-3">Name</th>
                       <th className="px-6 py-3">Department</th>
                       <th className="px-6 py-3">Reporting Manager</th>
                       <th className="px-6 py-3">Access Summary</th>
+                      <th className="px-6 py-3">Role</th>
                       <th className="px-6 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -632,6 +711,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       const manager = users.find(m => m.id === u.managerId);
                       return (
                         <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <input
+                              type="checkbox"
+                              checked={selectedUserIds.includes(u.id)}
+                              onChange={() => toggleUserSelection(u.id)}
+                              className="rounded text-blue-600"
+                            />
+                          </td>
                           <td className="px-6 py-4 font-mono font-medium text-slate-600">{u.id}</td>
                           <td className="px-6 py-4">
                             <div className="font-bold text-slate-800">{u.name}</div>
@@ -656,6 +743,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   </button>
                                 )}
                             </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <select
+                              value={getUserRole(u)}
+                              disabled={updatingRoleUserId === u.id}
+                              onChange={(e) => handleRoleChange(u.id, e.target.value as 'ADMIN' | 'AUDITOR' | 'USER')}
+                              className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white"
+                            >
+                              <option value="ADMIN">Admin</option>
+                              <option value="AUDITOR">Auditor</option>
+                              <option value="USER">User</option>
+                            </select>
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-3">

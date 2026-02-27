@@ -29,7 +29,9 @@ import {
   confirmManager,
   archiveCycle,
   loginUser,
-  resetUserPassword
+  resetUserPassword,
+  setUserRole,
+  setUserRolesBulk
 } from "./services/api";
 
 
@@ -132,13 +134,14 @@ const App: React.FC = () => {
     setLoggingIn(true);
     try {
       const res: any = await loginUser({ email, password });
-      const role = String(res?.user?.role || '').toUpperCase() === UserRole.ADMIN ? UserRole.ADMIN : UserRole.MANAGER;
+      const roleRaw = String(res?.user?.role || '').toUpperCase();
+      const role = roleRaw === UserRole.ADMIN ? UserRole.ADMIN : roleRaw === UserRole.AUDITOR ? UserRole.AUDITOR : UserRole.USER;
       setCurrentUser({
         name: String(res?.user?.name || res?.user?.userId || 'User'),
         id: String(res?.user?.id || res?.user?.userId || ''),
         role
       });
-      setActiveTab(role === UserRole.ADMIN ? 'dashboard' : 'reviews');
+      setActiveTab(role === UserRole.USER ? 'my-access' : 'dashboard');
       setIsAuthenticated(true);
     } catch (err: any) {
       setLoginError(err?.message || 'Invalid emailId or password.');
@@ -970,6 +973,28 @@ useEffect(() => {
     };
   };
 
+  const handleSetUserRole = async (userId: string, role: UserRole) => {
+    const allowedRole = role === UserRole.ADMIN || role === UserRole.AUDITOR ? role : UserRole.USER;
+    await setUserRole({ userId, role: allowedRole });
+    setUsers(prev => prev.map(user => user.id === userId ? ({ ...user, role: allowedRole } as any) : user));
+    await addAuditLog('ROLE_UPDATE', `Updated role for ${userId} to ${allowedRole}`);
+  };
+
+  const handleBulkSetUserRole = async (userIds: string[], role: UserRole) => {
+    const allowedRole = role === UserRole.ADMIN || role === UserRole.AUDITOR ? role : UserRole.USER;
+    const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+    if (uniqueUserIds.length === 0) return;
+
+    const payload = uniqueUserIds.map(userId => ({ userId, role: allowedRole }));
+    const result: any = await setUserRolesBulk(payload);
+    const successfulIds = Array.isArray(result?.results) && result.results.length > 0
+      ? result.results.map((r: any) => String(r.userId))
+      : uniqueUserIds;
+
+    setUsers(prev => prev.map(user => successfulIds.includes(user.id) ? ({ ...user, role: allowedRole } as any) : user));
+    await addAuditLog('ROLE_UPDATE_BULK', `Updated role to ${allowedRole} for users: ${successfulIds.join(', ')}`);
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
@@ -1037,6 +1062,8 @@ useEffect(() => {
     applications={applications}
     entitlements={entitlements}
     sodPolicies={sodPolicies}
+    onSetUserRole={handleSetUserRole}
+    onBulkSetUserRole={handleBulkSetUserRole}
     onResetUserPassword={handleResetUserPassword}
     onSelectApp={setSelectedAppId}         // <-- add this if Inventory can drive selection
     onDataImport={handleDataImport}
