@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
 import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
+import MyAccess from './components/MyAccess';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
@@ -1028,6 +1029,7 @@ useEffect(() => {
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} />}
+      {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
     users={users}

@@ -43,6 +43,10 @@ function bad(status, error, req) {
   return { status, headers: cors(req), body: { ok: false, error } };
 }
 
+function defaultRoleFor(userId) {
+  return String(userId || "").trim().toUpperCase() === "ADM001" ? "ADMIN" : "MANAGER";
+}
+
 module.exports = async function (context, req) {
   try {
     if (req.method === "OPTIONS") return { status: 204, headers: cors(req) };
@@ -68,7 +72,31 @@ module.exports = async function (context, req) {
     } catch (_) {
     }
 
-    if (!authUser) return bad(404, `Auth profile not found for userId=${targetUserId}`, req);
+    let hrProfile = null;
+    try {
+      const hrRead = await hrC.item(targetUserId, targetUserId).read();
+      hrProfile = hrRead?.resource || null;
+    } catch (_) {
+    }
+
+    if (!authUser) {
+      if (!hrProfile) {
+        return bad(404, `No auth/hr profile found for userId=${targetUserId}. Import HR user first.`, req);
+      }
+      const hrEmail = String(hrProfile.email || "").trim().toLowerCase();
+      if (!hrEmail) {
+        return bad(400, `HR profile for userId=${targetUserId} is missing email.`, req);
+      }
+      authUser = {
+        id: targetUserId,
+        userId: targetUserId,
+        email: hrEmail,
+        role: defaultRoleFor(targetUserId),
+        status: "ACTIVE",
+        createdAt: new Date().toISOString(),
+        type: "user-auth"
+      };
+    }
 
     const temporaryPassword = generateTempPassword();
     const hashed = hashPassword(temporaryPassword);
@@ -88,16 +116,8 @@ module.exports = async function (context, req) {
 
     await authC.items.upsert(updatedAuth);
 
-    let displayName = targetUserId;
-    let email = String(authUser.email || "").trim().toLowerCase();
-    try {
-      const hrRead = await hrC.item(targetUserId, targetUserId).read();
-      if (hrRead?.resource) {
-        displayName = String(hrRead.resource.name || displayName);
-        email = String(hrRead.resource.email || email).trim().toLowerCase();
-      }
-    } catch (_) {
-    }
+    let displayName = String(hrProfile?.name || targetUserId);
+    let email = String(hrProfile?.email || authUser.email || "").trim().toLowerCase();
 
     const actorId = req.headers["x-actor-id"] || "ADM001";
     const actorName = req.headers["x-actor-name"] || "Admin User";

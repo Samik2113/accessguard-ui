@@ -1,10 +1,11 @@
 
 import React from 'react';
-import { Shield, FileCheck, BarChart3, History, Layers } from 'lucide-react';
+import { Shield, FileCheck, BarChart3, History, Layers, UserCheck } from 'lucide-react';
 import { UserRole } from './types';
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: <Layers className="w-5 h-5" /> },
+  { id: 'my-access', label: 'My Access', icon: <UserCheck className="w-5 h-5" />, role: UserRole.MANAGER },
   { id: 'inventory', label: 'Inventory', icon: <Shield className="w-5 h-5" />, role: UserRole.ADMIN },
   { id: 'reviews', label: 'My Reviews', icon: <FileCheck className="w-5 h-5" />, role: UserRole.MANAGER },
   { id: 'governance', label: 'Governance', icon: <BarChart3 className="w-5 h-5" />, role: UserRole.ADMIN },
