@@ -29,6 +29,7 @@ import {
   confirmManager,
   archiveCycle,
   loginUser,
+  changePassword,
   resetUserPassword,
   setUserRole,
   setUserRolesBulk
@@ -44,6 +45,14 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCurrentPassword, setResetCurrentPassword] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
   
   const [users, setUsers] = useState<User[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -158,6 +167,39 @@ const App: React.FC = () => {
     setLoginError(null);
     setLoggingIn(false);
     setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+  };
+
+  const handleSelfPasswordReset = async () => {
+    setResetError(null);
+    setResetSuccess(null);
+
+    const email = resetEmail.trim().toLowerCase();
+    if (!email || !resetCurrentPassword || !resetNewPassword || !resetConfirmPassword) {
+      setResetError('Fill all fields.');
+      return;
+    }
+    if (resetNewPassword.length < 8) {
+      setResetError('New password must be at least 8 characters.');
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setResetError('New password and confirm password must match.');
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      await changePassword({ email, currentPassword: resetCurrentPassword, newPassword: resetNewPassword });
+      setResetSuccess('Password updated successfully. You can now sign in with your new password.');
+      setResetCurrentPassword('');
+      setResetNewPassword('');
+      setResetConfirmPassword('');
+      setLoginEmail(email);
+    } catch (err: any) {
+      setResetError(err?.message || 'Failed to reset password.');
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
   /*const addAuditLog = (action: string, details: string) => {
@@ -1045,8 +1087,97 @@ useEffect(() => {
             >
               {loggingIn ? 'Signing In...' : 'Sign In'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowPasswordReset(true);
+                setResetEmail(loginEmail);
+                setResetError(null);
+                setResetSuccess(null);
+              }}
+              className="w-full text-sm text-blue-700 hover:text-blue-800 font-semibold"
+            >
+              Reset Password
+            </button>
           </div>
         </div>
+
+        {showPasswordReset && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Reset Password</h3>
+                <p className="text-sm text-slate-500 mt-1">Enter your current password and set a new password.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Email Id</label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Current Password</label>
+                <input
+                  type="password"
+                  value={resetCurrentPassword}
+                  onChange={(e) => setResetCurrentPassword(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">New Password</label>
+                <input
+                  type="password"
+                  value={resetNewPassword}
+                  onChange={(e) => setResetNewPassword(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={resetConfirmPassword}
+                  onChange={(e) => setResetConfirmPassword(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              {resetError && <p className="text-sm text-red-600">{resetError}</p>}
+              {resetSuccess && <p className="text-sm text-emerald-600">{resetSuccess}</p>}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordReset(false);
+                    setResetError(null);
+                    setResetSuccess(null);
+                  }}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelfPasswordReset}
+                  disabled={resettingPassword}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  {resettingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

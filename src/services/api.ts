@@ -118,6 +118,9 @@ export const importHrUsers = (items: any[], opts?: ImportOpts) => {
 export const loginUser = (payload: { email: string; password: string }) =>
   postJson("/api/auth-login", payload);
 
+export const changePassword = (payload: { email: string; currentPassword: string; newPassword: string }) =>
+  postJson("/api/auth-change-password", payload);
+
 export const resetUserPassword = (payload: { userId: string }) =>
   postJson("/api/auth-reset-password", payload);
 
