@@ -104,6 +104,10 @@ export interface ReviewItem {
   violatedPolicyIds?: string[];
   isOrphan: boolean;
   isPrivileged: boolean;
+  reassignedAt?: string;
+  reassignedBy?: string;
+  reassignmentComment?: string | null;
+  reassignmentCount?: number;
 }
 
 export interface AuditLog {

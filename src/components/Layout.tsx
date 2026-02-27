@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { NAV_ITEMS } from '../constants';
 import { UserRole } from '../types';
-import { ShieldCheck, User as UserIcon, LogOut } from 'lucide-react';
+import { ShieldCheck, User as UserIcon, LogOut, ChevronDown } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -19,6 +19,9 @@ const Layout: React.FC<LayoutProps> = ({
   currentUser, 
   onLogout
 }) => {
+  const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
+  const [adminPanelExpanded, setAdminPanelExpanded] = useState(true);
+
   const visibleItems = NAV_ITEMS.filter((item: any) => !Array.isArray(item.roles) || item.roles.includes(currentUser.role));
   const workspaceItems = visibleItems.filter((item: any) => item.panel === 'workspace');
   const adminItems = visibleItems.filter((item: any) => item.panel === 'admin-auditor');
@@ -53,17 +56,31 @@ const Layout: React.FC<LayoutProps> = ({
         </div>
 
         <nav className="flex-1 mt-6 px-4 space-y-4 overflow-y-auto">
-          {workspaceItems.length > 0 && (
+          {adminItems.length > 0 && (
             <div className="space-y-1">
-              <p className="px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500">My Workspace</p>
-              {workspaceItems.map(renderNavButton)}
+              <button
+                type="button"
+                onClick={() => setAdminPanelExpanded(prev => !prev)}
+                className="w-full flex items-center justify-between px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500 hover:text-slate-300"
+              >
+                <span>Admin / Auditor Panel</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${adminPanelExpanded ? '' : '-rotate-90'}`} />
+              </button>
+              {adminPanelExpanded && adminItems.map(renderNavButton)}
             </div>
           )}
 
-          {adminItems.length > 0 && (
+          {workspaceItems.length > 0 && (
             <div className="space-y-1">
-              <p className="px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500">Admin / Auditor Panel</p>
-              {adminItems.map(renderNavButton)}
+              <button
+                type="button"
+                onClick={() => setWorkspaceExpanded(prev => !prev)}
+                className="w-full flex items-center justify-between px-3 text-[10px] font-bold tracking-widest uppercase text-slate-500 hover:text-slate-300"
+              >
+                <span>My Workspace</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${workspaceExpanded ? '' : '-rotate-90'}`} />
+              </button>
+              {workspaceExpanded && workspaceItems.map(renderNavButton)}
             </div>
           )}
         </nav>

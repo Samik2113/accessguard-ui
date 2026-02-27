@@ -66,11 +66,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
   const exportCampaignDetail = () => {
     if (!selectedCampaign) return;
-    const headers = ['User', 'Account ID', 'Entitlement', 'Reviewer', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
+    const headers = ['User', 'Account ID', 'Entitlement', 'Reviewer', 'Reassigned By', 'Reassigned At', 'Reassign Count', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
     const csvContent = [
       headers.join(','),
       ...viewingItems.map(i => {
         const reviewer = users.find(u => u.id === i.managerId)?.name || i.managerId;
+        const reassignedBy = i.reassignedBy ? (users.find(u => u.id === i.reassignedBy)?.name || i.reassignedBy) : '';
         const risks = [
           i.isSoDConflict ? `SoD Conflict (${(i.violatedPolicyNames || []).join(';')})` : '',
           i.isOrphan ? 'Orphan Account' : '',
@@ -81,6 +82,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           `"${i.appUserId}"`,
           `"${i.entitlement}"`,
           `"${reviewer}"`,
+          `"${reassignedBy}"`,
+          `"${i.reassignedAt || ''}"`,
+          `"${i.reassignmentCount || ''}"`,
           `"${i.status}"`,
           `"${i.actionedAt || ''}"`,
           `"${i.remediatedAt || ''}"`,
@@ -340,6 +344,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                             <td className="px-6 py-4">
                                 <div className="text-xs font-bold">{reviewer?.name || item.managerId}</div>
                                 <div className="text-[10px] text-slate-400 uppercase">Reviewing Manager</div>
+                                {item.reassignedBy && (
+                                  <div className="mt-1 text-[10px] text-slate-500 leading-tight">
+                                    <div className="font-semibold">Reassigned by: {users.find(u => u.id === item.reassignedBy)?.name || item.reassignedBy}</div>
+                                    {item.reassignedAt && <div className="text-[9px] text-slate-400 font-mono">{new Date(item.reassignedAt).toLocaleString()}</div>}
+                                    <div className="text-[9px] text-slate-400 uppercase">Count: {item.reassignmentCount || 1}</div>
+                                  </div>
+                                )}
                             </td>
                             <td className="px-6 py-4">
                                 <div className="flex items-center gap-2 mb-1">

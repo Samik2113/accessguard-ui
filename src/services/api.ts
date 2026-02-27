@@ -97,6 +97,14 @@ export const actOnItem            = (payload: {
 }) =>
   postJson("/api/reviews-item-action", payload);
 
+export const reassignReviewItem = (payload: {
+  itemId: string;
+  managerId: string;
+  reassignToManagerId: string;
+  comment?: string;
+}) =>
+  postJson("/api/reviews-item-action", payload);
+
 export const confirmManager       = (payload: { cycleId: string; appId: string; managerId: string }) =>
   postJson("/api/reviews-confirm", payload);
 

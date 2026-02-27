@@ -26,6 +26,7 @@ import {
   getReviewItems,
   launchReview,
   actOnItem,
+  reassignReviewItem,
   confirmManager,
   archiveCycle,
   loginUser,
@@ -114,6 +115,7 @@ const App: React.FC = () => {
       isPrivileged: typeof item?.isPrivileged === 'boolean' ? item.isPrivileged : false,
       violatedPolicyNames: Array.isArray(item?.violatedPolicyNames) ? item.violatedPolicyNames : [],
       violatedPolicyIds: Array.isArray(item?.violatedPolicyIds) ? item.violatedPolicyIds : [],
+      reassignmentCount: typeof item?.reassignmentCount === 'number' ? item.reassignmentCount : 0,
     };
   };
 
@@ -902,6 +904,18 @@ useEffect(() => {
     }
   };
 
+  const handleReassignReviewItem = async (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => {
+    try {
+      await reassignReviewItem({ itemId, managerId: fromManagerId, reassignToManagerId: toManagerId, comment });
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(Array.isArray(itemsRes?.items) ? itemsRes.items.map(normalizeReviewItem) : []);
+      await addAuditLog('ITEM_REASSIGN', `Reassigned review item ${itemId} from ${fromManagerId} to ${toManagerId}`);
+    } catch (e: any) {
+      console.error('Failed to reassign review item:', e);
+      alert(`Failed to reassign item: ${e?.message || 'Unknown error'}`);
+    }
+  };
+
   // --- Audit Filter Logic ---
   const filteredAuditLogs = useMemo(() => {
     return auditLogs.filter(log => {
@@ -1223,7 +1237,7 @@ useEffect(() => {
             const cycle = cycles.find(c => c.id === i.reviewCycleId);
             return cycle?.status !== ReviewStatus.COMPLETED;
           })} 
-          onAction={handleAction} onBulkAction={handleBulkAction} currentManagerId={currentUser.id} isAdmin={currentUser.role === UserRole.ADMIN} 
+          onAction={handleAction} onBulkAction={handleBulkAction} onReassign={handleReassignReviewItem} currentManagerId={currentUser.id} isAdmin={false} 
           applications={applications} sodPolicies={sodPolicies} users={users} access={access} cycles={cycles} onConfirmReview={handleConfirmReview}
         />
       )}

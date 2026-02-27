@@ -5,11 +5,12 @@ const ajv = new Ajv({ allErrors: true });
 
 const schema = {
   type: "object",
-  required: ["itemId", "managerId", "status"],
+  required: ["itemId", "managerId"],
   properties: {
     itemId: { type: "string", minLength: 1 },
     managerId: { type: "string", minLength: 1 },
     status: { type: "string", minLength: 1 },
+    reassignToManagerId: { type: "string" },
     comment: { type: "string" },
     remediationComment: { type: "string" },
     remediatedAt: { type: "string" }
@@ -33,12 +34,71 @@ module.exports = async function (context, req) {
     const itemsC = db.container("reviewItems");
     const cyclesC = db.container("reviewCycles");
     const logsC = db.container("auditLogs");
+    const hrC = db.container("hrUsers");
 
     const { resource: itm } = await itemsC.item(body.itemId, body.managerId).read();
     if (!itm) return bad(404, "Item not found", req);
 
-    const newStatus = String(body.status).toUpperCase();
+    const actorId = req.headers["x-actor-id"] || body.managerId;
     const now = new Date().toISOString();
+    const maxReassignments = Math.max(Number(process.env.MAX_REASSIGNMENTS || 3), 1);
+
+    if (body.reassignToManagerId && String(body.reassignToManagerId).trim().length > 0) {
+      const targetManagerId = String(body.reassignToManagerId).trim();
+      if (targetManagerId === String(body.managerId).trim()) {
+        return bad(400, "Target reviewer must be different from current reviewer.", req);
+      }
+      if (targetManagerId === String(itm.appUserId || "").trim()) {
+        return bad(400, "Reviewer cannot be the same user whose access is under review.", req);
+      }
+
+      const currentReassignmentCount = Number(itm.reassignmentCount || 0);
+      if (currentReassignmentCount >= maxReassignments) {
+        return bad(400, `Maximum reassignment limit reached (${maxReassignments}) for this item.`, req);
+      }
+
+      let targetHr = null;
+      try {
+        const hrRead = await hrC.item(targetManagerId, targetManagerId).read();
+        targetHr = hrRead?.resource || null;
+      } catch (_) {
+      }
+      if (!targetHr) {
+        return bad(400, `Target reviewer ${targetManagerId} not found in HR users.`, req);
+      }
+
+      const reassignedItem = {
+        ...itm,
+        id: itm.id,
+        managerId: targetManagerId,
+        reassignedAt: now,
+        reassignedBy: actorId,
+        reassignmentCount: currentReassignmentCount + 1,
+        reassignmentComment: typeof body.comment === "string" ? body.comment : (itm.reassignmentComment || null),
+        updatedAt: now
+      };
+
+      await itemsC.items.upsert(reassignedItem);
+      await itemsC.item(body.itemId, body.managerId).delete();
+
+      await logsC.items.upsert({
+        id: `LOG_${Date.now()}`,
+        userId: actorId,
+        userName: null,
+        timestamp: now,
+        action: "REVIEW_ITEM_REASSIGN",
+        details: `itemId=${body.itemId}; from=${body.managerId}; to=${targetManagerId}`,
+        type: "audit"
+      });
+
+      return ok({ itemId: body.itemId, managerId: targetManagerId, reassigned: true, reassignmentCount: currentReassignmentCount + 1, maxReassignments }, req);
+    }
+
+    if (!body.status || String(body.status).trim().length === 0) {
+      return bad(400, "status is required for action update", req);
+    }
+
+    const newStatus = String(body.status).toUpperCase();
 
     const ops = [
       { op: "set", path: "/status", value: newStatus }
@@ -108,7 +168,6 @@ module.exports = async function (context, req) {
         );
     }
 
-    const actorId = req.headers["x-actor-id"] || body.managerId;
     await logsC.items.upsert({
       id: `LOG_${Date.now()}`,
       userId: actorId,
