@@ -133,6 +133,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
       .filter(Boolean) as ReviewItem[];
   }, [selectedCampaignItems, filteredViewingItems]);
 
+  const selectedSkippedByLimitCount = useMemo(() => {
+    return selectedCampaignItemObjects.filter(i => Number(i.reassignmentCount || 0) >= maxReassignments).length;
+  }, [selectedCampaignItemObjects, maxReassignments]);
+
   const submitBulkReassignment = () => {
     if (!onBulkReassign) return;
     const targetManagerId = String(bulkReassignToManagerId || '').trim();
@@ -156,6 +160,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
       targetManagerId,
       bulkReassignComment.trim()
     );
+
+    if (selectedSkippedByLimitCount > 0) {
+      alert(`Submitted reassignment for ${selectedCampaignItemObjects.length - selectedSkippedByLimitCount} item(s). Skipped ${selectedSkippedByLimitCount} item(s) because max reassignment limit (${maxReassignments}) is reached.`);
+    }
 
     setShowBulkReassignModal(false);
     setBulkReassignSearch('');
@@ -610,7 +618,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[125] p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
-            <p className="text-sm text-slate-500 mb-4">Selected items: {selectedCampaignItemObjects.length}</p>
+            <p className="text-sm text-slate-500 mb-1">Selected items: {selectedCampaignItemObjects.length}</p>
+            <p className="text-sm text-slate-500 mb-4">Skipped due to max limit: {selectedSkippedByLimitCount}</p>
 
             <div className="mb-4">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Search Reviewer</label>

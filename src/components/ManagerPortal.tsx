@@ -143,6 +143,10 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     return selectedItemObjects.filter(i => Number(i.reassignmentCount || 0) < maxReassignments).length;
   }, [selectedItemObjects, maxReassignments]);
 
+  const selectedSkippedByLimitCount = useMemo(() => {
+    return selectedItemObjects.filter(i => Number(i.reassignmentCount || 0) >= maxReassignments).length;
+  }, [selectedItemObjects, maxReassignments]);
+
   const reassignmentCandidates = useMemo(() => {
     if (!reassignModal) return [];
     const term = reassignSearch.trim().toLowerCase();
@@ -213,6 +217,9 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     }
 
     onBulkReassign(eligibleItems.map(i => ({ itemId: i.id, fromManagerId: i.managerId })), targetManagerId, bulkReassignComment.trim());
+    if (selectedSkippedByLimitCount > 0) {
+      alert(`Submitted reassignment for ${eligibleItems.length} item(s). Skipped ${selectedSkippedByLimitCount} item(s) because max reassignment limit (${maxReassignments}) is reached.`);
+    }
     setShowBulkReassignModal(false);
     setBulkReassignSearch('');
     setBulkReassignToManagerId('');
@@ -577,6 +584,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
           <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
             <p className="text-sm text-slate-500 mb-2">Selected items: {selectedItemObjects.length} • Eligible: {selectedReassignableCount}</p>
+            <p className="text-sm text-slate-500 mb-1">Skipped due to max limit: {selectedSkippedByLimitCount}</p>
             <p className="text-sm text-slate-500 mb-4">Select a reviewer for all eligible selected items. Items at reassignment limit are skipped.</p>
 
             <div className="mb-4">

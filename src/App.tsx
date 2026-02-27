@@ -103,18 +103,31 @@ const App: React.FC = () => {
     const parentCycle = cycles.find(c => c.id === item?.reviewCycleId);
     const normalizedAppId = String(item?.appId ?? item?.applicationId ?? parentCycle?.appId ?? '');
     const isOrphan = typeof item?.isOrphan === 'boolean' ? item.isOrphan : false;
+    const parseBool = (value: any): boolean => value === true || value === 1 || String(value || '').toLowerCase() === 'true' || String(value || '').toLowerCase() === 'yes';
     const resolvedManagerId = (isOrphan && shouldResolveToAppOwner(item?.managerId))
       ? (getApplicationOwnerById(normalizedAppId) || String(item?.managerId || ''))
       : String(item?.managerId || '');
+    const violatedPolicyIds = Array.isArray(item?.violatedPolicyIds)
+      ? item.violatedPolicyIds
+      : (typeof item?.violatedPolicyIds === 'string' && item.violatedPolicyIds.trim().length > 0
+          ? item.violatedPolicyIds.split(',').map((id: string) => id.trim()).filter(Boolean)
+          : []);
+    const violatedPolicyNames = Array.isArray(item?.violatedPolicyNames)
+      ? item.violatedPolicyNames
+      : [];
+    const resolvedPolicyNames = violatedPolicyNames.length > 0
+      ? violatedPolicyNames
+      : violatedPolicyIds.map((id: string) => sodPolicies.find(policy => policy.id === id)?.policyName || id);
+    const isPrivileged = parseBool(item?.isPrivileged);
     return {
       ...item,
       appName: item?.appName || parentCycle?.appName || getApplicationNameById(normalizedAppId),
       managerId: resolvedManagerId,
-      isSoDConflict: typeof item?.isSoDConflict === 'boolean' ? item.isSoDConflict : false,
+      isSoDConflict: parseBool(item?.isSoDConflict) || violatedPolicyIds.length > 0,
       isOrphan,
-      isPrivileged: typeof item?.isPrivileged === 'boolean' ? item.isPrivileged : false,
-      violatedPolicyNames: Array.isArray(item?.violatedPolicyNames) ? item.violatedPolicyNames : [],
-      violatedPolicyIds: Array.isArray(item?.violatedPolicyIds) ? item.violatedPolicyIds : [],
+      isPrivileged,
+      violatedPolicyNames: resolvedPolicyNames,
+      violatedPolicyIds,
       reassignmentCount: typeof item?.reassignmentCount === 'number' ? item.reassignmentCount : 0,
     };
   };

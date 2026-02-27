@@ -190,7 +190,7 @@ module.exports = async function (context, req) {
 
     // Load all accounts under this app (campaign scope)
     const { resources: accounts } = await accountsC.items.query({
-      query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.isOrphan, c.correlatedUserId, c.appId FROM c WHERE c.appId=@a",
+      query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.isOrphan, c.correlatedUserId, c.appId, c.isPrivileged FROM c WHERE c.appId=@a",
       parameters: [{ name: "@a", value: appId }]
     }).fetchAll();
 
@@ -282,6 +282,11 @@ module.exports = async function (context, req) {
           }
 
           const conflictIds = conflictsFor(account.userId, account.appId, account.entitlement);
+          const conflictNames = conflictIds.map(id => {
+            const hit = policies.find(policy => (policy.id || policy.policyId) === id);
+            return hit?.policyName || String(id);
+          });
+          const isPrivileged = account.isPrivileged === true || String(account.isPrivileged || '').toLowerCase() === 'true' || String(account.isPrivileged || '').toLowerCase() === 'yes' || String(account.isPrivileged || '') === '1';
 
           // Item payload is shaped for manager-portal rendering and action lifecycle tracking
           const item = {
@@ -295,8 +300,10 @@ module.exports = async function (context, req) {
             entitlement: account.entitlement,
             status: "PENDING",
             isOrphan: !hr || !!account.isOrphan,
+            isPrivileged,
             isSoDConflict: conflictIds.length > 0,
             violatedPolicyIds: conflictIds,
+            violatedPolicyNames: conflictNames,
             createdAt: nowIso,
             actionedAt: null,
             remediatedAt: null,

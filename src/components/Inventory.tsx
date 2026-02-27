@@ -437,15 +437,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               } as ApplicationAccess;
             });
             // Recalculate SoD for the fetched items
+            const resolveRiskKey = (acc: ApplicationAccess) => {
+              if (acc.correlatedUserId) return `u:${acc.correlatedUserId}`;
+              const email = String(acc.email || '').trim().toLowerCase();
+              if (email) return `e:${email}`;
+              const userId = String(acc.userId || '').trim();
+              if (userId) return `id:${userId}`;
+              return `n:${String(acc.userName || '').trim().toLowerCase()}`;
+            };
             const userAccessMap: Record<string, { appId: string; entitlement: string }[]> = {};
             items.forEach(acc => {
-              if (!acc.correlatedUserId) return;
-              if (!userAccessMap[acc.correlatedUserId]) userAccessMap[acc.correlatedUserId] = [];
-              userAccessMap[acc.correlatedUserId].push({ appId: acc.appId, entitlement: acc.entitlement });
+              const key = resolveRiskKey(acc);
+              if (!key) return;
+              if (!userAccessMap[key]) userAccessMap[key] = [];
+              userAccessMap[key].push({ appId: acc.appId, entitlement: acc.entitlement });
             });
             const final = items.map(acc => {
-              if (!acc.correlatedUserId) return { ...acc, isSoDConflict: false, violatedPolicyIds: [], violatedPolicyNames: [] } as ApplicationAccess;
-              const userItems = userAccessMap[acc.correlatedUserId] || [];
+              const key = resolveRiskKey(acc);
+              const userItems = userAccessMap[key] || [];
               const violatedPolicies = sodPolicies.filter(policy => {
                 const has1 = userItems.some(i => i.appId === policy.appId1 && i.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase());
                 const has2 = userItems.some(i => i.appId === policy.appId2 && i.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
@@ -492,16 +501,25 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         });
 
         // Recalculate SoD locally for the fetched user access
+        const resolveRiskKey = (acc: ApplicationAccess) => {
+          if (acc.correlatedUserId) return `u:${acc.correlatedUserId}`;
+          const email = String(acc.email || '').trim().toLowerCase();
+          if (email) return `e:${email}`;
+          const userId = String(acc.userId || '').trim();
+          if (userId) return `id:${userId}`;
+          return `n:${String(acc.userName || '').trim().toLowerCase()}`;
+        };
         const userAccessMap: Record<string, { appId: string; entitlement: string }[]> = {};
         items.forEach(acc => {
-          if (!acc.correlatedUserId) return;
-          if (!userAccessMap[acc.correlatedUserId]) userAccessMap[acc.correlatedUserId] = [];
-          userAccessMap[acc.correlatedUserId].push({ appId: acc.appId, entitlement: acc.entitlement });
+          const key = resolveRiskKey(acc);
+          if (!key) return;
+          if (!userAccessMap[key]) userAccessMap[key] = [];
+          userAccessMap[key].push({ appId: acc.appId, entitlement: acc.entitlement });
         });
 
         const final = items.map(acc => {
-          if (!acc.correlatedUserId) return { ...acc, isSoDConflict: false, violatedPolicyIds: [], violatedPolicyNames: [] } as ApplicationAccess;
-          const userItems = userAccessMap[acc.correlatedUserId] || [];
+          const key = resolveRiskKey(acc);
+          const userItems = userAccessMap[key] || [];
           const violatedPolicies = sodPolicies.filter(policy => {
             const has1 = userItems.some(i => i.appId === policy.appId1 && i.entitlement.trim().toLowerCase() === policy.entitlement1.trim().toLowerCase());
             const has2 = userItems.some(i => i.appId === policy.appId2 && i.entitlement.trim().toLowerCase() === policy.entitlement2.trim().toLowerCase());
