@@ -232,6 +232,13 @@ module.exports = async function (context, req) {
     const riskIdentityKey = (account) => {
       const correlatedUserId = String(account?.correlatedUserId || "").trim();
       if (correlatedUserId) return `u:${correlatedUserId}`;
+      const isOrphan = parseBool(account?.isOrphan);
+      if (isOrphan) {
+        const orphanEmail = String(account?.email || "").trim().toLowerCase();
+        if (orphanEmail) return `e:${orphanEmail}`;
+        const orphanName = String(account?.userName || "").trim().toLowerCase();
+        if (orphanName) return `n:${orphanName}`;
+      }
       const userId = String(account?.userId || "").trim();
       if (userId) return `id:${userId}`;
       const email = String(account?.email || "").trim().toLowerCase();

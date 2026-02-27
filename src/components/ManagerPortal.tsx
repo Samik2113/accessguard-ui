@@ -84,12 +84,14 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
   const submissionTargets = useMemo(() => {
     if (isAdmin) return [];
+    const isPending = (status: any) => String(status || '').trim().toUpperCase() === ActionStatus.PENDING;
     const cycleIds = Array.from(new Set(managerItems.map(i => i.reviewCycleId)));
     return cycleIds.map(cycleId => {
       const cycleItems = managerItems.filter(i => i.reviewCycleId === cycleId);
       const cycle = cycles.find(c => c.id === cycleId);
-      const isAlreadySubmitted = cycle?.confirmedManagers.includes(currentManagerId);
-      const allActioned = cycleItems.every(i => i.status !== ActionStatus.PENDING);
+      const confirmedManagers = Array.isArray(cycle?.confirmedManagers) ? cycle!.confirmedManagers : [];
+      const isAlreadySubmitted = confirmedManagers.includes(currentManagerId);
+      const allActioned = cycleItems.length > 0 && cycleItems.every(i => !isPending(i.status));
       const appName = cycle?.appName || 'Unknown App';
       return { cycleId, appName, isAvailable: !isAlreadySubmitted && allActioned && cycleItems.length > 0 };
     }).filter(t => t.isAvailable);
@@ -135,9 +137,9 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
   const selectedItemObjects = useMemo(() => {
     return selectedItems
-      .map(itemId => items.find(i => i.id === itemId && i.managerId === currentManagerId))
+      .map(itemId => managerItems.find(i => i.id === itemId))
       .filter(Boolean) as ReviewItem[];
-  }, [selectedItems, items, currentManagerId]);
+  }, [selectedItems, managerItems]);
 
   const selectedReassignableCount = useMemo(() => {
     return selectedItemObjects.filter(i => Number(i.reassignmentCount || 0) < maxReassignments).length;

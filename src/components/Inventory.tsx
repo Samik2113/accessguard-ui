@@ -305,9 +305,66 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     }
   };
 
+  const normalizeValue = (value: any) => String(value || '').trim().toLowerCase();
+
   const isPrivilegedEntitlement = (appId: string, entitlement: string) => {
-    return entitlements.some(e => e.appId === appId && e.entitlement === entitlement && e.isPrivileged);
+    const appIdNorm = normalizeValue(appId);
+    const entNorm = normalizeValue(entitlement);
+    return entitlements.some(e => normalizeValue(e.appId) === appIdNorm && normalizeValue(e.entitlement) === entNorm && e.isPrivileged);
   };
+
+  const selectedAppData = access.filter(a => a.appId === selectedAppId);
+  const selectedEntitlements = entitlements.filter(e => e.appId === selectedAppId);
+
+  const selectedAppRiskByAccountId = useMemo(() => {
+    const identityKey = (acc: ApplicationAccess) => {
+      if (acc.correlatedUserId) return `u:${normalizeValue(acc.correlatedUserId)}`;
+      if (acc.isOrphan) {
+        const orphanEmail = normalizeValue(acc.email);
+        if (orphanEmail) return `e:${orphanEmail}`;
+        const orphanName = normalizeValue(acc.userName);
+        if (orphanName) return `n:${orphanName}`;
+      }
+      const userId = normalizeValue(acc.userId);
+      if (userId) return `id:${userId}`;
+      const email = normalizeValue(acc.email);
+      if (email) return `e:${email}`;
+      const userName = normalizeValue(acc.userName);
+      if (userName) return `n:${userName}`;
+      return `acc:${normalizeValue(acc.id)}`;
+    };
+
+    const grouped: Record<string, Array<{ appId: string; entitlement: string }>> = {};
+    selectedAppData.forEach(acc => {
+      const key = identityKey(acc);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push({ appId: String(acc.appId || ''), entitlement: acc.entitlement });
+    });
+
+    const out = new Map<string, { hasSod: boolean; violatedPolicyIds: string[]; violatedPolicyNames: string[] }>();
+
+    selectedAppData.forEach(acc => {
+      const key = identityKey(acc);
+      const entries = grouped[key] || [];
+      const violated = sodPolicies.filter(policy => {
+        const has1 = entries.some(entry => entry.appId === policy.appId1 && normalizeValue(entry.entitlement) === normalizeValue(policy.entitlement1));
+        const has2 = entries.some(entry => entry.appId === policy.appId2 && normalizeValue(entry.entitlement) === normalizeValue(policy.entitlement2));
+        if (!has1 || !has2) return false;
+        return (
+          (acc.appId === policy.appId1 && normalizeValue(acc.entitlement) === normalizeValue(policy.entitlement1)) ||
+          (acc.appId === policy.appId2 && normalizeValue(acc.entitlement) === normalizeValue(policy.entitlement2))
+        );
+      });
+
+      out.set(acc.id, {
+        hasSod: violated.length > 0,
+        violatedPolicyIds: violated.map(policy => policy.id),
+        violatedPolicyNames: violated.map(policy => policy.policyName)
+      });
+    });
+
+    return out;
+  }, [selectedAppData, sodPolicies]);
 
   const getRiskDisplay = (acc: ApplicationAccess | { entitlements: ApplicationAccess[], isOrphan: boolean }) => {
     let hasSod = false;
@@ -316,8 +373,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     let hasPrivileged = false;
 
     if ('entitlements' in acc) {
-      hasSod = acc.entitlements.some(e => e.isSoDConflict);
-      const uniquePolicyIds = Array.from(new Set(acc.entitlements.flatMap(e => e.violatedPolicyIds || [])));
+      hasSod = acc.entitlements.some(e => e.isSoDConflict || !!selectedAppRiskByAccountId.get(e.id)?.hasSod);
+      const uniquePolicyIds = Array.from(new Set(acc.entitlements.flatMap(e => {
+        const derived = selectedAppRiskByAccountId.get(e.id);
+        return [...(e.violatedPolicyIds || []), ...(derived?.violatedPolicyIds || [])];
+      })));
       policies = uniquePolicyIds.map(id => ({ 
         id, 
         name: sodPolicies.find(p => p.id === id)?.policyName || 'Unknown Policy' 
@@ -325,8 +385,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       isOrphan = acc.isOrphan;
       hasPrivileged = acc.entitlements.some(e => isPrivilegedEntitlement(e.appId, e.entitlement));
     } else {
-      hasSod = acc.isSoDConflict;
-      policies = (acc.violatedPolicyIds || []).map(id => ({ 
+      const derived = selectedAppRiskByAccountId.get(acc.id);
+      hasSod = acc.isSoDConflict || !!derived?.hasSod;
+      const policyIds = Array.from(new Set([...(acc.violatedPolicyIds || []), ...(derived?.violatedPolicyIds || [])]));
+      policies = policyIds.map(id => ({ 
         id, 
         name: sodPolicies.find(p => p.id === id)?.policyName || 'Unknown Policy' 
       }));
@@ -384,9 +446,6 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       </div>
     );
   };
-
-  const selectedAppData = access.filter(a => a.appId === selectedAppId);
-  const selectedEntitlements = entitlements.filter(e => e.appId === selectedAppId);
 
   const groupedSelectedAppData = useMemo(() => {
     if (!groupInApp) return null;
@@ -1068,7 +1127,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   <td className="px-4 py-3">
                                     <div className="flex flex-wrap gap-1">
                                       {group.entitlements.map(e => (
-                                        <code key={e.id} className={`px-1 rounded border ${e.isSoDConflict ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPrivilegedEntitlement(e.appId, e.entitlement) ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{e.entitlement}</code>
+                                        <code key={e.id} className={`px-1 rounded border ${(e.isSoDConflict || !!selectedAppRiskByAccountId.get(e.id)?.hasSod) ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPrivilegedEntitlement(e.appId, e.entitlement) ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{e.entitlement}</code>
                                       ))}
                                     </div>
                                   </td>
@@ -1081,6 +1140,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                           ) : (
                             selectedAppData.map(acc => {
                               const isPriv = isPrivilegedEntitlement(acc.appId, acc.entitlement);
+                              const hasSod = acc.isSoDConflict || !!selectedAppRiskByAccountId.get(acc.id)?.hasSod;
                               return (
                                 <tr key={acc.id} className="hover:bg-slate-50 transition-colors">
                                   <td className="px-4 py-3">
@@ -1106,7 +1166,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    <code className={`px-1.5 py-0.5 rounded border ${acc.isSoDConflict ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPriv ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{acc.entitlement}</code>
+                                    <code className={`px-1.5 py-0.5 rounded border ${hasSod ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPriv ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{acc.entitlement}</code>
                                   </td>
                                   <td className="px-4 py-3">
                                     {getRiskDisplay(acc)}

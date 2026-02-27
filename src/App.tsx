@@ -138,6 +138,10 @@ const App: React.FC = () => {
     const normalized = items.map(normalizeReviewItem);
     const normEnt = (value: any) => String(value || '').trim().toLowerCase();
     const identityKey = (item: ReviewItem) => {
+      if (item.isOrphan) {
+        const orphanName = normEnt(item.userName);
+        if (orphanName) return `${item.reviewCycleId}|n:${orphanName}`;
+      }
       const appUserId = normEnt(item.appUserId);
       if (appUserId) return `${item.reviewCycleId}|u:${appUserId}`;
       const userName = normEnt(item.userName);
