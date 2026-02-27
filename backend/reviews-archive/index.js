@@ -38,8 +38,8 @@ module.exports = async function (context, req) {
 
     const pendingItemsFromItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
     const pendingRemediationFromItems = cycleItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
-    const pendingItems = Math.max(pendingItemsFromItems, Number(cycle.pendingItems || 0));
-    const pendingRemediationItems = Math.max(pendingRemediationFromItems, Number(cycle.pendingRemediationItems || 0));
+    const pendingItems = pendingItemsFromItems;
+    const pendingRemediationItems = pendingRemediationFromItems;
 
     const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId).filter(Boolean)));
     const confirmedManagers = Array.isArray(cycle.confirmedManagers) ? cycle.confirmedManagers : [];

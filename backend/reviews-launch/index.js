@@ -166,8 +166,8 @@ module.exports = async function (context, req) {
 
         const pendingCountFromItems = existingItems.filter(i => String(i.status || "").toUpperCase() === "PENDING").length;
         const openRemediationCountFromItems = existingItems.filter(i => String(i.status || "").toUpperCase() === "REVOKED").length;
-        const pendingCount = Math.max(pendingCountFromItems, Number(existingCycle.pendingItems || 0));
-        const openRemediationCount = Math.max(openRemediationCountFromItems, Number(existingCycle.pendingRemediationItems || 0));
+        const pendingCount = pendingCountFromItems;
+        const openRemediationCount = openRemediationCountFromItems;
 
         if (pendingCount === 0 && openRemediationCount === 0) {
           // Previous cycle is effectively closed; normalize it to COMPLETED and continue launch.
@@ -247,11 +247,28 @@ module.exports = async function (context, req) {
       if (userName) return `n:${userName}`;
       return null;
     };
+    const scopedIdentityKeys = new Set();
     for (const account of accounts) {
       const key = riskIdentityKey(account);
-      if (!key) continue;
+      if (key) scopedIdentityKeys.add(key);
+    }
+
+    let allAccountsForRisk = accounts;
+    try {
+      const { resources: allAccounts } = await accountsC.items.query({
+        query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.isOrphan, c.correlatedUserId, c.appId FROM c"
+      }).fetchAll();
+      if (Array.isArray(allAccounts) && allAccounts.length > 0) {
+        allAccountsForRisk = allAccounts;
+      }
+    } catch (_) {
+    }
+
+    for (const account of allAccountsForRisk) {
+      const key = riskIdentityKey(account);
+      if (!key || !scopedIdentityKeys.has(key)) continue;
       const arr = perUserEnts.get(key) || [];
-      arr.push({ appId: account.appId, entitlement: account.entitlement });
+      arr.push({ appId: String(account.appId || "").trim(), entitlement: account.entitlement });
       perUserEnts.set(key, arr);
     }
 
@@ -336,7 +353,7 @@ module.exports = async function (context, req) {
             userName: account.userName || null,
             entitlement: account.entitlement,
             status: "PENDING",
-            isOrphan: !hr || !!account.isOrphan,
+            isOrphan: !hr || parseBool(account.isOrphan),
             isPrivileged,
             isSoDConflict: conflictIds.length > 0,
             violatedPolicyIds: conflictIds,

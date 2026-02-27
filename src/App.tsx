@@ -140,13 +140,29 @@ const App: React.FC = () => {
     const identityKey = (item: ReviewItem) => {
       if (item.isOrphan) {
         const orphanName = normEnt(item.userName);
-        if (orphanName) return `${item.reviewCycleId}|n:${orphanName}`;
+        if (orphanName) return `n:${orphanName}`;
       }
       const appUserId = normEnt(item.appUserId);
-      if (appUserId) return `${item.reviewCycleId}|u:${appUserId}`;
+      if (appUserId) return `u:${appUserId}`;
       const userName = normEnt(item.userName);
-      if (userName) return `${item.reviewCycleId}|n:${userName}`;
-      return `${item.reviewCycleId}|id:${item.id}`;
+      if (userName) return `n:${userName}`;
+      return `id:${item.id}`;
+    };
+
+    const accessIdentityKey = (acc: ApplicationAccess) => {
+      const correlated = normEnt(acc.correlatedUserId);
+      if (correlated) return `u:${correlated}`;
+      if (acc.isOrphan) {
+        const orphanEmail = normEnt(acc.email);
+        if (orphanEmail) return `e:${orphanEmail}`;
+        const orphanName = normEnt(acc.userName);
+        if (orphanName) return `n:${orphanName}`;
+      }
+      const userId = normEnt(acc.userId);
+      if (userId) return `u:${userId}`;
+      const userName = normEnt(acc.userName);
+      if (userName) return `n:${userName}`;
+      return '';
     };
 
     const groupedEntitlements: Record<string, Array<{ appId: string; entitlement: string }>> = {};
@@ -156,8 +172,17 @@ const App: React.FC = () => {
       groupedEntitlements[key].push({ appId: String((item as any).appId || ''), entitlement: item.entitlement });
     });
 
+    const accessEntitlementsByIdentity: Record<string, Array<{ appId: string; entitlement: string }>> = {};
+    access.forEach(acc => {
+      const key = accessIdentityKey(acc);
+      if (!key) return;
+      if (!accessEntitlementsByIdentity[key]) accessEntitlementsByIdentity[key] = [];
+      accessEntitlementsByIdentity[key].push({ appId: String(acc.appId || ''), entitlement: acc.entitlement });
+    });
+
     return normalized.map(item => {
-      const group = groupedEntitlements[identityKey(item)] || [];
+      const itemKey = identityKey(item);
+      const group = [...(groupedEntitlements[itemKey] || []), ...(accessEntitlementsByIdentity[itemKey] || [])];
       const violatedPolicies = sodPolicies.filter(policy => {
         const has1 = group.some(entry => entry.appId === policy.appId1 && normEnt(entry.entitlement) === normEnt(policy.entitlement1));
         const has2 = group.some(entry => entry.appId === policy.appId2 && normEnt(entry.entitlement) === normEnt(policy.entitlement2));
