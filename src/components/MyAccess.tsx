@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { getAccountsByUser } from '../services/api';
+import React, { useMemo } from 'react';
 import { Application, SoDPolicy } from '../types';
 import { ShieldAlert, ShieldCheck, Layers } from 'lucide-react';
+import { useAccountsByUser } from '../features/accounts/queries';
 
 interface MyAccessProps {
   currentUserId: string;
@@ -9,61 +9,23 @@ interface MyAccessProps {
   sodPolicies: SoDPolicy[];
 }
 
-const normalize = (v: any) => String(v || '').trim().toLowerCase();
-
 const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPolicies }) => {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      if (!currentUserId) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const res: any = await getAccountsByUser(currentUserId, 1000);
-        if (!alive) return;
-        setItems(Array.isArray(res?.items) ? res.items : []);
-      } catch (e: any) {
-        if (!alive) return;
-        setItems([]);
-        setError(e?.message || 'Failed to load your access details.');
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      alive = false;
-    };
-  }, [currentUserId]);
+  const accountsQuery = useAccountsByUser({ userId: currentUserId, top: 1000 });
+  const items = Array.isArray((accountsQuery.data as any)?.items) ? (accountsQuery.data as any).items : [];
 
   const appNameById = (appId: string) => applications.find(a => a.id === appId)?.name || appId;
 
   const withRisk = useMemo(() => {
-    const ents = items.map(i => ({
-      appId: String(i.appId || ''),
-      entitlement: String(i.entitlement || '')
-    }));
-
-    const policyNameById = new Map(sodPolicies.map(p => [p.id, p.policyName]));
-
-    return items.map(item => {
+    return items.map((item: any) => {
       const appId = String(item.appId || '');
-      const entitlement = String(item.entitlement || '');
-
-      const matchingPolicies = sodPolicies.filter(policy => {
-        const has1 = ents.some(entry => entry.appId === policy.appId1 && normalize(entry.entitlement) === normalize(policy.entitlement1));
-        const has2 = ents.some(entry => entry.appId === policy.appId2 && normalize(entry.entitlement) === normalize(policy.entitlement2));
-        if (!(has1 && has2)) return false;
-        return (appId === policy.appId1 && normalize(entitlement) === normalize(policy.entitlement1)) ||
-               (appId === policy.appId2 && normalize(entitlement) === normalize(policy.entitlement2));
-      });
-
-      const policyIds = matchingPolicies.map(p => p.id);
-      const policyNames = policyIds.map(id => policyNameById.get(id) || id);
+      const conflictList = Array.isArray(item?.sod?.conflicts) ? item.sod.conflicts : [];
+      const policyIds = Array.isArray(item?.violatedPolicyIds)
+        ? item.violatedPolicyIds
+        : conflictList.map((c: any) => c.policyId).filter(Boolean);
+      const policyNames = Array.isArray(item?.violatedPolicyNames)
+        ? item.violatedPolicyNames
+        : conflictList.map((c: any) => c.policyName).filter(Boolean);
+      const hasSodConflict = Boolean(item?.isSoDConflict || item?.sod?.hasConflict || policyIds.length > 0);
 
       return {
         ...item,
@@ -71,12 +33,12 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
         appName: item.appName || appNameById(appId),
         isPrivileged: !!item.isPrivileged,
         isOrphan: !!item.isOrphan,
-        isSoDConflict: policyIds.length > 0,
+        isSoDConflict: hasSodConflict,
         violatedPolicyIds: policyIds,
         violatedPolicyNames: policyNames
       };
     });
-  }, [items, sodPolicies, applications]);
+  }, [items, applications]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, any[]>();
@@ -118,16 +80,16 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
         </div>
       </div>
 
-      {loading && <div className="text-sm text-slate-500">Loading your access...</div>}
-      {error && <div className="text-sm text-red-600">{error}</div>}
+      {accountsQuery.isLoading && <div className="text-sm text-slate-500">Loading your access...</div>}
+      {accountsQuery.error && <div className="text-sm text-red-600">{(accountsQuery.error as Error)?.message || 'Failed to load your access details.'}</div>}
 
-      {!loading && !error && grouped.length === 0 && (
+      {!accountsQuery.isLoading && !accountsQuery.error && grouped.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-500">
           No access records found for your user.
         </div>
       )}
 
-      {!loading && !error && grouped.map(group => (
+      {!accountsQuery.isLoading && !accountsQuery.error && grouped.map(group => (
         <div key={group.appId} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">

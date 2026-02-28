@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
@@ -28,17 +29,19 @@ import {
   actOnItem,
   reassignReviewItem,
   confirmManager,
-  archiveCycle,
   loginUser,
   changePassword,
   resetUserPassword,
   setUserRole,
   setUserRolesBulk
 } from "./services/api";
+import { useReviewCycles } from './features/reviews/queries';
+import { useAccountsByApp } from './features/accounts/queries';
 
 
 
 const App: React.FC = () => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -66,6 +69,14 @@ const App: React.FC = () => {
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const cyclesQuery = useReviewCycles({ top: 200 });
+  const accountsQuery = useAccountsByApp({ appId: selectedAppId || undefined, top: 200 });
+  const invalidateReviewQueries = async (cycleId?: string) => {
+    await queryClient.invalidateQueries({ queryKey: ['review-cycles'] });
+    if (cycleId) {
+      await queryClient.invalidateQueries({ queryKey: ['review-cycle-detail'] });
+    }
+  };
 
   const getApplicationId = (app: any): string => String(app?.id ?? app?.appId ?? '');
   const getApplicationById = (appId?: string | null): Application | undefined => {
@@ -77,133 +88,22 @@ const App: React.FC = () => {
     const app = getApplicationById(appId);
     return app?.name || String(appId || 'Unknown App');
   };
-  const getApplicationOwnerById = (appId?: string | null): string => {
-    const app = getApplicationById(appId);
-    return String((app as any)?.ownerId ?? '');
-  };
-  const shouldResolveToAppOwner = (managerId?: string | null): boolean => {
-    const value = String(managerId || '').trim().toUpperCase();
-    return !value || value === 'APP_OWNER' || value === 'APP-OWNER' || value === 'APP OWNER';
-  };
-  const normalizeCycle = (cycle: any): ReviewCycle => {
-    const normalizedAppId = String(cycle?.appId ?? cycle?.applicationId ?? '');
-    const normalizedStatus = cycle?.status === ReviewStatus.PENDING_VERIFICATION
-      ? ReviewStatus.REMEDIATION
-      : cycle?.status;
-    return {
-      ...cycle,
-      appId: normalizedAppId,
-      status: normalizedStatus,
-      appName: cycle?.appName || getApplicationNameById(normalizedAppId),
-      pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
-      confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
-    };
-  };
-  const normalizeReviewItem = (item: any): ReviewItem => {
-    const parentCycle = cycles.find(c => c.id === item?.reviewCycleId);
-    const normalizedAppId = String(item?.appId ?? item?.applicationId ?? parentCycle?.appId ?? '');
-    const parseBool = (value: any): boolean => value === true || value === 1 || String(value || '').toLowerCase() === 'true' || String(value || '').toLowerCase() === 'yes';
-    const isOrphan = parseBool(item?.isOrphan);
-    const resolvedManagerId = (isOrphan && shouldResolveToAppOwner(item?.managerId))
-      ? (getApplicationOwnerById(normalizedAppId) || String(item?.managerId || ''))
-      : String(item?.managerId || '');
-    const violatedPolicyIds = Array.isArray(item?.violatedPolicyIds)
-      ? item.violatedPolicyIds
-      : (typeof item?.violatedPolicyIds === 'string' && item.violatedPolicyIds.trim().length > 0
-          ? item.violatedPolicyIds.split(',').map((id: string) => id.trim()).filter(Boolean)
-          : []);
-    const violatedPolicyNames = Array.isArray(item?.violatedPolicyNames)
-      ? item.violatedPolicyNames
-      : [];
-    const resolvedPolicyNames = violatedPolicyNames.length > 0
-      ? violatedPolicyNames
-      : violatedPolicyIds.map((id: string) => sodPolicies.find(policy => policy.id === id)?.policyName || id);
-    const isPrivilegedByCatalog = entitlements.some(ent => ent.appId === normalizedAppId && String(ent.entitlement || '').trim().toLowerCase() === String(item?.entitlement || '').trim().toLowerCase() && !!ent.isPrivileged);
-    const isPrivileged = parseBool(item?.isPrivileged) || isPrivilegedByCatalog;
-    return {
+  const normalizeCycle = (cycle: any): ReviewCycle => ({
+    ...cycle,
+    appId: String(cycle?.appId ?? cycle?.applicationId ?? ''),
+    appName: cycle?.appName || getApplicationNameById(cycle?.appId),
+    pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
+    confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : []
+  });
+
+  const normalizeReviewItems = (items: any[]): ReviewItem[] =>
+    items.map((item: any) => ({
       ...item,
-      appId: normalizedAppId,
-      appName: item?.appName || parentCycle?.appName || getApplicationNameById(normalizedAppId),
-      managerId: resolvedManagerId,
-      isSoDConflict: parseBool(item?.isSoDConflict) || violatedPolicyIds.length > 0,
-      isOrphan,
-      isPrivileged,
-      violatedPolicyNames: resolvedPolicyNames,
-      violatedPolicyIds,
-      reassignmentCount: typeof item?.reassignmentCount === 'number' ? item.reassignmentCount : 0,
-    };
-  };
-
-  const normalizeReviewItems = (items: any[]): ReviewItem[] => {
-    const normalized = items.map(normalizeReviewItem);
-    const normEnt = (value: any) => String(value || '').trim().toLowerCase();
-    const identityKey = (item: ReviewItem) => {
-      if (item.isOrphan) {
-        const orphanName = normEnt(item.userName);
-        if (orphanName) return `n:${orphanName}`;
-      }
-      const appUserId = normEnt(item.appUserId);
-      if (appUserId) return `u:${appUserId}`;
-      const userName = normEnt(item.userName);
-      if (userName) return `n:${userName}`;
-      return `id:${item.id}`;
-    };
-
-    const accessIdentityKey = (acc: ApplicationAccess) => {
-      const correlated = normEnt(acc.correlatedUserId);
-      if (correlated) return `u:${correlated}`;
-      if (acc.isOrphan) {
-        const orphanEmail = normEnt(acc.email);
-        if (orphanEmail) return `e:${orphanEmail}`;
-        const orphanName = normEnt(acc.userName);
-        if (orphanName) return `n:${orphanName}`;
-      }
-      const userId = normEnt(acc.userId);
-      if (userId) return `u:${userId}`;
-      const userName = normEnt(acc.userName);
-      if (userName) return `n:${userName}`;
-      return '';
-    };
-
-    const groupedEntitlements: Record<string, Array<{ appId: string; entitlement: string }>> = {};
-    normalized.forEach(item => {
-      const key = identityKey(item);
-      if (!groupedEntitlements[key]) groupedEntitlements[key] = [];
-      groupedEntitlements[key].push({ appId: String((item as any).appId || ''), entitlement: item.entitlement });
-    });
-
-    const accessEntitlementsByIdentity: Record<string, Array<{ appId: string; entitlement: string }>> = {};
-    access.forEach(acc => {
-      const key = accessIdentityKey(acc);
-      if (!key) return;
-      if (!accessEntitlementsByIdentity[key]) accessEntitlementsByIdentity[key] = [];
-      accessEntitlementsByIdentity[key].push({ appId: String(acc.appId || ''), entitlement: acc.entitlement });
-    });
-
-    return normalized.map(item => {
-      const itemKey = identityKey(item);
-      const group = [...(groupedEntitlements[itemKey] || []), ...(accessEntitlementsByIdentity[itemKey] || [])];
-      const violatedPolicies = sodPolicies.filter(policy => {
-        const has1 = group.some(entry => entry.appId === policy.appId1 && normEnt(entry.entitlement) === normEnt(policy.entitlement1));
-        const has2 = group.some(entry => entry.appId === policy.appId2 && normEnt(entry.entitlement) === normEnt(policy.entitlement2));
-        if (!has1 || !has2) return false;
-        return (
-          (String((item as any).appId || '') === policy.appId1 && normEnt(item.entitlement) === normEnt(policy.entitlement1)) ||
-          (String((item as any).appId || '') === policy.appId2 && normEnt(item.entitlement) === normEnt(policy.entitlement2))
-        );
-      });
-
-      const fallbackPolicyIds = violatedPolicies.map(policy => policy.id);
-      const fallbackPolicyNames = violatedPolicies.map(policy => policy.policyName);
-
-      return {
-        ...item,
-        isSoDConflict: item.isSoDConflict || fallbackPolicyIds.length > 0,
-        violatedPolicyIds: item.violatedPolicyIds && item.violatedPolicyIds.length > 0 ? item.violatedPolicyIds : fallbackPolicyIds,
-        violatedPolicyNames: item.violatedPolicyNames && item.violatedPolicyNames.length > 0 ? item.violatedPolicyNames : fallbackPolicyNames
-      };
-    });
-  };
+      appId: String(item?.appId ?? item?.applicationId ?? ''),
+      violatedPolicyIds: Array.isArray(item?.violatedPolicyIds) ? item.violatedPolicyIds : [],
+      violatedPolicyNames: Array.isArray(item?.violatedPolicyNames) ? item.violatedPolicyNames : [],
+      confirmedManagers: Array.isArray(item?.confirmedManagers) ? item.confirmedManagers : undefined
+    }));
 
   // UAR Loading/Error States
   const [uarLoading, setUarLoading] = useState(false);
@@ -385,48 +285,23 @@ useEffect(() => {
 }, [selectedAppId]);
 
 useEffect(() => {
-  let alive = true;
-
-  async function loadAccounts() {
-    if (!selectedAppId) {
-      setAccess([]);  // clear when no app selected
-      return;
-    }
-    try {
-      const res = await getAccounts(selectedAppId, undefined, undefined, 200);
-      if (!alive) return;
-
-      if (!res?.ok && res?.status) {
-        // Friendly error handling from Step 4
-        console.error(`Failed to load accounts for ${selectedAppId}:`, res.message);
-        setAccess([]);
-        return;
-      }
-
-      // res.items is an array of accounts from Cosmos
-      const raw = res.items || [];
-      const enriched: ApplicationAccess[] = raw.map((acc: any) => ({
-        ...acc,
-        // ensure correlation fields are present
-        ...correlateAccount(acc, users),
-        userName: acc.userName || acc.name || acc.userName || '',
-      }));
-
-      // Merge into existing access state (replace this app's entries) and recalc SoD across all apps
-      setAccess(prev => {
-        const other = prev.filter(a => a.appId !== selectedAppId);
-        const merged = [...other, ...enriched];
-        return recalculateSoD(merged, sodPolicies);
-      });
-    } catch (e) {
-      console.error("Accounts load error:", e);
-      if (alive) setAccess([]);
-    }
+  if (!selectedAppId) {
+    setAccess([]);
+    return;
   }
 
-  loadAccounts();
-  return () => { alive = false; };
-}, [selectedAppId]);
+  const raw = Array.isArray((accountsQuery.data as any)?.items) ? (accountsQuery.data as any).items : [];
+  const enriched: ApplicationAccess[] = raw.map((acc: any) => ({
+    ...acc,
+    ...correlateAccount(acc, users),
+    userName: acc.userName || acc.name || ''
+  }));
+
+  setAccess(prev => {
+    const other = prev.filter(a => a.appId !== selectedAppId);
+    return [...other, ...enriched];
+  });
+}, [selectedAppId, accountsQuery.data, users]);
 
 useEffect(() => {
   let alive = true;
@@ -478,16 +353,23 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
+  const qCycles = Array.isArray((cyclesQuery.data as any)?.cycles) ? (cyclesQuery.data as any).cycles : [];
+  setCycles(qCycles.map(normalizeCycle));
+  setUarLoading(cyclesQuery.isLoading);
+  if (cyclesQuery.error) {
+    const err = cyclesQuery.error as any;
+    setUarError(err?.message || 'Failed to load review campaigns.');
+  } else {
+    setUarError(null);
+  }
+}, [cyclesQuery.data, cyclesQuery.error, cyclesQuery.isLoading]);
+
+useEffect(() => {
   let alive = true;
   (async () => {
     try {
-      setUarLoading(true);
-      setUarError(null);
-      // Fetch review cycles and items from backend
-      const cyclesRes = await getReviewCycles({ top: 200 });
       const itemsRes = await getReviewItems({ top: 500 });
       if (!alive) return;
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
       setReviewItems(Array.isArray(itemsRes?.items)
         ? normalizeReviewItems(itemsRes.items)
         : []);
@@ -495,26 +377,12 @@ useEffect(() => {
       console.error("Failed to load UAR data:", e);
       if (alive) {
         setUarError(e?.message || "Failed to load review campaigns and items.");
-        setCycles([]);
         setReviewItems([]);
       }
-    } finally {
-      if (alive) setUarLoading(false);
     }
   })();
   return () => { alive = false; };
 }, []);
-
-useEffect(() => {
-  if (applications.length === 0) return;
-  setCycles(prev => prev.map(normalizeCycle));
-  setReviewItems(prev => normalizeReviewItems(prev));
-}, [applications]);
-
-useEffect(() => {
-  if (reviewItems.length === 0) return;
-  setReviewItems(prev => normalizeReviewItems(prev));
-}, [entitlements, sodPolicies]);
 
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
@@ -587,55 +455,6 @@ useEffect(() => {
     });
   };
 
-  useEffect(() => {
-    setCycles(prevCycles => {
-      let hasGlobalChanges = false;
-      // Collect cycles that need archiving and update cycles synchronously
-      const cyclesToArchive = [];
-      const nextCycles = prevCycles.map(cycle => {
-        if (cycle.status === ReviewStatus.COMPLETED) return cycle;
-        const cycleItems = reviewItems.filter(i => i.reviewCycleId === cycle.id);
-        if (cycleItems.length === 0) return cycle;
-        const pendingReviewCount = cycleItems.filter(i => i.status === ActionStatus.PENDING).length;
-        const pendingRemediationCount = cycleItems.filter(i => i.status === ActionStatus.REVOKED).length;
-        const managersInCycle = Array.from(new Set(cycleItems.map(i => i.managerId)));
-        const allManagersConfirmed = managersInCycle.length > 0 && managersInCycle.every(mId => cycle.confirmedManagers.includes(mId));
-        let nextStatus: ReviewStatus = ReviewStatus.ACTIVE;
-        let completedAt = cycle.completedAt;
-        let needsArchive = false;
-
-        if (allManagersConfirmed && pendingReviewCount === 0 && pendingRemediationCount > 0) {
-          nextStatus = ReviewStatus.REMEDIATION;
-          completedAt = undefined;
-        } else if (allManagersConfirmed && pendingReviewCount === 0 && pendingRemediationCount === 0) {
-          nextStatus = ReviewStatus.COMPLETED;
-          completedAt = completedAt || new Date().toISOString();
-          if (cycle.status !== ReviewStatus.COMPLETED) {
-            needsArchive = true;
-          }
-        } else {
-          nextStatus = ReviewStatus.ACTIVE;
-          completedAt = undefined;
-        }
-        if (needsArchive) {
-          cyclesToArchive.push({ cycleId: cycle.id, appId: cycle.appId });
-        }
-        if (nextStatus !== cycle.status || cycle.pendingItems !== pendingReviewCount || cycle.pendingRemediationItems !== pendingRemediationCount || cycle.completedAt !== completedAt) {
-          hasGlobalChanges = true;
-          return { ...cycle, status: nextStatus, pendingItems: pendingReviewCount, pendingRemediationItems: pendingRemediationCount, completedAt };
-        }
-        return cycle;
-      });
-      // Fire-and-forget archive requests (do not await in map)
-      if (cyclesToArchive.length > 0) {
-        cyclesToArchive.forEach(({ cycleId, appId }) => {
-          archiveCycle({ cycleId, appId }).catch(e => console.error('Failed to archive cycle:', e));
-        });
-      }
-      return hasGlobalChanges ? nextCycles : prevCycles;
-    });
-  }, [reviewItems, cycles.map(c => c.confirmedManagers.length).join(',')]);
-
   // Recalculate correlation and SoD whenever HR users or SoD policies change
   useEffect(() => {
     setAccess(prev => {
@@ -658,6 +477,7 @@ useEffect(() => {
         appId: cycle.appId,
         managerId
       });
+      await invalidateReviewQueries(cycleId);
 
       // Refresh cycles from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
@@ -778,7 +598,8 @@ useEffect(() => {
               managerId: item.managerId || currentUser.id,
               status: ActionStatus.REMEDIATED,
               remediationComment: 'Verified removed via account upload',
-              remediatedAt: remediationTimestamp
+              remediatedAt: remediationTimestamp,
+              etag: (item as any)?._etag
             })
           )
         );
@@ -908,6 +729,7 @@ useEffect(() => {
         name: targetApp.name,
         dueDate: dueDate.toISOString()
       });
+      await invalidateReviewQueries(response?.cycleId);
 
       // Refresh cycles and items from backend
       const cyclesRes = await getReviewCycles({ top: 200 });
@@ -943,8 +765,10 @@ useEffect(() => {
         itemId,
         managerId: currentUser.id,
         status,
-        comment
+        comment,
+        etag: (item as any)?._etag
       });
+      await invalidateReviewQueries(item.reviewCycleId);
       console.log('[handleAction] actOnItem complete');
 
       // Refresh items from backend
@@ -974,14 +798,20 @@ useEffect(() => {
       // Call backend for each item
       await Promise.all(
         itemIds.map(itemId =>
-          actOnItem({
-            itemId,
-            managerId: currentUser.id,
-            status,
-            comment
-          })
+          {
+            const target = reviewItems.find(i => i.id === itemId);
+            return actOnItem({
+              itemId,
+              managerId: currentUser.id,
+              status,
+              comment,
+              etag: (target as any)?._etag
+            });
+          }
         )
       );
+      const impactedCycleId = reviewItems.find(i => itemIds.includes(i.id))?.reviewCycleId;
+      await invalidateReviewQueries(impactedCycleId);
 
       // Refresh items from backend
       const itemsRes = await getReviewItems({ top: 500 });
@@ -1000,7 +830,9 @@ useEffect(() => {
 
   const handleReassignReviewItem = async (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => {
     try {
-      await reassignReviewItem({ itemId, managerId: fromManagerId, reassignToManagerId: toManagerId, comment });
+      const target = reviewItems.find(item => item.id === itemId && item.managerId === fromManagerId);
+      await reassignReviewItem({ itemId, managerId: fromManagerId, reassignToManagerId: toManagerId, comment, etag: (target as any)?._etag });
+      await invalidateReviewQueries(target?.reviewCycleId);
       const itemsRes = await getReviewItems({ top: 500 });
       setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
       await addAuditLog('ITEM_REASSIGN', `Reassigned review item ${itemId} from ${fromManagerId} to ${toManagerId}`);
@@ -1013,8 +845,13 @@ useEffect(() => {
   const handleBulkReassignReviewItems = async (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => {
     try {
       const results = await Promise.allSettled(
-        itemsToReassign.map(item => reassignReviewItem({ itemId: item.itemId, managerId: item.fromManagerId, reassignToManagerId: toManagerId, comment }))
+        itemsToReassign.map(item => {
+          const target = reviewItems.find(existing => existing.id === item.itemId && existing.managerId === item.fromManagerId);
+          return reassignReviewItem({ itemId: item.itemId, managerId: item.fromManagerId, reassignToManagerId: toManagerId, comment, etag: (target as any)?._etag });
+        })
       );
+      const impactedCycleId = reviewItems.find(existing => itemsToReassign.some(x => x.itemId === existing.id))?.reviewCycleId;
+      await invalidateReviewQueries(impactedCycleId);
 
       const successCount = results.filter(result => result.status === 'fulfilled').length;
       const failed = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];

@@ -20,10 +20,10 @@ module.exports = async function (context, req) {
     if (req.method === "OPTIONS") return { status: 204, headers: cors(req) };
 
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    if (!validate(body)) return bad(400, ajv.errorsText(validate.errors), req);
+    if (!validate(body)) return bad(400, "VALIDATION_ERROR", "Invalid request payload", req, validate.errors || []);
 
     const conn = process.env.COSMOS_CONN;
-    if (!conn) return bad(500, "COSMOS_CONN not set", req);
+    if (!conn) return bad(500, "INTERNAL_ERROR", "COSMOS_CONN not set", req);
 
     const client = new CosmosClient(conn);
     const db = client.database("appdb");
@@ -33,7 +33,7 @@ module.exports = async function (context, req) {
 
     // 1) Read cycle (need _etag + current confirmedManagers)
     const { resource: cyc } = await cyclesC.item(body.cycleId, body.appId).read();
-    if (!cyc) return bad(404, "Cycle not found", req);
+    if (!cyc) return bad(404, "CYCLE_NOT_FOUND", "Cycle not found", req);
 
     const current = Array.isArray(cyc.confirmedManagers) ? cyc.confirmedManagers : [];
     const union = Array.from(new Set([...current, body.managerId]));
@@ -94,9 +94,9 @@ module.exports = async function (context, req) {
 
     return ok({ cycleId: body.cycleId, appId: body.appId, confirmedManagers: union }, req);
   } catch (err) {
-    if (err.code === 412) return bad(409, "Conflict: the cycle was updated by someone else. Refresh and retry.", req);
+    if (err.code === 412) return bad(412, "ETAG_MISMATCH", "Resource changed", req);
     context.log.error("reviews/confirm PATCH error:", err?.stack || err);
-    return bad(500, err?.message || "Internal error", req);
+    return bad(500, "INTERNAL_ERROR", err?.message || "Internal error", req);
   }
 };
 
@@ -106,4 +106,8 @@ function cors(req){ return {
   "Access-Control-Allow-Headers": "Content-Type, Authorization"
 };}
 function ok(body, req){ return { status: 200, headers: cors(req), body: { ok: true, ...body } }; }
-function bad(status, error, req){ return { status, headers: cors(req), body: { ok: false, error } }; }
+function bad(status, code, message, req, details){
+  const error = { code, message };
+  if (details !== undefined) error.details = details;
+  return { status, headers: cors(req), body: { ok: false, error } };
+}

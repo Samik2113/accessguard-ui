@@ -60,14 +60,14 @@ module.exports = async function (context, req) {
       return {
         status: 405,
         headers: cors(req),
-        body: { ok: false, error: "MethodNotAllowed" }
+        body: { ok: false, error: { code: "METHOD_NOT_ALLOWED", message: "MethodNotAllowed" } }
       };
     }
 
     /** Validate environment */
     const conn = process.env.COSMOS_CONN;
     if (!conn) {
-      return { status: 500, headers: cors(req), body: { ok: false, error: "COSMOS_CONN not set" } };
+      return { status: 500, headers: cors(req), body: { ok: false, error: { code: "INTERNAL_ERROR", message: "COSMOS_CONN not set" } } };
     }
 
     /** Config flags */
@@ -80,10 +80,10 @@ module.exports = async function (context, req) {
     /** Parse payload */
     const payload = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || []);
     if (!Array.isArray(payload)) {
-      return { status: 400, headers: cors(req), body: { ok: false, error: "Body must be an array" } };
+      return { status: 400, headers: cors(req), body: { ok: false, error: { code: "VALIDATION_ERROR", message: "Body must be an array" } } };
     }
     if (payload.length === 0 && !ALLOW_EMPTY) {
-      return { status: 400, headers: cors(req), body: { ok: false, error: "Body must be a non-empty array" } };
+      return { status: 400, headers: cors(req), body: { ok: false, error: { code: "VALIDATION_ERROR", message: "Body must be a non-empty array" } } };
     }
 
     /** Connect to Cosmos */
@@ -109,7 +109,11 @@ module.exports = async function (context, req) {
           headers: cors(req),
           body: {
             ok: false,
-            error: `Schema validation failed at row ${i}: ${ajv.errorsText(validateEntitlement.errors)}`
+            error: {
+              code: "VALIDATION_ERROR",
+              message: `Schema validation failed at row ${i}`,
+              details: validateEntitlement.errors || []
+            }
           }
         };
       }
@@ -123,7 +127,13 @@ module.exports = async function (context, req) {
         return {
           status: 400,
           headers: cors(req),
-          body: { ok: false, error: `Mixed appId detected. Expected '${appIdOfBatch}', got '${row.appId}'` }
+          body: {
+            ok: false,
+            error: {
+              code: "VALIDATION_ERROR",
+              message: `Mixed appId detected. Expected '${appIdOfBatch}', got '${row.appId}'`
+            }
+          }
         };
       }
 
@@ -139,7 +149,7 @@ module.exports = async function (context, req) {
         return {
           status: 400,
           headers: cors(req),
-          body: { ok: false, error: "Empty uploads require ?appId= OR x-app-id" }
+          body: { ok: false, error: { code: "VALIDATION_ERROR", message: "Empty uploads require ?appId= OR x-app-id" } }
         };
       }
       appIdOfBatch = String(provided).trim();
@@ -223,9 +233,62 @@ module.exports = async function (context, req) {
       });
     }
 
+    // Concurrency pre-check for updates: existing rows must provide matching _etag
+    const ifMatchHeader = req.headers["if-match"] || req.headers["If-Match"];
+    const updateRows = [];
+    for (const d of finalDocs) {
+      try {
+        const { resource: existing } = await accountsC.item(d.id, appIdOfBatch).read();
+        if (!existing) continue;
+
+        const expectedEtag = String(d._etag || ifMatchHeader || "").trim();
+        if (!expectedEtag) {
+          return {
+            status: 428,
+            headers: cors(req),
+            body: {
+              ok: false,
+              error: {
+                code: "PRECONDITION_REQUIRED",
+                message: "If-Match is required for account updates",
+                details: { id: d.id }
+              }
+            }
+          };
+        }
+
+        const currentEtag = String(existing._etag || "");
+        if (isEtagMismatch(expectedEtag, currentEtag)) {
+          return {
+            status: 412,
+            headers: cors(req),
+            body: {
+              ok: false,
+              error: {
+                code: "ETAG_MISMATCH",
+                message: "Resource changed",
+                details: { id: d.id, expectedEtag, currentEtag }
+              }
+            }
+          };
+        }
+
+        updateRows.push({ id: d.id, etag: expectedEtag });
+      } catch (readErr) {
+        if (readErr.code === 404) continue;
+        throw readErr;
+      }
+    }
+    const updateEtagById = new Map(updateRows.map((x) => [x.id, x.etag]));
+
     /** Step 1 — Upsert */
     const upsertOne = async d => {
-      await accountsC.items.upsert(d);
+      const etag = updateEtagById.get(d.id);
+      if (etag) {
+        await accountsC.item(d.id, appIdOfBatch).replace(d, { accessCondition: { type: "IfMatch", condition: etag } });
+      } else {
+        await accountsC.items.upsert(d);
+      }
       successUpsertIDs.push(d.id);
       return true;
     };
@@ -273,7 +336,17 @@ module.exports = async function (context, req) {
 
   } catch (err) {
     context.log.error("ENTITLEMENTS IMPORT - ERROR:", err);
-    return { status: 500, headers: cors(req), body: { ok: false, error: err.message || "Internal error" } };
+    return {
+      status: err?.code === 412 ? 412 : 500,
+      headers: cors(req),
+      body: {
+        ok: false,
+        error: {
+          code: err?.code === 412 ? "ETAG_MISMATCH" : "INTERNAL_ERROR",
+          message: err.message || "Internal error"
+        }
+      }
+    };
   }
 };
 
@@ -283,7 +356,7 @@ function cors(req) {
   return {
     "Access-Control-Allow-Origin": req.headers?.origin || "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id, x-actor-name, x-app-id"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id, x-actor-name, x-app-id, If-Match"
   };
 }
 
@@ -393,3 +466,12 @@ async function listIdsForApp(accountsC, appId) {
   }).fetchAll();
   return resources.map(r => r.id);
 }
+
+function isEtagMismatch(expectedEtag, currentEtag) {
+  return String(expectedEtag || "").trim() !== String(currentEtag || "").trim();
+}
+
+module.exports.__test = {
+  validateAccount: validateEntitlement,
+  isEtagMismatch
+};

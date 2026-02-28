@@ -2,21 +2,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true });
-
-const schema = {
-  type: "object",
-  required: ["itemId", "managerId"],
-  properties: {
-    itemId: { type: "string", minLength: 1 },
-    managerId: { type: "string", minLength: 1 },
-    status: { type: "string", minLength: 1 },
-    reassignToManagerId: { type: "string" },
-    comment: { type: "string" },
-    remediationComment: { type: "string" },
-    remediatedAt: { type: "string" }
-  },
-  additionalProperties: true
-};
+const schema = require("../../shared/schemas/reviews/review-item-action.request.schema.json");
 const validate = ajv.compile(schema);
 
 module.exports = async function (context, req) {
@@ -24,7 +10,7 @@ module.exports = async function (context, req) {
     if (req.method === "OPTIONS") return { status: 204, headers: cors(req) };
 
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    if (!validate(body)) return bad(400, ajv.errorsText(validate.errors), req);
+    if (!validate(body)) return bad(400, "VALIDATION_ERROR", "Invalid request payload", req, validate.errors || []);
 
     const conn = process.env.COSMOS_CONN;
     if (!conn) return bad(500, "COSMOS_CONN not set", req);
@@ -36,8 +22,20 @@ module.exports = async function (context, req) {
     const logsC = db.container("auditLogs");
     const hrC = db.container("hrUsers");
 
+    const requestIfMatch = req.headers?.["if-match"] || req.headers?.["If-Match"];
+    if (!requestIfMatch || String(requestIfMatch).trim().length === 0) {
+      return bad(428, "PRECONDITION_REQUIRED", "If-Match header is required", req);
+    }
+
     const { resource: itm } = await itemsC.item(body.itemId, body.managerId).read();
-    if (!itm) return bad(404, "Item not found", req);
+    if (!itm) return bad(404, "ITEM_NOT_FOUND", "Item not found", req);
+
+    if (String(requestIfMatch).trim() !== String(itm._etag || "").trim()) {
+      return bad(412, "ETAG_MISMATCH", "Resource changed", req, {
+        expectedEtag: String(requestIfMatch),
+        currentEtag: String(itm._etag || "")
+      });
+    }
 
     const actorId = req.headers["x-actor-id"] || body.managerId;
     const now = new Date().toISOString();
@@ -46,15 +44,15 @@ module.exports = async function (context, req) {
     if (body.reassignToManagerId && String(body.reassignToManagerId).trim().length > 0) {
       const targetManagerId = String(body.reassignToManagerId).trim();
       if (targetManagerId === String(body.managerId).trim()) {
-        return bad(400, "Target reviewer must be different from current reviewer.", req);
+        return bad(400, "VALIDATION_ERROR", "Target reviewer must be different from current reviewer.", req);
       }
       if (targetManagerId === String(itm.appUserId || "").trim()) {
-        return bad(400, "Reviewer cannot be the same user whose access is under review.", req);
+        return bad(400, "VALIDATION_ERROR", "Reviewer cannot be the same user whose access is under review.", req);
       }
 
       const currentReassignmentCount = Number(itm.reassignmentCount || 0);
       if (currentReassignmentCount >= maxReassignments) {
-        return bad(400, `Maximum reassignment limit reached (${maxReassignments}) for this item.`, req);
+        return bad(400, "VALIDATION_ERROR", `Maximum reassignment limit reached (${maxReassignments}) for this item.`, req);
       }
 
       let targetHr = null;
@@ -64,7 +62,7 @@ module.exports = async function (context, req) {
       } catch (_) {
       }
       if (!targetHr) {
-        return bad(400, `Target reviewer ${targetManagerId} not found in HR users.`, req);
+        return bad(400, "VALIDATION_ERROR", `Target reviewer ${targetManagerId} not found in HR users.`, req);
       }
 
       const reassignedItem = {
@@ -95,10 +93,18 @@ module.exports = async function (context, req) {
     }
 
     if (!body.status || String(body.status).trim().length === 0) {
-      return bad(400, "status is required for action update", req);
+      return bad(400, "VALIDATION_ERROR", "status is required for action update", req);
     }
 
     const newStatus = String(body.status).toUpperCase();
+
+    const isHighRisk = !!itm.isSoDConflict || !!itm.isOrphan;
+    if (newStatus === "APPROVED" && isHighRisk && (!body.comment || String(body.comment).trim().length === 0)) {
+      return bad(400, "VALIDATION_ERROR", "Justification is required to approve high-risk items.", req, {
+        requiredField: "comment",
+        reason: "high-risk-approval"
+      });
+    }
 
     const ops = [
       { op: "set", path: "/status", value: newStatus }
@@ -122,7 +128,7 @@ module.exports = async function (context, req) {
 
     await itemsC
       .item(body.itemId, body.managerId)
-      .patch(ops, { accessCondition: { type: "IfMatch", condition: itm._etag } });
+      .patch(ops, { accessCondition: { type: "IfMatch", condition: String(requestIfMatch) } });
 
     // Recompute cycle counters after action so backend remains source-of-truth.
     const cycleId = itm.reviewCycleId;
@@ -180,16 +186,41 @@ module.exports = async function (context, req) {
 
     return ok({ itemId: body.itemId, status: newStatus }, req);
   } catch (err) {
-    if (err.code === 412) return bad(409, "Conflict: the item or cycle was updated by someone else. Refresh and retry.", req);
+    if (err.code === 412) {
+      const itemId = req?.body?.itemId;
+      const managerId = req?.body?.managerId;
+      let currentEtag = null;
+      try {
+        if (itemId && managerId) {
+          const conn = process.env.COSMOS_CONN;
+          if (conn) {
+            const client = new CosmosClient(conn);
+            const { resource } = await client.database("appdb").container("reviewItems").item(itemId, managerId).read();
+            currentEtag = resource?._etag || null;
+          }
+        }
+      } catch (_) {
+      }
+      const requestIfMatch = req.headers?.["if-match"] || req.headers?.["If-Match"];
+      return bad(412, "ETAG_MISMATCH", "Resource changed", req, { expectedEtag: String(requestIfMatch || ""), currentEtag });
+    }
     context.log.error("reviews/items/action PATCH error:", err?.stack || err);
-    return bad(500, err?.message || "Internal error", req);
+    return bad(500, "INTERNAL_ERROR", err?.message || "Internal error", req);
   }
 };
 
 function cors(req){ return {
   "Access-Control-Allow-Origin": req.headers?.origin || "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id"
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id, If-Match"
 };}
 function ok(body, req){ return { status: 200, headers: cors(req), body: { ok: true, ...body } }; }
-function bad(status, error, req){ return { status, headers: cors(req), body: { ok: false, error } }; }
+function bad(status, code, message, req, details){
+  const error = { code, message };
+  if (details !== undefined) error.details = details;
+  return { status, headers: cors(req), body: { ok: false, error } };
+}
+
+module.exports.__test = {
+  validateRequest: validate
+};

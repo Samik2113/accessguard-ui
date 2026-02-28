@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "review-cycle-detail.response.schema.json",
+  "type": "object",
+  "required": ["ok", "cycle", "items", "page", "validators"],
+  "properties": {
+    "ok": { "const": true },
+    "cycle": { "type": "object" },
+    "items": { "type": "array", "items": { "type": "object" } },
+    "page": {
+      "type": "object",
+      "required": ["count"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "continuationToken": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "validators": {
+      "type": "object",
+      "required": ["etag", "lastModified"],
+      "properties": {
+        "etag": { "type": "string" },
+        "lastModified": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

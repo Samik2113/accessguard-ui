@@ -2,6 +2,21 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;     // e.g., "https://func-accessguard-dev-....azurewebsites.net"
 const FN_KEY = import.meta.env.VITE_AZ_FUNC_KEY ?? ""; // provided via env at build time (not committed)
 
+type ApiError = Error & { code?: string; details?: unknown; status?: number };
+type GetJsonOptions = { keyInQuery?: boolean; signal?: AbortSignal; forceRevalidate?: boolean };
+type PostJsonOptions = { keyInQuery?: boolean; ifMatch?: string };
+
+type CacheEntry = {
+  data: any;
+  etag?: string;
+  lastModified?: string;
+  updatedAt: number;
+};
+
+const getCache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<any>>();
+const inflightControllers = new Map<string, AbortController>();
+
 // Common request builder
 function buildUrl(path: string, params: Record<string, string | number | undefined> = {}, includeQueryKey = false) {
   const qp = new URLSearchParams();
@@ -14,33 +29,111 @@ function buildUrl(path: string, params: Record<string, string | number | undefin
   return `${BASE}${path}${qs ? `?${qs}` : ""}`;
 }
 
-async function getJson(path: string, params: Record<string, string | number | undefined> = {}, opts?: { keyInQuery?: boolean }) {
-  const url = buildUrl(path, params, !!opts?.keyInQuery);
-  const headers: Record<string, string> = {};
-  if (FN_KEY && !opts?.keyInQuery) headers["x-functions-key"] = FN_KEY;   // prefer header
-  const res = await fetch(url, { method: "GET", headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || (data as any)?.ok === false) throw new Error((data as any)?.error ?? `GET ${path} failed`);
-  return data;
+function makeCacheKey(path: string, params: Record<string, string | number | undefined>, includeQueryKey: boolean) {
+  return buildUrl(path, params, includeQueryKey);
 }
 
-async function postJson(path: string, body: any, params: Record<string, string | number | undefined> = {}, opts?: { keyInQuery?: boolean }) {
+function createApiError(message: string, status?: number, code?: string, details?: unknown): ApiError {
+  const error = new Error(message) as ApiError;
+  error.status = status;
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
+async function getJson(path: string, params: Record<string, string | number | undefined> = {}, opts?: GetJsonOptions) {
+  const includeQueryKey = !!opts?.keyInQuery;
+  const url = buildUrl(path, params, includeQueryKey);
+  const key = makeCacheKey(path, params, includeQueryKey);
+
+  if (inflight.has(key)) return inflight.get(key)!;
+
+  if (inflightControllers.has(key)) {
+    inflightControllers.get(key)?.abort();
+    inflightControllers.delete(key);
+  }
+
+  const headers: Record<string, string> = {};
+  if (FN_KEY && !includeQueryKey) headers["x-functions-key"] = FN_KEY;   // prefer header
+
+  const cached = getCache.get(key);
+  if (cached?.etag) headers["If-None-Match"] = cached.etag;
+  if (cached?.lastModified) headers["If-Modified-Since"] = cached.lastModified;
+
+  const controller = new AbortController();
+  if (opts?.signal) {
+    if (opts.signal.aborted) controller.abort();
+    else opts.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  const signal = controller.signal;
+  inflightControllers.set(key, controller);
+
+  const promise = fetch(url, { method: "GET", headers, signal })
+    .then(async (res) => {
+      if (res.status === 304 && cached) {
+        return cached.data;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (data as any)?.ok === false) {
+        const normalized = (data as any)?.error;
+        if (normalized && typeof normalized === 'object') {
+          throw createApiError(normalized.message || `GET ${path} failed`, res.status, normalized.code, normalized.details);
+        }
+        throw createApiError((data as any)?.error ?? `GET ${path} failed`, res.status);
+      }
+
+      const etag = res.headers.get("ETag") || undefined;
+      const lastModified = res.headers.get("Last-Modified") || undefined;
+      getCache.set(key, {
+        data,
+        etag,
+        lastModified,
+        updatedAt: Date.now()
+      });
+
+      return data;
+    })
+    .finally(() => {
+      inflight.delete(key);
+      inflightControllers.delete(key);
+    });
+
+  inflight.set(key, promise);
+  return promise;
+}
+
+async function postJson(path: string, body: any, params: Record<string, string | number | undefined> = {}, opts?: PostJsonOptions) {
   const url = buildUrl(path, params, !!opts?.keyInQuery);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (FN_KEY && !opts?.keyInQuery) headers["x-functions-key"] = FN_KEY;   // prefer header
+  if (opts?.ifMatch) headers["If-Match"] = opts.ifMatch;
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || (data as any)?.ok === false) throw new Error((data as any)?.error ?? `POST ${path} failed`);
+  if (!res.ok || (data as any)?.ok === false) {
+    const normalized = (data as any)?.error;
+    if (normalized && typeof normalized === 'object') {
+      throw createApiError(normalized.message || `POST ${path} failed`, res.status, normalized.code, normalized.details);
+    }
+    throw createApiError((data as any)?.error ?? `POST ${path} failed`, res.status);
+  }
+
+  // conservative invalidation: clear cached GET entries for review slice after writes
+  if (path.includes("reviews-") || path.includes("review")) {
+    Array.from(getCache.keys()).forEach((k) => {
+      if (k.includes("/api/review") || k.includes("/api/reviews")) getCache.delete(k);
+    });
+  }
   return data;
 }
 
 // -------------------- Reads (hydrate UI) --------------------
 export const getApplications      = (top=100, ct?:string) => getJson("/api/applications-get", { top, continuationToken: ct });
 export const getEntitlements      = (appId: string, search?: string, top=200, ct?:string) => getJson("/api/entitlements-get", { appId, search, top, continuationToken: ct });
-export const getAccounts          = (appId: string, userId?: string, entitlement?: string, top=200, ct?:string) =>
-  getJson("/api/accounts-get", { appId, userId, entitlement, top, continuationToken: ct });
+export const getAccounts          = (appId: string, userId?: string, entitlement?: string, top=200, ct?:string, search?: string) =>
+  getJson("/api/accounts-get", { appId, userId, entitlement, top, continuationToken: ct, search });
 // Optional server-side: fetch all accounts for a user across apps
-export const getAccountsByUser   = (userId: string, top=500) => getJson("/api/accounts-get-by-user", { userId, top });
+export const getAccountsByUser   = (userId: string, top=500, search?: string) => getJson("/api/accounts-get-by-user", { userId, top, search });
 export const getHrUsers           = (opts: { userId?: string; managerId?: string; search?: string; top?: number; ct?: string } = {}) =>
   getJson("/api/hr-users-get", { userId: opts.userId, managerId: opts.managerId, search: opts.search, top: opts.top ?? 50, continuationToken: opts.ct });
 export const getAuditLogs         = (opts: { userId?: string; action?: string; from?: string; to?: string; top?: number; ct?: string } = {}) =>
@@ -68,7 +161,17 @@ export const getReviewCycles = async (opts: { appId?: string; status?: string; t
 
 // Get review items (optionally filtered by cycleId, managerId, or status)
 export const getReviewItems       = (opts: { cycleId?: string; managerId?: string; status?: string; top?: number; ct?: string } = {}) =>
-  getJson("/api/reviewitems-get", { cycleId: opts.cycleId, managerId: opts.managerId, status: opts.status, top: opts.top ?? 500, continuationToken: opts.ct });
+  getJson("/api/reviewitems-get", { reviewCycleId: opts.cycleId, managerId: opts.managerId, status: opts.status, top: opts.top ?? 500, continuationToken: opts.ct });
+
+export const getReviewCycleDetail = (opts: { cycleId: string; appId?: string; managerId?: string; status?: string; top?: number; ct?: string }) =>
+  getJson("/api/reviews-cycle-detail", {
+    cycleId: opts.cycleId,
+    appId: opts.appId,
+    managerId: opts.managerId,
+    status: opts.status,
+    top: opts.top ?? 200,
+    continuationToken: opts.ct
+  });
 
 // Legacy: alias for backward compatibility
 export const getManagerItems      = (managerId: string, status?: string) =>
@@ -94,16 +197,18 @@ export const actOnItem            = (payload: {
   comment?: string;
   remediationComment?: string;
   remediatedAt?: string;
+  etag?: string;
 }) =>
-  postJson("/api/reviews-item-action", payload);
+  postJson("/api/reviews-item-action", payload, {}, { ifMatch: payload.etag });
 
 export const reassignReviewItem = (payload: {
   itemId: string;
   managerId: string;
   reassignToManagerId: string;
   comment?: string;
+  etag?: string;
 }) =>
-  postJson("/api/reviews-item-action", payload);
+  postJson("/api/reviews-item-action", payload, {}, { ifMatch: payload.etag });
 
 export const confirmManager       = (payload: { cycleId: string; appId: string; managerId: string }) =>
   postJson("/api/reviews-confirm", payload);
@@ -138,7 +243,7 @@ export const setUserRole = (payload: { userId: string; role: 'ADMIN' | 'AUDITOR'
 export const setUserRolesBulk = (payload: Array<{ userId: string; role: 'ADMIN' | 'AUDITOR' | 'USER' }>) =>
   postJson("/api/auth-set-role", payload);
 
-export const importAccounts       = (appId: string, items: any[]) => postJson("/api/accounts-import", items, { appId });
+export const importAccounts       = (appId: string, items: any[], ifMatch?: string) => postJson("/api/accounts-import", items, { appId }, { ifMatch });
 export const importEntitlements   = (appId: string, items: any[]) => postJson("/api/entitlements-import", items, { appId });
 export const importSodPolicies    = (items: any[]) => postJson("/api/sod-import", items);
 export const importApplications   = (items: any[]) => postJson("/api/applications-import", items);
@@ -151,3 +256,12 @@ export const deleteSodPolicy = (id: string) => postJson("/api/sod-delete", { id 
 
 // Messages
 export const saveMessageToBackend = (message: any) => postJson("/api/messages", { message });
+
+export const __test = {
+  resetApiState() {
+    getCache.clear();
+    inflight.clear();
+    inflightControllers.forEach((controller) => controller.abort());
+    inflightControllers.clear();
+  }
+};

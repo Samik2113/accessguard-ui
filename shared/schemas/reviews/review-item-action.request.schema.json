@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "review-item-action.request.schema.json",
+  "type": "object",
+  "required": ["itemId", "managerId"],
+  "properties": {
+    "itemId": { "type": "string", "minLength": 1 },
+    "managerId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "reassignToManagerId": { "type": "string" },
+    "comment": { "type": "string" },
+    "remediationComment": { "type": "string" },
+    "remediatedAt": { "type": "string" }
+  },
+  "additionalProperties": true
+}

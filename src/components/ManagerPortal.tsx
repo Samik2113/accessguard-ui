@@ -99,14 +99,6 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
   const handleBulkSubmit = () => {
     if (!showBulkModal.status) return;
-    const selectedObjs = showBulkModal.items.map(id => items.find(i => i.id === id)).filter(Boolean) as ReviewItem[];
-    const hasHighRisk = selectedObjs.some(isHighRisk);
-
-    if (showBulkModal.status === ActionStatus.APPROVED && hasHighRisk && !justification.trim()) {
-      alert("Justification is MANDATORY for approving High/Critical risk items.");
-      return;
-    }
-
     onBulkAction(showBulkModal.items, showBulkModal.status, justification.trim());
     setJustification('');
     setShowBulkModal({ status: null, items: [] });
@@ -115,11 +107,6 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
   const handleSingleSubmit = () => {
     if (!singleActionModal) return;
-    const item = items.find(i => i.id === singleActionModal.id);
-    if (singleActionModal.status === ActionStatus.APPROVED && item && isHighRisk(item) && !justification.trim()) {
-      alert("Justification is MANDATORY for approving High/Critical risk items.");
-      return;
-    }
     onAction(singleActionModal.id, singleActionModal.status, justification.trim());
     setJustification('');
     setSingleActionModal(null);

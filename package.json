@@ -6,11 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:backend": "node --test backend/tests/*.test.mjs",
+    "test:frontend": "vitest run"
   },
   "dependencies": {
+    "@azure/cosmos": "^4.9.1",
     "@google/genai": "^1.40.0",
+    "@tanstack/react-query": "^5.90.5",
+    "@tanstack/react-query-devtools": "^5.90.6",
+    "ajv": "^8.18.0",
     "lucide-react": "^0.563.0",
+    "nanoid": "^5.1.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^3.7.0"
@@ -20,6 +27,7 @@
     "@vitejs/plugin-basic-ssl": "^2.1.4",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^3.2.4"
   }
 }

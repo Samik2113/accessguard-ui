@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy } from '../types';
 import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
+import { useReviewCycleDetail } from '../features/reviews/queries';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -44,6 +45,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [bulkReassignToManagerId, setBulkReassignToManagerId] = useState('');
   const [bulkReassignComment, setBulkReassignComment] = useState('');
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
+  const cycleDetailQuery = useReviewCycleDetail({ cycleId: selectedCampaignId || '', top: 500 });
 
   useEffect(() => {
     setSelectedCampaignItems([]);
@@ -62,8 +64,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
   const viewingItems = useMemo(() => {
     if (!selectedCampaignId) return [];
+    const serverItems = Array.isArray(cycleDetailQuery.data?.items) ? cycleDetailQuery.data.items : [];
+    if (serverItems.length > 0) return serverItems as ReviewItem[];
     return reviewItems.filter(i => i.reviewCycleId === selectedCampaignId);
-  }, [reviewItems, selectedCampaignId]);
+  }, [reviewItems, selectedCampaignId, cycleDetailQuery.data]);
 
   const uniqueUsersInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.userName))).sort(), [viewingItems]);
   const uniqueEntsInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.entitlement))).sort(), [viewingItems]);
