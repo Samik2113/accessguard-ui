@@ -29,7 +29,6 @@ module.exports = async function (context, req) {
 };
 
 
-
 function cors(req){ return { "Access-Control-Allow-Origin": req.headers?.origin || "*", "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization" }; }
 function ok(body, req){ return { status: 200, headers: cors(req), body: { ok: true, ...body } }; }
 function bad(status, error, req){ return { status, headers: cors(req), body: { ok: false, error } }; }

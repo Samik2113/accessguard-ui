@@ -1,121 +1,63 @@
-name: Deploy Azure Function App (Direct Kudu Zip Deploy)
+
+name: Deploy Azure Function App (FTP Run From Package)
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/**'   # only trigger on backend changes
-  workflow_dispatch:    # allow manual runs
+      - 'backend/**'
+  workflow_dispatch:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    name: Deploy Functions (backend)
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      # Safety check so we don't deploy wrong folder
-      - name: Verify Functions project root
-        run: |
-          if [ ! -f "backend/host.json" ]; then
-            echo "Error: backend/host.json not found."
-            exit 1
-          fi
+    - name: Verify backend root
+      shell: pwsh
+      run: |
+        if (-Not (Test-Path "backend/host.json")) {
+          Write-Error "backend/host.json missing"
+        }
 
-      - name: Create deployment package
-        run: |
-          cd backend
-          zip -r ../backend.zip .
+    - name: Zip backend
+      shell: pwsh
+      run: |
+        Compress-Archive -Path backend\* -DestinationPath backend.zip -Force
 
-      # Parse the publish profile using Python (no external tools required)
-      - name: Extract publish profile values (Python)
-        id: prep
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
-        run: |
-          python3 - <<'PY'
-          import os, sys, xml.etree.ElementTree as ET
-          xml = os.environ.get("PUBLISH_PROFILE", "").strip()
-          if not xml.startswith("<publishData"):
-              print("::error::AZUREAPPSERVICE_PUBLISHPROFILE is empty or invalid XML")
-              sys.exit(1)
-          root = ET.fromstring(xml)
+    - name: FTP Deploy Package
+      shell: pwsh
+      env:
+        FTP_USER: ${{ secrets.FTP_USER }}
+        FTP_PASS: ${{ secrets.FTP_PASS }}
+        FTP_HOST: ${{ secrets.FTP_HOST }}
+      run: |
+        $ftp = "ftp://$($env:FTP_HOST)/site/wwwroot/"
 
-          # Prefer ZipDeploy; fall back to MSDeploy if needed
-          prof = root.find(".//publishProfile[@publishMethod='ZipDeploy']")
-          if prof is None:
-              prof = root.find(".//publishProfile[@publishMethod='MSDeploy']")
-          if prof is None:
-              print("::error::No publishProfile with publishMethod ZipDeploy/MSDeploy found")
-              sys.exit(1)
+        Write-Host "Uploading backend.zip to $ftp"
 
-          user = prof.attrib.get("userName")
-          pwd  = prof.attrib.get("userPWD")
-          purl = prof.attrib.get("publishUrl")
+        $wc = New-Object System.Net.WebClient
+        $wc.Credentials = New-Object System.Net.NetworkCredential($env:FTP_USER, $env:FTP_PASS)
+        $wc.UploadFile("$ftp/backend.zip", "backend.zip")
 
-          if not (user and pwd and purl):
-              print("::error::Missing userName/userPWD/publishUrl in publish profile")
-              sys.exit(1)
+    - name: Set WEBSITE_RUN_FROM_PACKAGE
+      shell: pwsh
+      env:
+        AZURE_FUNC_NAME: "func-accessguard-dev"
+        AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
+      run: |
+        Install-Module -Name Az.Websites -Force -Scope CurrentUser -AllowClobber
+        $pp = $env:AZURE_WEBAPP_PUBLISH_PROFILE
+        [xml]$xml = $pp
+        $user = $xml.publishData.publishProfile[0].userName
+        $pwd = $xml.publishData.publishProfile[0].userPWD
 
-          # purl can be like:
-          #   func-...scm.centralindia-01.azurewebsites.net:443
-          # or  func-...scm...:443/msdeploy.axd?site=...
-          host = purl.split('/')[0]    # remove any path
-          host = host.split(':')[0]    # remove :443 if present
+        az login --username $user --password $pwd --allow-no-subscriptions
 
-          kudu_url = f"https://{host}/api/zipdeploy"
-
-          # Mask secrets in logs
-          print(f"::add-mask::{user}")
-          print(f"::add-mask::{pwd}")
-
-          # Emit outputs for next step
-          gh_out = os.environ["GITHUB_OUTPUT"]
-          with open(gh_out, "a") as f:
-              f.write(f"user={user}\n")
-              f.write(f"pass={pwd}\n")
-              f.write(f"kudu_url={kudu_url}\n")
-
-          # Optional: show target host (non-secret)
-          print(f"Target Kudu URL: {kudu_url}")
-          PY
-
-      - name: Deploy to Kudu (Zip Deploy)
-        run: |
-          echo "Deploying to: ${{ steps.prep.outputs.kudu_url }}"
-          STATUS=$(curl -sS -o response.json -w "%{http_code}" \
-            -u "${{ steps.prep.outputs.user }}:${{ steps.prep.outputs.pass }}" \
-            -X POST \
-            -H "Content-Type: application/zip" \
-            --data-binary @backend.zip \
-            "${{ steps.prep.outputs.kudu_url }}")
-
-          echo "HTTP Status: $STATUS"
-          cat response.json || true
-
-          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
-            echo "Deployment FAILED"
-            exit 1
-          fi
-
-          echo "Deployment started successfully."
-
-      # (Optional) Poll deployment status for completion logs
-      - name: Poll Deployment Status
-        if: always()
-        run: |
-          URL=$(jq -r '.url // empty' response.json)
-          if [ -n "$URL" ]; then
-            echo "Polling $URL"
-            for i in {1..20}; do
-              sleep 3
-              curl -sS -u "${{ steps.prep.outputs.user }}:${{ steps.prep.outputs.pass }}" "$URL" | tee status.json
-              state=$(jq -r '.status // empty' status.json)
-              if [ "$state" = "3" ]; then
-                echo "Deployment completed."
-                break
-              fi
-            done
-          fi
+        az functionapp config appsettings set `
+          --name func-accessguard-dev `
+          --resource-group rg-uar-core-dev `
+          --settings "WEBSITE_RUN_FROM_PACKAGE=1"
