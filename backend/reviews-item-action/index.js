@@ -4,6 +4,7 @@ const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true });
 const schema = require("../../shared/schemas/reviews/review-item-action.request.schema.json");
 const validate = ajv.compile(schema);
+const api = require('../dist/services/api');
 
 module.exports = async function (context, req) {
   try {

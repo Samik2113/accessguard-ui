@@ -1,7 +1,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const crypto = require("crypto");
-
+const api = require('../dist/services/api');
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 const schema = {

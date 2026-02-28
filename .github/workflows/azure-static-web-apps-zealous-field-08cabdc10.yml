@@ -8,17 +8,25 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build_and_deploy_job:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
     name: Build and Deploy Job
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
           lfs: false
+
+      # Optional: If your UI needs a specific Node version, uncomment:
+      # - name: Setup Node for UI build
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '18'
 
       - name: Build And Deploy
         id: builddeploy
@@ -27,13 +35,60 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ZEALOUS_FIELD_08CABDC10 }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
+
+          # === UI (unchanged) ===
           app_location: "."
-          api_location: ""
           output_location: "dist"
-        env:
-          # Force Oryx/npm to use the public npm registry to avoid 403
+
+          # === API (Functions) ===
+          api_location: "backend"
+
+          # === Build ONLY src/services/**/*.ts -> backend/dist/services/**/*.js ===
+          api_build_command: |
+            set -e
+
+            echo "Creating temporary tsconfig for src/services/**/*.ts -> backend/dist/services ..."
+            cat > tsconfig-services.json << 'JSON'
+            {
+              "compilerOptions": {
+                "target": "ES2020",
+                "module": "CommonJS",
+                "moduleResolution": "Node",
+                "esModuleInterop": true,
+                "resolveJsonModule": true,
+                "strict": true,
+                "skipLibCheck": true,
+                "sourceMap": false,
+                "outDir": "./backend/dist",
+                "rootDir": "./src/services"
+              },
+              "include": ["src/services/**/*.ts"],
+              "exclude": ["node_modules"]
+            }
+            JSON
+
+            echo "Compiling TypeScript services -> backend/dist/ using npx typescript@5.6.3 ..."
+            npx -y typescript@5.6.3 tsc -p tsconfig-services.json
+
+            echo "==== After compile: listing backend/dist (up to depth 3) ===="
+            if [ -d "./backend/dist" ]; then
+              find ./backend/dist -maxdepth 3 -type f -print | sed 's/^/  /'
+            else
+              echo "::error::backend/dist was not created. Compilation may have failed."
+              exit 1
+            fi
+
+            echo "==== Verifying backend/functions/*/function.json exist ===="
+            if [ -d "./backend/functions" ]; then
+              find ./backend/functions -maxdepth 2 -type f -name "function.json" -print | sed 's/^/  /' || true
+            fi
+
+            echo "Build prep complete. SWA will now upload API from backend/."
+          env:
+          # Keep npm on public registry (avoids occasional 403s in corp networks)
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-          # Your app env vars
+
+          # Your existing UI env vars (keep if still used by your UI)
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
           VITE_AZ_FUNC_KEY: ${{ secrets.VITE_AZ_FUNC_KEY }}
 

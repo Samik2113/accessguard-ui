@@ -1,7 +1,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { customAlphabet } = require("nanoid");
-
+const api = require('../dist/services/api');
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 // normalize to a safe token for id components

@@ -1,4 +1,5 @@
 const { CosmosClient } = require("@azure/cosmos");
+const api = require('../dist/services/api');
 
 module.exports = async function (context, req) {
   try {

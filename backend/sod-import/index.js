@@ -2,7 +2,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { customAlphabet } = require("nanoid");
-
+const api = require('../dist/services/api');
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const safe = (s) => String(s || "").trim().replace(/\s+/g, "_").replace(/[^\w\-]/g, "").toUpperCase();
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);

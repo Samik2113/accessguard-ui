@@ -1,6 +1,6 @@
 // messages/index.js
 const { CosmosClient } = require("@azure/cosmos");
-
+const api = require('../dist/services/api');
 module.exports = async function (context, req) {
   try {
     // Optional: handle CORS preflight if you want to run without platform CORS
@@ -35,7 +35,7 @@ module.exports = async function (context, req) {
     const client = new CosmosClient(conn);
     const database = client.database("appdb");
     const container = database.container("auditLogs");
-
+    
     const doc = {
       userId,
       message: message.trim(),

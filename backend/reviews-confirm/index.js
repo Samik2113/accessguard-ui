@@ -2,7 +2,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true });
-
+const api = require('../dist/services/api');
 const schema = {
   type: "object",
   required: ["cycleId", "appId", "managerId"],

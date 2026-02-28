@@ -3,7 +3,7 @@ const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { customAlphabet } = require("nanoid");
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
-
+const api = require('../dist/services/api');
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 const schema = {

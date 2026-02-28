@@ -4,7 +4,7 @@ const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 const ALLOWED_ROLES = new Set(["ADMIN", "AUDITOR", "USER"]);
-
+const api = require('../dist/services/api');
 const schema = {
   type: "object",
   required: ["userId", "role"],
