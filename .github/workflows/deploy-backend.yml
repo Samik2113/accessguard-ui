@@ -1,0 +1,44 @@
+name: Deploy Azure Function App (Node.js via Publish Profile)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'     # Only run when backend changes
+  workflow_dispatch:      # Allow manual run if needed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Extra safety: do nothing if host.json is missing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Functions project root
+        run: |
+          test -f backend/host.json || (echo "host.json not found in backend/. Aborting." && exit 1)
+
+      # Login using publish profile secret (no AAD/tenant perms needed)
+      - name: Azure Login (Publish Profile)
+        uses: azure/login@v2
+        with:
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
+
+      # If you have build/transpile steps (e.g., TS->JS), add them here before deploy.
+      # - name: Setup Node (for build tooling)
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '18'
+      # - name: Install & Build
+      #   working-directory: ./backend
+      #   run: |
+      #     npm ci
+      #     npm run build
+
+      - name: Deploy to Azure Function App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: func-accessguard-dev-f2cdhmfuvexedjav   # your Function App name
+          package: ./backend
