@@ -16,89 +16,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Safety check: ensure backend/ is a Functions project root
       - name: Verify Functions project root
         run: |
           if [ ! -f "backend/host.json" ]; then
-            echo "Error: backend/host.json not found. Ensure backend is the Functions project root."
+            echo "Error: backend/host.json not found."
             exit 1
           fi
 
-      # Create a zip of backend/
       - name: Create deployment package
         run: |
           cd backend
           zip -r ../backend.zip .
 
-      # Parse credentials and host from the publish profile XML secret
-      - name: Prepare Kudu credentials and URL
+      - name: Extract publish profile values (Bash only)
         id: prep
-        shell: bash
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
         run: |
-          # Write the XML to a file
-          echo "$PUBLISH_PROFILE" > publishProfile.xml
+          echo "${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}" > profile.xml
 
-          # Prefer ZipDeploy profile if present; otherwise fall back to MSDeploy
-          # Extract userName and userPWD from the first matching profile
-          USER=$(xmllint --xpath 'string(//publishProfile[@publishMethod="ZipDeploy"][1]/@userName)' publishProfile.xml 2>/dev/null || true)
-          PASS=$(xmllint --xpath 'string(//publishProfile[@publishMethod="ZipDeploy"][1]/@userPWD)' publishProfile.xml 2>/dev/null || true)
-          HOST=$(xmllint --xpath 'string(//publishProfile[@publishMethod="ZipDeploy"][1]/@publishUrl)' publishProfile.xml 2>/dev/null || true)
+          # Extract attributes manually using bash/grep/sed
+          USER=$(grep -oP 'userName="\K[^"]+' profile.xml | head -1)
+          PASS=$(grep -oP 'userPWD="\K[^"]+' profile.xml | head -1)
+          PUBLISH_URL=$(grep -oP 'publishUrl="\K[^"]+' profile.xml | head -1)
 
-          if [ -z "$USER" ] || [ -z "$PASS" ] || [ -z "$HOST" ]; then
-            echo "ZipDeploy profile not found; falling back to MSDeploy profile parsing..."
-            USER=$(xmllint --xpath 'string(//publishProfile[@publishMethod="MSDeploy"][1]/@userName)' publishProfile.xml)
-            PASS=$(xmllint --xpath 'string(//publishProfile[@publishMethod="MSDeploy"][1]/@userPWD)' publishProfile.xml)
-            HOST=$(xmllint --xpath 'string(//publishProfile[@publishMethod="MSDeploy"][1]/@publishUrl)' publishProfile.xml)
-          fi
+          # Strip :443 and anything after the hostname
+          HOST=$(echo "$PUBLISH_URL" | sed 's/:443.*//')
 
-          # HOST is like: func-accessguard-dev-xxxxx.scm.centralindia-01.azurewebsites.net:443[/msdeploy.axd?...]
-          # We need just the https base host part before any path
-          HOST_NO_PATH="${HOST%%/*}"            # strip any path
-          HOST_NO_PORT="${HOST_NO_PATH%:*}"     # strip :443 if present
-          KUDU_URL="https://${HOST_NO_PORT}/api/zipdeploy"
+          KUDU_URL="https://${HOST}/api/zipdeploy"
 
           echo "::add-mask::$USER"
           echo "::add-mask::$PASS"
+
           echo "user=$USER" >> $GITHUB_OUTPUT
           echo "pass=$PASS" >> $GITHUB_OUTPUT
           echo "kudu_url=$KUDU_URL" >> $GITHUB_OUTPUT
 
-      # Perform zip deploy directly to Kudu with Basic Auth
-      - name: Zip Deploy to Kudu
-        shell: bash
+      - name: Deploy to Kudu (Zip Deploy)
         run: |
           echo "Deploying to: ${{ steps.prep.outputs.kudu_url }}"
-          http_code=$(curl -sS -o response.json -w "%{http_code}" \
+          STATUS=$(curl -s -o response.json -w "%{http_code}" \
             -u "${{ steps.prep.outputs.user }}:${{ steps.prep.outputs.pass }}" \
             -X POST \
             -H "Content-Type: application/zip" \
             --data-binary @backend.zip \
             "${{ steps.prep.outputs.kudu_url }}")
 
-          echo "Kudu responded with HTTP $http_code"
+          echo "HTTP Status: $STATUS"
           cat response.json || true
 
-          if [ "$http_code" -ne 200 ] && [ "$http_code" -ne 202 ]; then
-            echo "Deployment failed with HTTP $http_code"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "202" ]; then
+            echo "Deployment FAILED"
             exit 1
           fi
 
-      # Optional: poll deployment status endpoint for completion logs
-      - name: Poll Deployment Status
-        shell: bash
-        run: |
-          STATUS_URL=$(jq -r '.url // empty' response.json)
-          if [ -n "$STATUS_URL" ]; then
-            echo "Polling status: $STATUS_URL"
-            for i in {1..20}; do
-              sleep 3
-              curl -sS -u "${{ steps.prep.outputs.user }}:${{ steps.prep.outputs.pass }}" "$STATUS_URL" | tee status.json
-              state=$(jq -r '.status // empty' status.json)
-              if [ "$state" = "3" ]; then
-                echo "Deployment complete."
-                break
-              fi
-            done
-          fi
+          echo "Deployment started successfully."
