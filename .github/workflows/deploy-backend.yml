@@ -1,10 +1,11 @@
+
 name: Deploy Azure Function App (Node.js via Publish Profile - Zip Deploy)
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'backend/**'        # Only run when files under backend/ change
+      - 'backend/**'
   workflow_dispatch:
 
 jobs:
@@ -24,27 +25,15 @@ jobs:
             exit 1
           fi
 
-      # (Optional) If you transpile (TS/bundling), build here and zip the build output instead
-      # - name: Setup Node (for build tooling)
-      #   uses: actions/setup-node@v4
-      #   with:
-      #     node-version: '18'
-      # - name: Install & Build
-      #   working-directory: ./backend
-      #   run: |
-      #     npm ci
-      #     npm run build
-
-      # Create a deployment zip from the backend folder
+      # If you transpile (TypeScript/bundling), build here and zip the build output instead.
       - name: Create deployment package
         run: |
           cd backend
           zip -r ../backend.zip .
 
-      # Zip deploy to the Function App using the publish profile (no azure/login step needed)
       - name: Zip Deploy to Azure Function App
         uses: azure/webapps-deploy@v2
         with:
-          app-name: func-accessguard-dev-f2cdhmfuvexedjav   # your Function App name
+          app-name: func-accessguard-dev           # ← match publish profile: msdeploySite/profileName
           package: backend.zip
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
