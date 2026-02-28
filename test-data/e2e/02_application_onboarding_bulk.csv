@@ -1,0 +1,4 @@
+appId,name,ownerId,description
+APP_FIN,Finance ERP,OWN001,Finance core ERP for AP AR GL operations
+APP_HCM,People HCM,OWN002,HR and payroll management platform
+APP_CRM,Sales CRM,OWN003,Customer and sales lifecycle platform

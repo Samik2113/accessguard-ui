@@ -1,0 +1,6 @@
+entitlement,description,owner,isPrivileged,risk,riskScore
+FIN_VIEWER,Read-only finance access,OWN001,NO,LOW,2
+FIN_AP_APPROVER,Approve accounts payable transactions,OWN001,YES,HIGH,10
+FIN_VENDOR_MAINT,Maintain vendor master records,OWN001,YES,HIGH,9
+FIN_PAYMENT_RELEASE,Release outbound payments,OWN001,YES,HIGH,10
+FIN_GL_POSTER,Post general ledger journals,OWN001,YES,HIGH,9

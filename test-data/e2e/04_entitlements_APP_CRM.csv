@@ -1,0 +1,5 @@
+entitlement,description,owner,isPrivileged,risk,riskScore
+CRM_SALES_VIEWER,Read-only sales data access,OWN003,NO,LOW,2
+CRM_ROLE_ADMIN,Manage CRM security roles,OWN003,YES,HIGH,10
+CRM_DATA_EXPORT,Bulk customer data export,OWN003,YES,HIGH,9
+CRM_MASTER_EDIT,Edit customer master records,OWN003,YES,HIGH,9

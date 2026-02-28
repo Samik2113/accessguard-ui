@@ -1,0 +1,9 @@
+id,userId,userName,email,entitlement
+A_FIN_001,USR003,Aarav Mehta,aarav.mehta@acme.com,FIN_VIEWER
+A_FIN_002,USR004,Neha Iyer,neha.iyer@acme.com,FIN_AP_APPROVER
+A_FIN_003,USR005,Rohan Das,rohan.das@acme.com,FIN_AP_APPROVER
+A_FIN_004,USR006,Priya Nair,priya.nair@acme.com,FIN_VENDOR_MAINT
+A_FIN_005,EXT901,Contractor One,contractor.one@vendor.com,FIN_VIEWER
+A_FIN_006,ORP001,Legacy Ops,orphan.ops@acme.com,FIN_PAYMENT_RELEASE
+A_FIN_007,USR007,Vikram Singh,vikram.singh@acme.com,FIN_VIEWER
+A_FIN_008,USR008,Sana Khan,sana.khan@acme.com,FIN_PAYMENT_RELEASE

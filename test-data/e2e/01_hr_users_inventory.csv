@@ -1,0 +1,14 @@
+userId,name,email,department,managerId,title,status
+ADM001,Platform Admin,admin@acme.com,IT,,CISO,Active
+MGR001,Anita Sharma,anita.sharma@acme.com,Finance,ADM001,Finance Manager,Active
+MGR002,Rahul Verma,rahul.verma@acme.com,HR,ADM001,HR Manager,Active
+MGR003,Karan Patel,karan.patel@acme.com,Sales,ADM001,Sales Manager,Active
+OWN001,Meera Nanda,meera.nanda@acme.com,Finance,ADM001,Application Owner,Active
+OWN002,Dev Khanna,dev.khanna@acme.com,HR,ADM001,Application Owner,Active
+OWN003,Isha Rao,isha.rao@acme.com,Sales,ADM001,Application Owner,Active
+USR003,Aarav Mehta,aarav.mehta@acme.com,Finance,MGR001,Analyst,Active
+USR004,Neha Iyer,neha.iyer@acme.com,Finance,MGR001,Senior Analyst,Active
+USR005,Rohan Das,rohan.das@acme.com,Finance,MGR001,Lead Analyst,Active
+USR006,Priya Nair,priya.nair@acme.com,HR,MGR002,HR Specialist,Active
+USR007,Vikram Singh,vikram.singh@acme.com,Sales,MGR003,Sales Ops,Active
+USR008,Sana Khan,sana.khan@acme.com,Sales,MGR003,Regional Manager,Active

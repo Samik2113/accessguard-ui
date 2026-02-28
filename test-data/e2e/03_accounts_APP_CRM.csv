@@ -1,0 +1,7 @@
+id,userId,userName,email,entitlement
+A_CRM_001,USR008,Sana Khan,sana.khan@acme.com,CRM_ROLE_ADMIN
+A_CRM_002,USR003,Aarav Mehta,aarav.mehta@acme.com,CRM_SALES_VIEWER
+A_CRM_003,ORP001,Legacy Ops,orphan.ops@acme.com,CRM_ROLE_ADMIN
+A_CRM_004,EXT903,Ex Employee,ex.employee@acme-old.com,CRM_DATA_EXPORT
+A_CRM_005,USR004,Neha Iyer,neha.iyer@acme.com,CRM_SALES_VIEWER
+A_CRM_006,USR006,Priya Nair,priya.nair@acme.com,CRM_SALES_VIEWER

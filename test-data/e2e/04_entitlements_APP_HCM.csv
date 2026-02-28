@@ -1,0 +1,5 @@
+entitlement,description,owner,isPrivileged,risk,riskScore
+HCM_EMP_VIEWER,Read-only employee profile access,OWN002,NO,LOW,2
+HCM_PAYROLL_ADMIN,Administer payroll processing,OWN002,YES,HIGH,10
+HCM_HR_MASTER_MAINT,Maintain HR master records,OWN002,YES,HIGH,9
+HCM_ROLE_ASSIGN,Assign HCM security roles,OWN002,YES,HIGH,9

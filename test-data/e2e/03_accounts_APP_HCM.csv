@@ -1,0 +1,7 @@
+id,userId,userName,email,entitlement
+A_HCM_001,USR005,Rohan Das,rohan.das@acme.com,HCM_PAYROLL_ADMIN
+A_HCM_002,USR004,Neha Iyer,neha.iyer@acme.com,HCM_EMP_VIEWER
+A_HCM_003,USR006,Priya Nair,priya.nair@acme.com,HCM_HR_MASTER_MAINT
+A_HCM_004,ORP001,Legacy Ops,orphan.ops@acme.com,HCM_EMP_VIEWER
+A_HCM_005,EXT902,Temp Payroll,temp.payroll@partner.com,HCM_PAYROLL_ADMIN
+A_HCM_006,USR007,Vikram Singh,vikram.singh@acme.com,HCM_EMP_VIEWER
