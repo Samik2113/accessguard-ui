@@ -3,11 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
-  "engines": {
-    "node": ">=18"
-  },
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "@azure/cosmos": "^3.17.4"
+    "@azure/cosmos": "3.17.3"
   },
   "scripts": {
     "build": "echo \"API TS->JS build happens in SWA workflow (src/services -> backend/dist)\"",
