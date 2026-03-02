@@ -58,6 +58,13 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
   const privilegedCount = withRisk.filter(i => i.isPrivileged).length;
   const sodCount = withRisk.filter(i => i.isSoDConflict).length;
 
+  const getRiskLevel = (item: any) => {
+    if (item.isSoDConflict) return 'CRITICAL';
+    if (item.isOrphan) return 'HIGH';
+    if (item.isPrivileged) return 'MEDIUM';
+    return 'LOW';
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -105,14 +112,27 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
                 <tr>
                   <th className="px-5 py-3">Account ID</th>
                   <th className="px-5 py-3">Entitlement</th>
-                  <th className="px-5 py-3">Risk Flags</th>
+                  <th className="px-5 py-3">Risk Level</th>
+                  <th className="px-5 py-3">Risk Factors</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {group.items.map((item: any) => (
+                {group.items.map((item: any) => {
+                  const level = getRiskLevel(item);
+                  return (
                   <tr key={item.id || `${item.appId}-${item.userId}-${item.entitlement}`}>
                     <td className="px-5 py-3 text-slate-600 font-mono">{item.userId || item.appUserId || '-'}</td>
                     <td className="px-5 py-3 font-medium text-slate-800">{item.entitlement || '-'}</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                        level === 'CRITICAL' ? 'bg-red-600 text-white' :
+                        level === 'HIGH' ? 'bg-orange-500 text-white' :
+                        level === 'MEDIUM' ? 'bg-indigo-500 text-white' :
+                        'bg-slate-200 text-slate-600'
+                      }`}>
+                        {level} RISK
+                      </span>
+                    </td>
                     <td className="px-5 py-3">
                       <div className="flex flex-wrap gap-2">
                         {item.isPrivileged && (
@@ -132,13 +152,13 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
                         )}
                         {!item.isPrivileged && !item.isSoDConflict && !item.isOrphan && (
                           <span className="inline-flex items-center gap-1 bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                            Normal
+                            Low Risk
                           </span>
                         )}
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>

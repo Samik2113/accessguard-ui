@@ -69,6 +69,26 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
   const userGlobalAccess = useMemo(() => access.filter(a => a.correlatedUserId === viewingIdentityId), [access, viewingIdentityId]);
   const viewingUser = users.find(u => u.id === viewingIdentityId);
 
+  const toBool = (value: any) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return v === 'true' || v === 'yes' || v === '1';
+    }
+    return false;
+  };
+
+  const getRiskLevel = (entry: any) => {
+    const hasSod = toBool(entry?.isSoDConflict);
+    const isOrphan = toBool(entry?.isOrphan);
+    const isPrivileged = toBool(entry?.isPrivileged);
+    if (hasSod) return 'CRITICAL';
+    if (isOrphan) return 'HIGH';
+    if (isPrivileged) return 'MEDIUM';
+    return 'LOW';
+  };
+
   const exportMasterAuditorReport = () => {
     const headers = [
       'Campaign Name', 'App Name', 'User Name', 'Account ID', 'Entitlement', 'Reviewer (Manager)',
@@ -374,23 +394,48 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
                          <Shield className="w-4 h-4 text-blue-600" /><span className="font-black uppercase text-[10px] tracking-widest text-slate-600">{app.name}</span>
                       </div>
                       <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50/50 text-[10px] text-slate-400 uppercase font-bold border-b">
+                          <tr>
+                            <th className="px-4 py-2">Entitlement</th>
+                            <th className="px-4 py-2">Risk Level</th>
+                            <th className="px-4 py-2 text-right">Risk Factors</th>
+                          </tr>
+                        </thead>
                         <tbody className="divide-y text-slate-700">
-                          {appAccess.map(acc => (
+                          {appAccess.map(acc => {
+                            const hasSod = toBool((acc as any).isSoDConflict);
+                            const isPrivileged = toBool((acc as any).isPrivileged);
+                            const isOrphan = toBool((acc as any).isOrphan);
+                            const level = getRiskLevel(acc);
+                            return (
                             <tr key={acc.id} className="hover:bg-slate-50/50">
                               <td className="px-4 py-3 font-semibold">{acc.entitlement}</td>
+                              <td className="px-4 py-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase w-fit ${
+                                  level === 'CRITICAL' ? 'bg-red-600 text-white' :
+                                  level === 'HIGH' ? 'bg-orange-500 text-white' :
+                                  level === 'MEDIUM' ? 'bg-indigo-500 text-white' :
+                                  'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {level} RISK
+                                </span>
+                              </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex flex-wrap justify-end items-center gap-1.5">
-                                  {acc.isSoDConflict && (
+                                  {hasSod && (
                                     <span className="bg-red-50 text-red-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-red-100">Conflict Detected</span>
                                   )}
-                                  {acc.isPrivileged && (
+                                  {isPrivileged && (
                                     <span className="bg-indigo-50 text-indigo-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-indigo-100">Privileged</span>
                                   )}
-                                  {acc.isOrphan && (
+                                  {isOrphan && (
                                     <span className="bg-orange-50 text-orange-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-orange-100">Orphan</span>
                                   )}
+                                  {!hasSod && !isPrivileged && !isOrphan && (
+                                    <span className="bg-slate-100 text-slate-500 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-slate-200">Low Risk</span>
+                                  )}
                                 </div>
-                                {acc.isSoDConflict && (acc.violatedPolicyNames?.length || 0) > 0 && (
+                                {hasSod && (acc.violatedPolicyNames?.length || 0) > 0 && (
                                   <div className="mt-1 flex flex-col items-end gap-0.5">
                                     {acc.violatedPolicyNames?.map((name, idx) => (
                                       <button
@@ -405,7 +450,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
                                 )}
                               </td>
                             </tr>
-                          ))}
+                          )})}
                         </tbody>
                       </table>
                     </div>
