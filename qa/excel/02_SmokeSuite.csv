@@ -11,3 +11,4 @@ RunOrder,TestCaseID,Module,Objective,ExpectedResult
 10,MGR-002,ManagerPortal,Verify revoke flow,Pending item becomes REVOKED
 11,MGR-005,ManagerPortal,Verify completion guard,Campaign not completed with unresolved remediation
 12,GOV-001,Governance-Audit,Verify audit capture,Actions visible in audit logs
+13,UAR-DASH-001,Dashboard-CampaignDetail,Verify dual risk filters,Campaign detail filters combine correctly for level and factor

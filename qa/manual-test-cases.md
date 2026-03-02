@@ -204,6 +204,8 @@ This document provides manual test cases and expected outcomes for full function
 **Expected**
 - Entitlement catalog updates.
 - Privileged tags align with uploaded values.
+- Entitlement CSV works with columns: `entitlement,description,owner,isPrivileged`.
+- `risk` / `riskScore` are not required for entitlement upload.
 
 ### INV-SOD-001: Upload Global SoD Policies
 **Steps**
@@ -217,12 +219,13 @@ This document provides manual test cases and expected outcomes for full function
 ### INV-SOD-002: Create SoD Policy Manually
 **Steps**
 1. Click `New Policy`.
-2. Fill both conditions and risk level.
+2. Fill both conditions and policy severity.
 3. Save.
 
 **Expected**
 - New policy appears in list.
 - Duplicate policy name blocked.
+- SoD policy table and details show label `Policy Severity` (not user risk).
 
 ### INV-SOD-003: Delete SoD Policy
 **Steps**
@@ -282,10 +285,20 @@ This document provides manual test cases and expected outcomes for full function
 **Steps**
 1. Open campaign details.
 2. Apply User/Entitlement/Decision/Remediation filters.
+3. Apply `Risk` (Critical/High/Medium/Low) and `Risk Factor` (Privileged/SoD Conflict/Orphan/None) filters.
 
 **Expected**
 - Grid filters correctly.
 - Empty state shown when no matches.
+- Risk level pill is visible per row (`CRITICAL/HIGH/MEDIUM/LOW`).
+
+### UAR-DASH-003: Campaign Detail Entitlement vs Risk Column Split
+**Steps**
+1. Open campaign details for a campaign with mixed risk items.
+
+**Expected**
+- `Entitlement` and `Risk Factors` are separate columns.
+- Risk factors section shows `LOW RISK` when no factor exists.
 
 ### UAR-DASH-002: Export Campaign
 **Steps**
@@ -343,6 +356,16 @@ This document provides manual test cases and expected outcomes for full function
 **Expected**
 - Campaign does NOT become `COMPLETED` prematurely.
 - Remediation stage semantics remain correct.
+
+### MGR-006: My Reviews Risk Filters (Dual Filter Pattern)
+**Steps**
+1. Open My Reviews with a mix of SoD/Orphan/Privileged/No-risk items.
+2. Apply `Risk` filter: Critical, High, Medium, Low.
+3. Apply `Risk Factor` filter: Privileged, SoD Conflict, Orphan, None.
+
+**Expected**
+- Both filters work together (intersection behavior).
+- `None` returns only items with no SoD, no Orphan, no Privileged flags.
 
 ---
 
