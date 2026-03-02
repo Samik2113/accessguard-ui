@@ -114,7 +114,10 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
   const isLocked = (item: ReviewItem) => {
     const cycle = cycles.find(c => c.id === item.reviewCycleId);
-    return Array.isArray(cycle?.confirmedManagers) && cycle.confirmedManagers.includes(currentManagerId);
+    const managerConfirmed = Array.isArray(cycle?.confirmedManagers) && cycle.confirmedManagers.includes(currentManagerId);
+    const isPending = String(item.status || '').toUpperCase() === ActionStatus.PENDING;
+    if (!managerConfirmed) return false;
+    return !isPending;
   };
 
   const selectableItems = useMemo(() => filteredItems.filter(i => !isLocked(i)), [filteredItems, cycles, currentManagerId]);
