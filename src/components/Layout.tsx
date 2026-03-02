@@ -226,6 +226,19 @@ const Layout: React.FC<LayoutProps> = ({
             </div>
 
             <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Idle Timeout (minutes)</label>
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                value={draftCustomization.idleTimeoutMinutes}
+                onChange={(event) => setDraftCustomization(prev => ({ ...prev, idleTimeoutMinutes: Number(event.target.value || 0) }))}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+              <p className="mt-1 text-[11px] text-slate-500">Allowed range: 5 to 1440 minutes.</p>
+            </div>
+
+            <div>
               <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Support Email (optional)</label>
               <input
                 type="email"

@@ -42,7 +42,7 @@ import { useAccountsByApp } from './features/accounts/queries';
 
 const SESSION_STORAGE_KEY = 'accessguard.session.v1';
 const CUSTOMIZATION_STORAGE_KEY = 'accessguard.customization.v1';
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
 const SESSION_TOUCH_THROTTLE_MS = 30 * 1000;
 
 const DEFAULT_CUSTOMIZATION: AppCustomization = {
@@ -50,7 +50,8 @@ const DEFAULT_CUSTOMIZATION: AppCustomization = {
   primaryColor: '#2563eb',
   environmentLabel: 'Development',
   loginSubtitle: 'Sign in with emailId and password.',
-  supportEmail: ''
+  supportEmail: '',
+  idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES
 };
 
 type PersistedSession = {
@@ -75,11 +76,11 @@ function readPersistedSession(): PersistedSession | null {
   }
 }
 
-function writePersistedSession(user: { name: string; id: string; role: UserRole }, activeTab: string) {
+function writePersistedSession(user: { name: string; id: string; role: UserRole }, activeTab: string, ttlMs: number) {
   const payload: PersistedSession = {
     user,
     activeTab,
-    expiresAt: Date.now() + SESSION_TTL_MS
+    expiresAt: Date.now() + ttlMs
   };
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
 }
@@ -98,7 +99,8 @@ function readCustomization(): AppCustomization {
       primaryColor: normalizeHexColor(parsed?.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
       environmentLabel: String(parsed?.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
       loginSubtitle: String(parsed?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
-      supportEmail: String(parsed?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail)
+      supportEmail: String(parsed?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
+      idleTimeoutMinutes: normalizeIdleTimeoutMinutes(parsed?.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
     };
   } catch {
     return DEFAULT_CUSTOMIZATION;
@@ -113,6 +115,12 @@ function normalizeHexColor(input: unknown, fallback: string) {
   const value = String(input || '').trim();
   if (/^#([0-9a-fA-F]{6})$/.test(value)) return value;
   return fallback;
+}
+
+function normalizeIdleTimeoutMinutes(input: unknown, fallback: number) {
+  const parsed = Number(input);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(24 * 60, Math.max(5, Math.round(parsed)));
 }
 
 function getOnPrimaryTextColor(input: unknown, fallback: string) {
@@ -219,6 +227,10 @@ const App: React.FC = () => {
   const [auditFilterAction, setAuditFilterAction] = useState('ALL');
   const [auditFilterDateFrom, setAuditFilterDateFrom] = useState('');
   const [auditFilterDateTo, setAuditFilterDateTo] = useState('');
+  const sessionTtlMs = useMemo(
+    () => normalizeIdleTimeoutMinutes(customization.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes) * 60 * 1000,
+    [customization.idleTimeoutMinutes]
+  );
 
   const handleLogin = async () => {
     setLoginError(null);
@@ -244,7 +256,7 @@ const App: React.FC = () => {
       setCurrentUser(loggedInUser);
       setActiveTab(nextTab);
       setIsAuthenticated(true);
-      writePersistedSession(loggedInUser, nextTab);
+      writePersistedSession(loggedInUser, nextTab, sessionTtlMs);
     } catch (err: any) {
       setLoginError(err?.message || 'Invalid emailId or password.');
     } finally {
@@ -290,7 +302,8 @@ const App: React.FC = () => {
       primaryColor: normalizeHexColor(nextCustomization.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
       environmentLabel: String(nextCustomization.environmentLabel || '').trim() || DEFAULT_CUSTOMIZATION.environmentLabel,
       loginSubtitle: String(nextCustomization.loginSubtitle || '').trim() || DEFAULT_CUSTOMIZATION.loginSubtitle,
-      supportEmail: String(nextCustomization.supportEmail || '').trim()
+      supportEmail: String(nextCustomization.supportEmail || '').trim(),
+      idleTimeoutMinutes: normalizeIdleTimeoutMinutes(nextCustomization.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
     };
     setCustomization(normalized);
     writeCustomization(normalized);
@@ -304,8 +317,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!sessionHydrated || !isAuthenticated) return;
-    writePersistedSession(currentUser, activeTab);
-  }, [sessionHydrated, isAuthenticated, currentUser, activeTab]);
+    writePersistedSession(currentUser, activeTab, sessionTtlMs);
+  }, [sessionHydrated, isAuthenticated, currentUser, activeTab, sessionTtlMs]);
 
   useEffect(() => {
     if (!sessionHydrated || !isAuthenticated) return;
@@ -314,7 +327,7 @@ const App: React.FC = () => {
       const now = Date.now();
       if (now - lastSessionTouchRef.current < SESSION_TOUCH_THROTTLE_MS) return;
       lastSessionTouchRef.current = now;
-      writePersistedSession(currentUser, activeTab);
+      writePersistedSession(currentUser, activeTab, sessionTtlMs);
     };
 
     const onUserActivity = () => touchSession();
@@ -334,7 +347,7 @@ const App: React.FC = () => {
       window.clearInterval(intervalId);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, onUserActivity));
     };
-  }, [sessionHydrated, isAuthenticated, currentUser, activeTab]);
+  }, [sessionHydrated, isAuthenticated, currentUser, activeTab, sessionTtlMs]);
 
   const handleBootstrapFirstUser = async () => {
     setSetupError(null);

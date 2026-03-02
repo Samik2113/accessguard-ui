@@ -125,4 +125,5 @@ export interface AppCustomization {
   environmentLabel: string;
   loginSubtitle: string;
   supportEmail: string;
+  idleTimeoutMinutes: number;
 }
