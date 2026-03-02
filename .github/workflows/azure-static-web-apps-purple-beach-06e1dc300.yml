@@ -22,22 +22,33 @@ jobs:
           submodules: true
           lfs: false
 
+      # Optional: If your UI needs a specific Node version, uncomment:
+      # - name: Setup Node for UI build
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '18'
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PURPLE_BEACH_06E1DC300 }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ZEALOUS_FIELD_08CABDC10 }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
 
+          # === UI (unchanged) ===
           app_location: "."
           output_location: "dist"
+
+          # === API (Functions) ===
           api_location: "backend"
 
+          # === Build ONLY src/services/**/*.ts -> backend/dist/services/**/*.js ===
           api_build_command: |
             set -e
 
             echo "Compiling TypeScript under src/services -> backend/dist/services ..."
+            # Only compile .ts in src/services (skip React .tsx)
             npx -y typescript@5.6.3 tsc \
               --target ES2020 \
               --module CommonJS \
@@ -58,8 +69,11 @@ jobs:
             fi
 
             echo "Build prep complete. SWA will now upload API from backend/."
-        env:
+          env:
+          # Keep npm on public registry (avoids occasional 403s in corp networks)
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+
+          # Your existing UI env vars (keep if still used by your UI)
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
           VITE_AZ_FUNC_KEY: ${{ secrets.VITE_AZ_FUNC_KEY }}
 
@@ -72,5 +86,5 @@ jobs:
         id: closepullrequest
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PURPLE_BEACH_06E1DC300 }}
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ZEALOUS_FIELD_08CABDC10 }}
           action: close
