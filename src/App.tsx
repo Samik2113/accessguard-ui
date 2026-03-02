@@ -115,6 +115,15 @@ function normalizeHexColor(input: unknown, fallback: string) {
   return fallback;
 }
 
+function getOnPrimaryTextColor(input: unknown, fallback: string) {
+  const hex = normalizeHexColor(input, fallback);
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 150 ? '#0f172a' : '#ffffff';
+}
+
 
 
 const App: React.FC = () => {
@@ -288,7 +297,9 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    document.documentElement.style.setProperty('--ag-primary', customization.primaryColor || DEFAULT_CUSTOMIZATION.primaryColor);
+    const primary = customization.primaryColor || DEFAULT_CUSTOMIZATION.primaryColor;
+    document.documentElement.style.setProperty('--ag-primary', primary);
+    document.documentElement.style.setProperty('--ag-on-primary', getOnPrimaryTextColor(primary, DEFAULT_CUSTOMIZATION.primaryColor));
   }, [customization.primaryColor]);
 
   useEffect(() => {
@@ -1308,7 +1319,10 @@ useEffect(() => {
             <button
               onClick={handleLogin}
               disabled={loggingIn}
-              style={{ backgroundColor: customization.primaryColor }}
+              style={{
+                backgroundColor: customization.primaryColor,
+                color: getOnPrimaryTextColor(customization.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor)
+              }}
               className="w-full px-4 py-2.5 rounded-lg text-white font-semibold transition-colors"
             >
               {loggingIn ? 'Signing In...' : 'Sign In'}

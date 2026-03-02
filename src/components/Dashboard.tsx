@@ -309,7 +309,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         <button
           onClick={() => setShowLaunchModal(true)}
           className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
-          style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+          style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
         >
           <Play className="w-4 h-4 fill-current" /> Launch Campaign
         </button>
@@ -368,7 +368,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                     }}
                     disabled={selectedCampaignItems.length === 0}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedCampaignItems.length > 0 ? 'text-white hover:opacity-90' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
-                    style={selectedCampaignItems.length > 0 ? { backgroundColor: 'var(--ag-primary, #2563eb)' } : undefined}
+                    style={selectedCampaignItems.length > 0 ? { backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' } : undefined}
                   >
                     <Send className="w-4 h-4" /> Bulk Reassign ({selectedCampaignItems.length})
                   </button>
@@ -648,7 +648,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <button
                 onClick={submitReassignment}
                 className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 Reassign
               </button>
@@ -720,7 +720,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 onClick={submitBulkReassignment}
                 disabled={selectedCampaignItemObjects.length === 0}
                 className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
-                style={selectedCampaignItemObjects.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={selectedCampaignItemObjects.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 Reassign Selected
               </button>

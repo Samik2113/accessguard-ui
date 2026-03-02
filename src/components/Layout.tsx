@@ -4,6 +4,16 @@ import { NAV_ITEMS } from '../constants';
 import { AppCustomization, UserRole } from '../types';
 import { ShieldCheck, User as UserIcon, LogOut, ChevronDown, Settings, X } from 'lucide-react';
 
+const getOnPrimaryTextColor = (input: string, fallback = '#2563eb') => {
+  const value = String(input || '').trim();
+  const hex = /^#([0-9a-fA-F]{6})$/.test(value) ? value : fallback;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 150 ? '#0f172a' : '#ffffff';
+};
+
 interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
@@ -43,7 +53,7 @@ const Layout: React.FC<LayoutProps> = ({
             ? 'text-white'
             : 'text-slate-400 hover:bg-slate-800 hover:text-white'
         }`}
-        style={isActive ? { backgroundColor: customization.primaryColor } : undefined}
+        style={isActive ? { backgroundColor: customization.primaryColor, color: getOnPrimaryTextColor(customization.primaryColor) } : undefined}
       >
         {item.icon}
         {item.label}
@@ -67,7 +77,7 @@ const Layout: React.FC<LayoutProps> = ({
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
           <div className="p-2 rounded-lg" style={{ backgroundColor: customization.primaryColor }}>
-            <ShieldCheck className="w-6 h-6 text-white" />
+            <ShieldCheck className="w-6 h-6" style={{ color: getOnPrimaryTextColor(customization.primaryColor) }} />
           </div>
           <h1 className="text-xl font-bold tracking-tight">{customization.platformName}</h1>
         </div>
@@ -227,7 +237,16 @@ const Layout: React.FC<LayoutProps> = ({
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button onClick={() => setShowCustomization(false)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50">Cancel</button>
-              <button onClick={saveCustomization} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: draftCustomization.primaryColor || '#2563eb' }}>Save</button>
+              <button
+                onClick={saveCustomization}
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold"
+                style={{
+                  backgroundColor: draftCustomization.primaryColor || '#2563eb',
+                  color: getOnPrimaryTextColor(draftCustomization.primaryColor || '#2563eb')
+                }}
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
