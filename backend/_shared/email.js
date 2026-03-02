@@ -8,7 +8,7 @@ function parseBool(value, defaultValue = false) {
 async function sendEmail(context, message) {
   const enabled = parseBool(process.env.NOTIFY_EMAIL_ENABLED, false);
   const webhookUrl = String(process.env.NOTIFY_EMAIL_WEBHOOK_URL || "").trim();
-  const from = "agarwl.samiksha8@gmail.com";
+  const from = "Samiksha.Agarwal1@in.ey.com";
 
   if (!enabled) {
     return { ok: false, skipped: true, reason: "NOTIFY_EMAIL_ENABLED=false" };
