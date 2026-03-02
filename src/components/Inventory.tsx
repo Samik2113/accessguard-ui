@@ -742,7 +742,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 onClick={() => setShowBulkRoleModal(true)}
                 disabled={bulkUpdatingRole || selectedUserIds.length === 0}
                 className="px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
-                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 {bulkUpdatingRole ? 'Updating...' : `Set Role (${selectedUserIds.length})`}
               </button>
@@ -876,7 +876,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button
                 onClick={closeResetPasswordModal}
                 className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 OK
               </button>
@@ -916,7 +916,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 onClick={handleBulkRoleApply}
                 disabled={bulkUpdatingRole || selectedUserIds.length === 0}
                 className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
-                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 {bulkUpdatingRole ? 'Updating...' : 'Apply Role'}
               </button>
@@ -948,7 +948,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button
                 onClick={() => setShowAddSod(true)}
                 className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 <Plus className="w-4 h-4" /> New Policy
               </button>
@@ -1044,7 +1044,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button 
                 onClick={() => setShowAddApp(true)} 
                 className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-all"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 <Plus className="w-4 h-4" /> Add Application
               </button>
@@ -1505,7 +1505,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button
                 onClick={handleAddApp}
                 className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 Add App
               </button>
@@ -1585,7 +1585,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button
                 onClick={() => { onUpdateEntitlement(editingEnt); setEditingEnt(null); }}
                 className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
-                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
               >
                 Save Changes
               </button>
