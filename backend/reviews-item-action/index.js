@@ -2,7 +2,20 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const ajv = new Ajv({ allErrors: true });
-const schema = require("../../shared/schemas/reviews/review-item-action.request.schema.json");
+const schema = {
+  type: "object",
+  required: ["itemId", "managerId"],
+  properties: {
+    itemId: { type: "string", minLength: 1 },
+    managerId: { type: "string", minLength: 1 },
+    status: { type: "string", minLength: 1 },
+    reassignToManagerId: { type: "string" },
+    comment: { type: "string" },
+    remediationComment: { type: "string" },
+    remediatedAt: { type: "string" }
+  },
+  additionalProperties: true
+};
 const validate = ajv.compile(schema);
 
 module.exports = async function (context, req) {
