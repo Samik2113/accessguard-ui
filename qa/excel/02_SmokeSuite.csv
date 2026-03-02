@@ -1,0 +1,13 @@
+RunOrder,TestCaseID,Module,Objective,ExpectedResult
+1,AUTH-001,Authentication,Verify valid login,Admin can sign in and reach dashboard
+2,AUTH-002,Authentication,Verify invalid login guard,Invalid credentials are rejected
+3,INV-HR-001,Inventory-HR,Verify HR load,Users populate from CSV
+4,INV-APP-001,Inventory-Apps,Verify app onboarding,Applications created from CSV
+5,INV-ACC-001,Inventory-Accounts,Verify accounts import,Accounts visible under each app
+6,INV-SOD-001,Inventory-SoD,Verify SoD upload,Policies loaded and conflicts evaluable
+7,UAR-LAUNCH-001,Dashboard-Launch,Verify launch with valid app,Campaign launches successfully
+8,UAR-LAUNCH-002,Dashboard-Launch,Verify launch block with zero accounts,Launch blocked with no-account message
+9,MGR-001,ManagerPortal,Verify approve flow,Pending item becomes APPROVED
+10,MGR-002,ManagerPortal,Verify revoke flow,Pending item becomes REVOKED
+11,MGR-005,ManagerPortal,Verify completion guard,Campaign not completed with unresolved remediation
+12,GOV-001,Governance-Audit,Verify audit capture,Actions visible in audit logs

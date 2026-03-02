@@ -780,7 +780,14 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
             </div>
             <div className="space-y-2">
               {applications.map(app => (
-                <button key={app.id} onClick={() => { onLaunch(app.id, launchDueDate); setShowLaunchModal(false); }} className="w-full text-left p-4 bg-slate-50 border rounded-xl hover:bg-blue-50 hover:border-blue-400 flex justify-between items-center transition-all">
+                <button
+                  key={app.appId || app.id || app.name}
+                  onClick={() => {
+                    onLaunch(String(app.appId || app.id || ''), launchDueDate);
+                    setShowLaunchModal(false);
+                  }}
+                  className="w-full text-left p-4 bg-slate-50 border rounded-xl hover:bg-blue-50 hover:border-blue-400 flex justify-between items-center transition-all"
+                >
                   <div>
                     <div className="font-bold text-slate-800">{app.name}</div>
                     <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Target App</div>

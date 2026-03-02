@@ -167,11 +167,15 @@ const App: React.FC = () => {
     }
   };
 
-  const getApplicationId = (app: any): string => String(app?.id ?? app?.appId ?? '');
+  const getApplicationId = (app: any): string => String(app?.appId ?? app?.id ?? '');
   const getApplicationById = (appId?: string | null): Application | undefined => {
     if (!appId) return undefined;
     const target = String(appId);
-    return applications.find((app: any) => String(app?.id ?? app?.appId ?? '') === target);
+    return applications.find((app: any) => {
+      const id = String(app?.id ?? '');
+      const appCode = String(app?.appId ?? '');
+      return id === target || appCode === target;
+    });
   };
   const getApplicationNameById = (appId?: string | null): string => {
     const app = getApplicationById(appId);
@@ -934,10 +938,29 @@ useEffect(() => {
     const targetApp = getApplicationById(appId);
     if (!targetApp) return;
     const normalizedAppId = getApplicationId(targetApp);
-    const existingActive = cycles.find(c => c.appId === normalizedAppId && c.status !== ReviewStatus.COMPLETED);
+    const candidateAppIds = new Set(
+      [normalizedAppId, String((targetApp as any)?.appId || ''), String((targetApp as any)?.id || '')]
+        .map(v => String(v || '').trim())
+        .filter(Boolean)
+    );
+    const existingActive = cycles.find(c => candidateAppIds.has(String(c.appId || '').trim()) && c.status !== ReviewStatus.COMPLETED);
     if (existingActive) { alert(`A campaign for ${targetApp.name} is already running.`); return; }
-    const appAccess = access.filter(a => a.appId === normalizedAppId);
-    if (appAccess.length === 0) { alert(`No accounts found for ${targetApp.name}.`); return; }
+    const appAccess = access.filter(a => candidateAppIds.has(String(a.appId || '').trim()));
+    let hasAccounts = appAccess.length > 0;
+    if (!hasAccounts) {
+      const backendChecks = await Promise.all(
+        Array.from(candidateAppIds).map(async (candidateId) => {
+          try {
+            const res: any = await getAccounts(candidateId, undefined, undefined, 1);
+            return Array.isArray(res?.items) && res.items.length > 0;
+          } catch {
+            return false;
+          }
+        })
+      );
+      hasAccounts = backendChecks.some(Boolean);
+    }
+    if (!hasAccounts) { alert(`No accounts found for ${targetApp.name}.`); return; }
 
     setLaunchingReview(true);
     try {

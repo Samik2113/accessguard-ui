@@ -1,0 +1,47 @@
+TestCaseID,Module,Scenario,Preconditions,Steps,ExpectedOutcome,Priority,Type
+AUTH-001,Authentication,Valid admin login,"App is reachable; valid admin credentials available","Open login page; Enter valid admin email and password; Click Sign In","Login succeeds; Dashboard opens; current user shown in header",High,Positive
+AUTH-002,Authentication,Invalid login blocked,"App is reachable","Open login page; Enter invalid credentials; Click Sign In","Error message shown; user remains on login page; no protected data loaded",High,Negative
+AUTH-003,Authentication,First user bootstrap,"Environment has no existing users","Open first-user setup; Enter required details; Submit","First admin user created; success message shown; created user can sign in",High,Positive
+AUTH-004,Authentication,Password policy validation,"On first-user setup or reset form","Enter password shorter than policy; Submit","Validation error shown; request is not submitted",High,Negative
+AUTH-005,Session,Idle timeout logout,"User logged in","Stay inactive beyond idle timeout","Session expires; user is redirected to login",High,Positive
+AUTH-006,Session,Activity keeps session alive,"User logged in","Interact periodically (click/scroll/keypress)","Session remains active; no unexpected logout",High,Positive
+CUST-001,Customization,Update platform name and color,"Admin user logged in","Open Customize; change Platform Name and Primary Color; Save","Header/login branding updates; CTA color updates; values persist after refresh",Medium,Positive
+CUST-002,Customization,Update environment label and login subtitle,"Admin user logged in","Open Customize; edit Environment Label and Login Subtitle; Save; Logout","Login page shows updated subtitle and environment label",Medium,Positive
+CUST-003,Customization,Invalid color fallback,"Admin user logged in","Open Customize; enter invalid color; Save","System normalizes/falls back to valid color; UI does not break",Medium,Negative
+INV-HR-001,Inventory-HR,Upload HR identities,"Admin user logged in; HR CSV available","Inventory > Identity Inventory; Upload 01_hr_users_inventory.csv","Users grid populates; counts/rows align with input",High,Positive
+INV-HR-002,Inventory-HR,Single-user role update,"Users loaded","Change one user's role via row dropdown","Role update succeeds; persists after refresh",High,Positive
+INV-HR-003,Inventory-HR,Bulk role assignment modal flow,"Users loaded","Select multiple users; Click Set Role; Select role in modal; Click Apply Role","Modal appears only after click; selected users updated; selection cleared",High,Positive
+INV-HR-004,Inventory-HR,Bulk role guard with zero selection,"Users loaded","Do not select users; inspect/click Set Role","Action blocked or disabled; clear guidance shown",High,Negative
+INV-HR-005,Inventory-HR,Reset password flow,"Users loaded","Click Reset Password for a user; Copy temp password; Close modal","Temporary password displayed; copy works; modal closes",Medium,Positive
+INV-APP-001,Inventory-Apps,Bulk app onboarding upload,"Applications CSV available","Inventory > App Configurations; Upload 02_application_onboarding_bulk.csv","Applications created and listed with owner mappings",High,Positive
+INV-APP-002,Inventory-Apps,Manual add application,"Admin user logged in","Click Add Application; fill mandatory fields; Save","App created and visible in list; missing mandatory fields are validated",Medium,Positive
+INV-ACC-001,Inventory-Accounts,Upload accounts per app,"Apps available; account CSVs available","Select APP_FIN and upload 03_accounts_APP_FIN.csv; Repeat for APP_HCM and APP_CRM","Accounts ingested under each app; UI reflects uploaded rows",High,Positive
+INV-ENT-001,Inventory-Entitlements,Upload entitlements per app,"Apps available; entitlement CSVs available","Upload each 04_entitlements_*.csv for matching app","Entitlement catalogs updated; privileged markers align with data",High,Positive
+INV-SOD-001,Inventory-SoD,Upload global SoD policies,"SoD CSV available","Inventory > Global SoD Policies; Upload 05_bulk_sod_policies.csv","Policies created and listed; conflicts become detectable",High,Positive
+INV-SOD-002,Inventory-SoD,Manual SoD policy create,"Apps and entitlements exist","Click New Policy; fill both conditions and risk; Save","New policy appears in list",Medium,Positive
+INV-SOD-003,Inventory-SoD,Delete SoD policy,"At least one SoD policy exists","Delete a policy","Policy removed and no stale detail links remain",Medium,Positive
+INV-ORPHAN-001,Inventory-Correlation,Orphan account detection,"HR + Accounts loaded","Inspect expected external/orphan accounts","Orphan badges shown for identities not present in HR",High,Positive
+UAR-LAUNCH-001,Dashboard-Launch,Launch campaign for app with accounts,"At least one app has accounts","Dashboard > Launch Campaign; pick app with accounts; set due date; launch","Campaign launched and visible in active campaigns",High,Positive
+UAR-LAUNCH-002,Dashboard-Launch,Block launch for app without accounts,"At least one app has zero accounts","Dashboard > Launch Campaign; pick zero-account app; launch","Launch blocked with No accounts found message",High,Negative
+UAR-LAUNCH-003,Dashboard-Launch,Launch works for non-first apps,"Multiple apps available with accounts","Launch modal; select second/third app; launch","Launch succeeds for any valid app; no false no-account error",High,Positive
+UAR-LAUNCH-004,Dashboard-Launch,Prevent duplicate active campaign,"App already has active campaign","Attempt launch again for same app","Blocked with already-running message",High,Negative
+UAR-DASH-001,Dashboard-CampaignDetail,Campaign detail filters,"At least one campaign with mixed items exists","Open campaign detail; apply User/Entitlement/Decision/Remediation filters","Grid updates correctly; empty state shown when no matches",Medium,Positive
+UAR-DASH-002,Dashboard-CampaignDetail,Export campaign CSV,"At least one campaign exists","Open campaign detail; click Export Campaign","CSV downloads with expected columns and records",Medium,Positive
+MGR-001,ManagerPortal,Approve review item,"Pending item assigned to manager","Open pending item; Approve","Item status updates to APPROVED; action audit logged",High,Positive
+MGR-002,ManagerPortal,Revoke review item,"Pending item assigned to manager","Open pending item; Revoke","Item status updates to REVOKED; enters remediation tracking",High,Positive
+MGR-003,ManagerPortal,Reassign single item,"Pending item assigned to manager","Use Reassign action; choose different reviewer; submit","Manager changes; reassignment metadata updates; notification attempted if configured",High,Positive
+MGR-004,ManagerPortal,Bulk reassign items,"Campaign contains reassignable items","Select eligible items; open bulk reassign; choose reviewer; submit","Eligible items reassigned; ineligible/limit cases handled cleanly",High,Positive
+MGR-005,ManagerPortal,Confirm review with pending remediation,"Campaign has revoked items pending verification","Manager clicks Confirm","Campaign does not move to COMPLETED prematurely",High,Negative
+REM-001,Remediation,Revoke then verify removal,"Campaign item revoked","Remove entitlement from source accounts; re-import account data","Item transitions to remediated/verified state; pending remediation decreases",High,Positive
+REM-002,Remediation,Revoked entitlement still present,"Campaign item revoked","Re-import account data where revoked entitlement still exists","Item remains pending remediation/verification; campaign remains non-complete",High,Negative
+NOTIF-001,Notifications,Assignment notifications on launch,"Notification webhook configured or monitored","Launch campaign with multiple reviewers","Assignments trigger notification workflow without UI crash",Medium,Positive
+NOTIF-002,Notifications,Manual reminder,"Active campaign exists","Open campaign detail; click Send Reminder","Completion summary shown with sent/skipped counts",Medium,Positive
+NOTIF-003,Notifications,Escalate pending,"Active campaign exists","Open campaign detail; click Escalate Pending","Escalation summary shown; pending owners targeted",Medium,Positive
+GOV-001,Governance-Audit,Audit events captured,"Perform actions like import/launch/approve/role-change","Open governance/audit view","Actions visible with actor, timestamp, and details",High,Positive
+GOV-002,Governance-Audit,Audit filtering,"Audit log contains diverse entries","Apply user/action/date filters","Filtered result set matches criteria",Medium,Positive
+MYA-001,MyAccess,End-user scoped access view,"Standard USER account exists","Login as USER; open My Access","Only own access shown; admin controls unavailable",High,Positive
+ERR-001,ErrorHandling,Malformed CSV upload handling,"Prepare CSV with wrong headers","Upload malformed CSV into HR/Accounts/Entitlements","Validation error shown; no partial destructive update",High,Negative
+ERR-002,ErrorHandling,API failure UX,"Temporarily simulate endpoint failure","Trigger related UI action","User-friendly error shown; page remains usable",High,Negative
+ERR-003,Authorization,Admin action restrictions,"Login as non-admin","Try admin-only actions (launch, role set, app config)","Actions hidden or blocked; no unauthorized success",High,Negative
+UX-001,CrossBrowser,Chrome/Edge sanity,"Latest Chrome and Edge available","Run smoke suite in both browsers","No blocking differences in key flows",Medium,Positive
+UX-002,Responsive,Desktop resolution sanity,"App loaded","Validate core pages at 1366x768 and 1920x1080","No clipped critical controls; modals fully usable",Low,Positive

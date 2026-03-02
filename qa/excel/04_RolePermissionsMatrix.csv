@@ -1,0 +1,55 @@
+Role,Module,Capability,ExpectedAccess,Notes
+ADMIN,Authentication,Login,Allowed,Standard sign-in allowed
+ADMIN,Dashboard,View campaigns,Allowed,Can view active and archived campaigns
+ADMIN,Dashboard,Launch campaign,Allowed,Can launch for apps with accounts only
+ADMIN,Dashboard,Send reminders/escalations,Allowed,Buttons visible in campaign detail
+ADMIN,Dashboard,Bulk reassign items,Allowed,Within max reassignment constraints
+ADMIN,Manager Portal,Approve/Revoke own assigned items,Allowed,If items are assigned to admin as reviewer
+ADMIN,Inventory-HR,Upload HR data,Allowed,Can import and refresh HR identities
+ADMIN,Inventory-HR,Set single user role,Allowed,Row-level role dropdown enabled
+ADMIN,Inventory-HR,Bulk set role,Allowed,Set Role modal available with selected users
+ADMIN,Inventory-HR,Reset user password,Allowed,Temporary password modal shown
+ADMIN,Inventory-Applications,Add application,Allowed,Can create app manually
+ADMIN,Inventory-Applications,Import applications,Allowed,Bulk app onboarding allowed
+ADMIN,Inventory-Accounts,Import app accounts,Allowed,Per-app accounts upload enabled
+ADMIN,Inventory-Entitlements,Import entitlements,Allowed,Per-app entitlement upload enabled
+ADMIN,Inventory-SoD,Create/Delete/Import policies,Allowed,Global SoD management enabled
+ADMIN,Governance/Audit,View audit logs,Allowed,Filter and inspect logs
+ADMIN,Customization,Edit branding settings,Allowed,Customize modal available
+ADMIN,My Access,View own access,Allowed,Standard end-user visibility
+
+AUDITOR,Authentication,Login,Allowed,Standard sign-in allowed
+AUDITOR,Dashboard,View campaigns,Allowed,Read-only visibility expected
+AUDITOR,Dashboard,Launch campaign,Blocked,Launch action should be hidden or blocked
+AUDITOR,Dashboard,Send reminders/escalations,Blocked,Admin-only action
+AUDITOR,Dashboard,Bulk reassign items,Blocked,Admin-only action
+AUDITOR,Manager Portal,Approve/Revoke items,Blocked,Should not action manager decisions unless also assigned manager role by business process
+AUDITOR,Inventory-HR,Upload HR data,Blocked,Admin-only action
+AUDITOR,Inventory-HR,Set single user role,Blocked,Admin-only action
+AUDITOR,Inventory-HR,Bulk set role,Blocked,Admin-only action
+AUDITOR,Inventory-HR,Reset user password,Blocked,Admin-only action
+AUDITOR,Inventory-Applications,Add/import/delete apps,Blocked,Admin-only action
+AUDITOR,Inventory-Accounts,Import accounts,Blocked,Admin-only action
+AUDITOR,Inventory-Entitlements,Import/edit entitlements,Blocked,Admin-only action
+AUDITOR,Inventory-SoD,Create/Delete/Import policies,Blocked,Admin-only action
+AUDITOR,Governance/Audit,View audit logs,Allowed,Primary auditor function
+AUDITOR,Customization,Edit branding settings,Blocked,Admin-only action
+AUDITOR,My Access,View own access,Allowed,Standard end-user visibility
+
+USER,Authentication,Login,Allowed,Standard sign-in allowed
+USER,Dashboard,View campaigns,Blocked,Should not access admin dashboard workflows
+USER,Dashboard,Launch campaign,Blocked,Admin-only action
+USER,Dashboard,Send reminders/escalations,Blocked,Admin-only action
+USER,Dashboard,Bulk reassign items,Blocked,Admin-only action
+USER,Manager Portal,Approve/Revoke items,Allowed (if assigned as reviewer),Based on assigned review responsibilities
+USER,Inventory-HR,Upload HR data,Blocked,Admin-only action
+USER,Inventory-HR,Set single user role,Blocked,Admin-only action
+USER,Inventory-HR,Bulk set role,Blocked,Admin-only action
+USER,Inventory-HR,Reset user password,Blocked,Admin-only action
+USER,Inventory-Applications,Add/import/delete apps,Blocked,Admin-only action
+USER,Inventory-Accounts,Import accounts,Blocked,Admin-only action
+USER,Inventory-Entitlements,Import/edit entitlements,Blocked,Admin-only action
+USER,Inventory-SoD,Create/Delete/Import policies,Blocked,Admin-only action
+USER,Governance/Audit,View audit logs,Blocked,Not a standard user capability
+USER,Customization,Edit branding settings,Blocked,Admin-only action
+USER,My Access,View own access,Allowed,Primary end-user experience

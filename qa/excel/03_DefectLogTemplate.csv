@@ -1,0 +1,2 @@
+DefectID,Date,BuildVersion,Environment,Module,TestCaseID,Severity,Priority,UserRole,Summary,StepsToReproduce,ExpectedResult,ActualResult,APIErrorMessage,EvidenceLink,Status,Owner,Comments
+DEF-001,,,,,,,,,,,,,,,,,

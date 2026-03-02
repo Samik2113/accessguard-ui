@@ -1,6 +1,6 @@
 userId,name,email,department,managerId,title,status
 ADM001,Platform Admin,admin@acme.com,IT,,CISO,Active
-MGR001,Anita Sharma,anita.sharma@acme.com,Finance,ADM001,Finance Manager,Active
+MGR001,Samiksha Agarwal,Samiksha.Agarwal1@in.ey.com,Finance,ADM001,Finance Manager,Active
 MGR002,Rahul Verma,rahul.verma@acme.com,HR,ADM001,HR Manager,Active
 MGR003,Karan Patel,karan.patel@acme.com,Sales,ADM001,Sales Manager,Active
 OWN001,Meera Nanda,meera.nanda@acme.com,Finance,ADM001,Application Owner,Active
