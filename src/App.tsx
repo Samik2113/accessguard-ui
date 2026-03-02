@@ -30,6 +30,7 @@ import {
   reassignReviewItem,
   confirmManager,
   loginUser,
+  bootstrapFirstUser,
   changePassword,
   resetUserPassword,
   setUserRole,
@@ -49,6 +50,15 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [showFirstUserSetup, setShowFirstUserSetup] = useState(false);
+  const [setupUserId, setSetupUserId] = useState('ADM001');
+  const [setupName, setSetupName] = useState('');
+  const [setupEmail, setSetupEmail] = useState('');
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirmPassword, setSetupConfirmPassword] = useState('');
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupSuccess, setSetupSuccess] = useState<string | null>(null);
+  const [settingUpFirstUser, setSettingUpFirstUser] = useState(false);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetCurrentPassword, setResetCurrentPassword] = useState('');
@@ -155,6 +165,45 @@ const App: React.FC = () => {
     setLoginError(null);
     setLoggingIn(false);
     setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+  };
+
+  const handleBootstrapFirstUser = async () => {
+    setSetupError(null);
+    setSetupSuccess(null);
+
+    const userId = setupUserId.trim().toUpperCase();
+    const name = setupName.trim();
+    const email = setupEmail.trim().toLowerCase();
+    const password = setupPassword;
+
+    if (!userId || !name || !email || !password || !setupConfirmPassword) {
+      setSetupError('Fill all first-user setup fields.');
+      return;
+    }
+    if (password.length < 8) {
+      setSetupError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== setupConfirmPassword) {
+      setSetupError('Password and confirm password must match.');
+      return;
+    }
+
+    setSettingUpFirstUser(true);
+    try {
+      await bootstrapFirstUser({ userId, name, email, password });
+      setSetupSuccess('First admin user created. You can sign in now.');
+      setLoginEmail(email);
+      setLoginPassword('');
+      setShowFirstUserSetup(false);
+      setSetupPassword('');
+      setSetupConfirmPassword('');
+      setLoginError(null);
+    } catch (err: any) {
+      setSetupError(err?.message || 'Failed to create first user.');
+    } finally {
+      setSettingUpFirstUser(false);
+    }
   };
 
   const handleSelfPasswordReset = async () => {
@@ -1069,6 +1118,94 @@ useEffect(() => {
             >
               Reset Password
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowFirstUserSetup(prev => !prev);
+                setSetupError(null);
+                setSetupSuccess(null);
+                if (!setupEmail) setSetupEmail(loginEmail.trim().toLowerCase());
+              }}
+              className="w-full text-sm text-slate-700 hover:text-slate-900 font-semibold"
+            >
+              {showFirstUserSetup ? 'Hide First-Time Setup' : 'First-Time Setup: Create Admin User'}
+            </button>
+
+            {showFirstUserSetup && (
+              <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                <p className="text-xs text-slate-600">
+                  Use this only once to create the first admin user when no users exist.
+                </p>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">User Id</label>
+                  <input
+                    type="text"
+                    value={setupUserId}
+                    onChange={(event) => setSetupUserId(event.target.value)}
+                    placeholder="ADM001"
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Name</label>
+                  <input
+                    type="text"
+                    value={setupName}
+                    onChange={(event) => setSetupName(event.target.value)}
+                    placeholder="Admin User"
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Email Id</label>
+                  <input
+                    type="email"
+                    value={setupEmail}
+                    onChange={(event) => setSetupEmail(event.target.value)}
+                    placeholder="name@company.com"
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Password</label>
+                  <input
+                    type="password"
+                    value={setupPassword}
+                    onChange={(event) => setSetupPassword(event.target.value)}
+                    placeholder="At least 8 characters"
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={setupConfirmPassword}
+                    onChange={(event) => setSetupConfirmPassword(event.target.value)}
+                    placeholder="Re-enter password"
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                {setupError && <p className="text-sm text-red-600">{setupError}</p>}
+                {setupSuccess && <p className="text-sm text-emerald-600">{setupSuccess}</p>}
+
+                <button
+                  type="button"
+                  onClick={handleBootstrapFirstUser}
+                  disabled={settingUpFirstUser}
+                  className="w-full px-4 py-2.5 rounded-lg bg-slate-800 text-white font-semibold hover:bg-slate-900 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
+                >
+                  {settingUpFirstUser ? 'Creating Admin User...' : 'Create First Admin User'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

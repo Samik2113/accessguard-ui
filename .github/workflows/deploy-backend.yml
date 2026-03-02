@@ -2,10 +2,6 @@
 name: Deploy Azure Function App (FTP Run From Package)
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'backend/**'
   workflow_dispatch:
 
 jobs:
