@@ -47,6 +47,10 @@ function parseBoolean(v) {
   return false;
 }
 
+function hasNonEmptyValue(v) {
+  return String(v ?? "").trim().length > 0;
+}
+
 function normalizeRole(inputRole, userId) {
   const role = String(inputRole || "").trim().toUpperCase();
   if (role === "ADMIN" || role === "AUDITOR" || role === "USER") return role;
@@ -132,17 +136,12 @@ module.exports = async function (context, req) {
       const userId = String(u.userId).trim();
       const email = String(u.email || "").trim().toLowerCase();
 
-      const item = {
-        ...u,
-        userId,
-        email,
-        role: normalizeRole(u.role, userId),
-        id: userId,            // keep id == userId
-        createdAt: u.createdAt || now,
-        updatedAt: now,
-        type: "hr-user"          // ensure type is set for all docs
-      };
-      await usersC.items.upsert(item);
+      let existingHr = null;
+      try {
+        const hrRead = await usersC.item(userId, userId).read();
+        existingHr = hrRead?.resource || null;
+      } catch (_) {
+      }
 
       let existingAuth = null;
       try {
@@ -150,6 +149,24 @@ module.exports = async function (context, req) {
         existingAuth = read?.resource || null;
       } catch (_) {
       }
+
+      const incomingHasRole = hasNonEmptyValue(u.role);
+      const existingRole = existingAuth?.role || existingHr?.role;
+      const effectiveRole = incomingHasRole
+        ? normalizeRole(u.role, userId)
+        : normalizeRole(existingRole, userId);
+
+      const item = {
+        ...u,
+        userId,
+        email,
+        role: effectiveRole,
+        id: userId,            // keep id == userId
+        createdAt: u.createdAt || existingHr?.createdAt || now,
+        updatedAt: now,
+        type: "hr-user"          // ensure type is set for all docs
+      };
+      await usersC.items.upsert(item);
 
       const shouldIssueTempPassword = resetPasswords || !existingAuth;
       let tempPassword = null;
@@ -175,7 +192,7 @@ module.exports = async function (context, req) {
         id: userId,
         userId,
         email,
-        role: normalizeRole(u.role, userId),
+        role: effectiveRole,
         passwordHash,
         passwordSalt,
         passwordAlgo: "pbkdf2_sha256_100000",
@@ -198,7 +215,7 @@ module.exports = async function (context, req) {
     const { ok, fail, errors } = await runBatches(users, 50, upsertUser);
 
     // Build incoming id set for replaceAll comparison
-    const incomingIds = new Set(users.map(u => u.userId));
+    const incomingIds = new Set(users.map(u => String(u.userId || "").trim()));
 
     // Decide if we should proceed with delete
     // If you want deletes even when there are upsert failures, change to: const shouldDelete = replaceAll;
