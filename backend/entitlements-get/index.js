@@ -1,5 +1,4 @@
 const { CosmosClient } = require("@azure/cosmos");
-const api = require('../dist/services/api');
 module.exports = async function (context, req) {
   try {
     if (req.method === "OPTIONS") return { status: 204, headers: cors(req) };

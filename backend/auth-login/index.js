@@ -3,7 +3,6 @@ const Ajv = require("ajv");
 const crypto = require("crypto");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
-const api = require('../dist/services/api');
 const schema = {
   type: "object",
   required: ["email", "password"],

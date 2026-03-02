@@ -1,6 +1,5 @@
 // messages/index.js
 const { CosmosClient } = require("@azure/cosmos");
-const api = require('../dist/services/api');
 module.exports = async function (context, req) {
   try {
     // Optional: handle CORS preflight if you want to run without platform CORS
