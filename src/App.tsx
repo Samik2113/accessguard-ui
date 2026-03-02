@@ -215,6 +215,28 @@ const App: React.FC = () => {
       confirmedManagers: Array.isArray(item?.confirmedManagers) ? item.confirmedManagers : undefined
     }));
 
+  const normalizeAuditLogs = (items: any[]): AuditLog[] =>
+    (items || []).map((log: any, index: number) => ({
+      id: String(log?.id || `LOG_FALLBACK_${index}_${Date.now()}`),
+      timestamp: String(log?.timestamp || log?.createdAt || new Date().toISOString()),
+      userId: String(log?.userId || log?.actorId || 'SYSTEM'),
+      userName: String(log?.userName || log?.actorName || log?.userId || 'System'),
+      action: String(log?.action || log?.type || 'UNKNOWN'),
+      details: String(log?.details || log?.message || '')
+    }));
+
+  const loadAuditLogs = async (forceRevalidate = false) => {
+    if (!isAuthenticated) return;
+    try {
+      const res: any = await getAuditLogs({ top: 500, forceRevalidate } as any);
+      const items = Array.isArray(res?.items) ? normalizeAuditLogs(res.items) : [];
+      items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setAuditLogs(items);
+    } catch (e) {
+      console.error('Failed to load audit logs:', e);
+    }
+  };
+
   // UAR Loading/Error States
   const [uarLoading, setUarLoading] = useState(false);
   const [uarError, setUarError] = useState<string | null>(null);
@@ -569,6 +591,64 @@ useEffect(() => {
   })();
   return () => { alive = false; };
 }, [isAuthenticated]);
+
+useEffect(() => {
+  if (!isAuthenticated || applications.length === 0) return;
+  let alive = true;
+
+  const loadAllAccountsForGovernance = async () => {
+    try {
+      const fetchAppAccounts = async (appId: string) => {
+        let continuationToken: string | undefined = undefined;
+        const items: any[] = [];
+        do {
+          const res: any = await getAccounts(appId, undefined, undefined, 500, continuationToken);
+          const chunk = Array.isArray(res?.items) ? res.items : [];
+          items.push(...chunk);
+          continuationToken = res?.continuationToken || undefined;
+        } while (continuationToken);
+        return items;
+      };
+
+      const appIds = applications.map((app: any) => getApplicationId(app)).filter(Boolean);
+      const accountResults = await Promise.all(appIds.map((appId) => fetchAppAccounts(appId)));
+      if (!alive) return;
+
+      const flattened = accountResults.flat();
+      const enriched: ApplicationAccess[] = flattened.map((acc: any) => ({
+        ...acc,
+        ...correlateAccount(acc, users),
+        userName: acc.userName || acc.name || ''
+      }));
+
+      setAccess(recalculateSoD(enriched, sodPolicies));
+    } catch (e) {
+      console.error('Failed to load all accounts for governance:', e);
+    }
+  };
+
+  loadAllAccountsForGovernance();
+  return () => { alive = false; };
+}, [isAuthenticated, applications, users, sodPolicies]);
+
+useEffect(() => {
+  if (!isAuthenticated) {
+    setAuditLogs([]);
+    return;
+  }
+  loadAuditLogs(true);
+}, [isAuthenticated]);
+
+useEffect(() => {
+  if (!isAuthenticated || activeTab !== 'audit') return;
+
+  loadAuditLogs(true);
+  const intervalId = window.setInterval(() => {
+    loadAuditLogs(true);
+  }, 30000);
+
+  return () => window.clearInterval(intervalId);
+}, [isAuthenticated, activeTab]);
 
 useEffect(() => {
   if (!isAuthenticated) return;

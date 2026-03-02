@@ -57,8 +57,10 @@ async function getJson(path: string, params: Record<string, string | number | un
   if (FN_KEY && !includeQueryKey) headers["x-functions-key"] = FN_KEY;   // prefer header
 
   const cached = getCache.get(key);
-  if (cached?.etag) headers["If-None-Match"] = cached.etag;
-  if (cached?.lastModified) headers["If-Modified-Since"] = cached.lastModified;
+  if (!opts?.forceRevalidate) {
+    if (cached?.etag) headers["If-None-Match"] = cached.etag;
+    if (cached?.lastModified) headers["If-Modified-Since"] = cached.lastModified;
+  }
 
   const controller = new AbortController();
   if (opts?.signal) {
@@ -137,7 +139,11 @@ export const getAccountsByUser   = (userId: string, top=500, search?: string) =>
 export const getHrUsers           = (opts: { userId?: string; managerId?: string; search?: string; top?: number; ct?: string } = {}) =>
   getJson("/api/hr-users-get", { userId: opts.userId, managerId: opts.managerId, search: opts.search, top: opts.top ?? 50, continuationToken: opts.ct });
 export const getAuditLogs         = (opts: { userId?: string; action?: string; from?: string; to?: string; top?: number; ct?: string } = {}) =>
-  getJson("/api/auditlogs-get", { userId: opts.userId, action: opts.action, from: opts.from, to: opts.to, top: opts.top ?? 100, continuationToken: opts.ct });
+  getJson(
+    "/api/auditlogs-get",
+    { userId: opts.userId, action: opts.action, from: opts.from, to: opts.to, top: opts.top ?? 100, continuationToken: opts.ct },
+    { forceRevalidate: (opts as any).forceRevalidate === true }
+  );
 
 // (Optional) SoD list for admin
 export const getSodPolicies       = (search?: string, top=100, ct?:string) => getJson("/api/sod-get", { search, top, continuationToken: ct });

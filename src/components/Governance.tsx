@@ -20,6 +20,15 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
   
   const sodViolations = useMemo(() => access.filter(a => a.isSoDConflict), [access]);
   const uniqueUsersCount = useMemo(() => new Set(access.map(a => a.correlatedUserId).filter(Boolean)).size, [access]);
+  const appAccountCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    applications.forEach((app) => {
+      const appKeys = Array.from(new Set([String((app as any).id || '').trim(), String((app as any).appId || '').trim()].filter(Boolean)));
+      const total = access.filter((entry) => appKeys.includes(String((entry as any).appId || '').trim())).length;
+      counts.set(String(app.id), total);
+    });
+    return counts;
+  }, [applications, access]);
 
   // Updated colors for a more cohesive and professional look
   const COLORS = {
@@ -129,13 +138,14 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50/50 text-[10px] uppercase font-bold text-slate-400 border-b">
-                  <tr><th className="px-8 py-4">App Name</th><th className="px-8 py-4">Owner</th><th className="px-8 py-4">Status</th></tr>
+                  <tr><th className="px-8 py-4">App Name</th><th className="px-8 py-4">Owner</th><th className="px-8 py-4">Accounts</th><th className="px-8 py-4">Status</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {applications.map(app => (
                     <tr key={app.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-8 py-5 font-bold text-slate-800 uppercase">{app.name}</td>
                       <td className="px-8 py-5 text-sm text-slate-500">{users.find(u => u.id === app.ownerId)?.name || app.ownerId}</td>
+                      <td className="px-8 py-5 text-sm font-bold text-slate-700">{appAccountCounts.get(String(app.id)) || 0}</td>
                       <td className="px-8 py-5"><span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase">Monitored</span></td>
                     </tr>
                   ))}
@@ -369,7 +379,30 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
                             <tr key={acc.id} className="hover:bg-slate-50/50">
                               <td className="px-4 py-3 font-semibold">{acc.entitlement}</td>
                               <td className="px-4 py-3 text-right">
-                                {acc.isSoDConflict && <span className="bg-red-50 text-red-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-red-100">Conflict Detected</span>}
+                                <div className="flex flex-wrap justify-end items-center gap-1.5">
+                                  {acc.isSoDConflict && (
+                                    <span className="bg-red-50 text-red-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-red-100">Conflict Detected</span>
+                                  )}
+                                  {acc.isPrivileged && (
+                                    <span className="bg-indigo-50 text-indigo-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-indigo-100">Privileged</span>
+                                  )}
+                                  {acc.isOrphan && (
+                                    <span className="bg-orange-50 text-orange-600 font-bold uppercase text-[9px] px-2 py-0.5 rounded border border-orange-100">Orphan</span>
+                                  )}
+                                </div>
+                                {acc.isSoDConflict && (acc.violatedPolicyNames?.length || 0) > 0 && (
+                                  <div className="mt-1 flex flex-col items-end gap-0.5">
+                                    {acc.violatedPolicyNames?.map((name, idx) => (
+                                      <button
+                                        key={`${acc.id}_${idx}`}
+                                        onClick={() => acc.violatedPolicyIds?.[idx] && setViewingPolicyId(acc.violatedPolicyIds[idx])}
+                                        className="text-[9px] text-red-600 font-bold hover:underline text-right"
+                                      >
+                                        {name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}
