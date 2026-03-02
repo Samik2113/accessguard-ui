@@ -216,6 +216,14 @@ export const confirmManager       = (payload: { cycleId: string; appId: string; 
 export const archiveCycle         = (payload: { cycleId: string; appId: string }) =>
   postJson("/api/reviews-archive", payload);
 
+export const sendReviewNotifications = (payload: {
+  mode: 'REMINDER' | 'ESCALATE';
+  cycleId?: string;
+  appId?: string;
+  managerId?: string;
+  dryRun?: boolean;
+}) => postJson("/api/reviews-notify", payload);
+
 // -------------------- Ingest (admin screens) --------------------
 type ImportOpts = { replaceAll?: boolean; debug?: boolean; resetPasswords?: boolean; returnCredentials?: boolean };
 

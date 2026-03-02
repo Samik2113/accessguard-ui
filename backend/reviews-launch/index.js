@@ -2,6 +2,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { customAlphabet } = require("nanoid");
+const { sendEmail } = require("../_shared/email");
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
@@ -317,6 +318,7 @@ module.exports = async function (context, req) {
     let seq = 1;
     let created = 0;
     const errors = [];
+    const assignmentByManager = new Map();
     for (let i = 0; i < accounts.length; i += BATCH) {
       const chunk = accounts.slice(i, i + BATCH);
       await Promise.all(chunk.map(async (account, idx) => {
@@ -366,6 +368,12 @@ module.exports = async function (context, req) {
 
           await itemsC.items.upsert(item);
           created++;
+
+          const notifyEntry = assignmentByManager.get(managerId) || { count: 0, users: new Set(), entitlements: new Set() };
+          notifyEntry.count += 1;
+          if (account.userName) notifyEntry.users.add(String(account.userName));
+          if (account.entitlement) notifyEntry.entitlements.add(String(account.entitlement));
+          assignmentByManager.set(managerId, notifyEntry);
         } catch (error) {
           errors.push({
             index: i + idx,
@@ -390,6 +398,49 @@ module.exports = async function (context, req) {
       type: "audit"
     });
 
+    const notifyResults = [];
+    const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+    for (const [managerId, info] of assignmentByManager.entries()) {
+      let reviewerHr = null;
+      try {
+        const hrRead = await hrC.item(managerId, managerId).read();
+        reviewerHr = hrRead?.resource || null;
+      } catch (_) {
+      }
+
+      const reviewerEmail = String(reviewerHr?.email || "").trim().toLowerCase();
+      if (!reviewerEmail) {
+        notifyResults.push({ managerId, ok: false, skipped: true, reason: "NO_EMAIL" });
+        continue;
+      }
+
+      const due = new Date(dueDate).toLocaleDateString();
+      const subject = `[AccessGuard] Review items assigned (${appNameResolved})`;
+      const text = [
+        `Hello ${reviewerHr?.name || managerId},`,
+        "",
+        `You have ${info.count} review item(s) assigned for campaign \"${cycleName}\" (${appNameResolved}).`,
+        `Due date: ${due}`,
+        portalUrl ? `Portal: ${portalUrl}` : null,
+        "",
+        "Please review and submit your decisions."
+      ].filter(Boolean).join("\n");
+
+      const sendResult = await sendEmail(context, {
+        to: reviewerEmail,
+        subject,
+        text,
+        metadata: {
+          type: "REVIEW_ASSIGNMENT",
+          cycleId,
+          appId,
+          managerId,
+          itemCount: info.count
+        }
+      });
+      notifyResults.push({ managerId, to: reviewerEmail, itemCount: info.count, ...sendResult });
+    }
+
     // Return summary + diagnostics for UI/ops observability
     const counts = {
       accounts: accounts.length,
@@ -404,6 +455,11 @@ module.exports = async function (context, req) {
       itemsCreated: created,
       pending: created,
       status: "ACTIVE",
+      notificationSummary: {
+        attempted: notifyResults.length,
+        sent: notifyResults.filter((result) => result.ok).length,
+        skipped: notifyResults.filter((result) => result.skipped).length
+      },
       counts
     };
 

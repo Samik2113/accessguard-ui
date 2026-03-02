@@ -1,6 +1,7 @@
 // /reviews-item-action/index.js  (PATCH-based version)
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
+const { sendEmail } = require("../_shared/email");
 const ajv = new Ajv({ allErrors: true });
 const schema = {
   type: "object",
@@ -101,6 +102,35 @@ module.exports = async function (context, req) {
         details: `itemId=${body.itemId}; from=${body.managerId}; to=${targetManagerId}`,
         type: "audit"
       });
+
+      const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
+      if (reviewerEmail) {
+        const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+        await sendEmail(context, {
+          to: reviewerEmail,
+          subject: `[AccessGuard] Review item reassigned to you (${itm.appName || itm.appId || "App"})`,
+          text: [
+            `Hello ${targetHr?.name || targetManagerId},`,
+            "",
+            `A review item has been reassigned to you.`,
+            `Item ID: ${body.itemId}`,
+            `Application: ${itm.appName || itm.appId || "Unknown"}`,
+            `Entitlement: ${itm.entitlement || "Unknown"}`,
+            `Reviewed user: ${itm.userName || itm.appUserId || "Unknown"}`,
+            portalUrl ? `Portal: ${portalUrl}` : null,
+            "",
+            "Please review and take action."
+          ].filter(Boolean).join("\n"),
+          metadata: {
+            type: "REVIEW_REASSIGNED",
+            itemId: body.itemId,
+            cycleId: itm.reviewCycleId,
+            appId: itm.appId,
+            fromManagerId: body.managerId,
+            toManagerId: targetManagerId
+          }
+        });
+      }
 
       return ok({ itemId: body.itemId, managerId: targetManagerId, reassigned: true, reassignmentCount: currentReassignmentCount + 1, maxReassignments }, req);
     }

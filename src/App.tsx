@@ -29,6 +29,7 @@ import {
   actOnItem,
   reassignReviewItem,
   confirmManager,
+  sendReviewNotifications,
   loginUser,
   bootstrapFirstUser,
   changePassword,
@@ -544,6 +545,15 @@ useEffect(() => {
     } finally {
       setConfirmingReview(null);
     }
+  };
+
+  const handleSendReviewNotifications = async (payload: { mode: 'REMINDER' | 'ESCALATE'; cycleId?: string; appId?: string; managerId?: string; dryRun?: boolean }) => {
+    const response = await sendReviewNotifications(payload);
+    await addAuditLog(
+      payload.mode === 'ESCALATE' ? 'REVIEW_ESCALATION_TRIGGER' : 'REVIEW_REMINDER_TRIGGER',
+      `mode=${payload.mode}; cycleId=${payload.cycleId || 'ALL'}; appId=${payload.appId || 'ALL'}; sent=${response?.sent ?? 0}; skipped=${response?.skipped ?? 0}`
+    );
+    return response;
   };
   const handleDataImport = async (
   type: 'HR' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD' | 'APPLICATIONS',
@@ -1290,7 +1300,7 @@ useEffect(() => {
 
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} />}
       {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
