@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { NAV_ITEMS } from '../constants';
-import { UserRole } from '../types';
-import { ShieldCheck, User as UserIcon, LogOut, ChevronDown } from 'lucide-react';
+import { AppCustomization, UserRole } from '../types';
+import { ShieldCheck, User as UserIcon, LogOut, ChevronDown, Settings, X } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,6 +10,8 @@ interface LayoutProps {
   setActiveTab: (tab: string) => void;
   currentUser: { name: string; id: string; role: UserRole };
   onLogout: () => void;
+  customization: AppCustomization;
+  onSaveCustomization: (next: AppCustomization) => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
@@ -17,10 +19,14 @@ const Layout: React.FC<LayoutProps> = ({
   activeTab, 
   setActiveTab, 
   currentUser, 
-  onLogout
+  onLogout,
+  customization,
+  onSaveCustomization
 }) => {
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
   const [adminPanelExpanded, setAdminPanelExpanded] = useState(true);
+  const [showCustomization, setShowCustomization] = useState(false);
+  const [draftCustomization, setDraftCustomization] = useState<AppCustomization>(customization);
 
   const visibleItems = NAV_ITEMS.filter((item: any) => !Array.isArray(item.roles) || item.roles.includes(currentUser.role));
   const workspaceItems = visibleItems.filter((item: any) => item.panel === 'workspace');
@@ -34,9 +40,10 @@ const Layout: React.FC<LayoutProps> = ({
         onClick={() => setActiveTab(item.id)}
         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm font-medium ${
           isActive
-            ? 'bg-blue-600 text-white'
+            ? 'text-white'
             : 'text-slate-400 hover:bg-slate-800 hover:text-white'
         }`}
+        style={isActive ? { backgroundColor: customization.primaryColor } : undefined}
       >
         {item.icon}
         {item.label}
@@ -44,15 +51,25 @@ const Layout: React.FC<LayoutProps> = ({
     );
   };
 
+  const openCustomization = () => {
+    setDraftCustomization(customization);
+    setShowCustomization(true);
+  };
+
+  const saveCustomization = () => {
+    onSaveCustomization(draftCustomization);
+    setShowCustomization(false);
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="bg-blue-600 p-2 rounded-lg">
+          <div className="p-2 rounded-lg" style={{ backgroundColor: customization.primaryColor }}>
             <ShieldCheck className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">AccessGuard</h1>
+          <h1 className="text-xl font-bold tracking-tight">{customization.platformName}</h1>
         </div>
 
         <nav className="flex-1 mt-6 px-4 space-y-4 overflow-y-auto">
@@ -93,6 +110,9 @@ const Layout: React.FC<LayoutProps> = ({
             <div className="flex-1 overflow-hidden">
               <p className="text-xs font-semibold truncate">{currentUser.name}</p>
               <p className="text-[10px] text-slate-400 uppercase tracking-wider">{currentUser.role}</p>
+              {customization.supportEmail && (
+                <p className="text-[10px] text-slate-500 truncate">{customization.supportEmail}</p>
+              )}
             </div>
           </div>
           <button 
@@ -114,15 +134,104 @@ const Layout: React.FC<LayoutProps> = ({
             {NAV_ITEMS.find(n => n.id === activeTab)?.label || 'Overview'}
           </h2>
           <div className="flex items-center gap-4">
-             <div className="px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100">
-               Environment: Development
+             <div
+               className="px-3 py-1 text-xs font-medium rounded-full border"
+               style={{ borderColor: customization.primaryColor, color: customization.primaryColor, backgroundColor: `${customization.primaryColor}12` }}
+             >
+               Environment: {customization.environmentLabel}
              </div>
+             {currentUser.role === UserRole.ADMIN && (
+               <button
+                 type="button"
+                 onClick={openCustomization}
+                 className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5"
+               >
+                 <Settings className="w-3.5 h-3.5" /> Customize
+               </button>
+             )}
           </div>
         </header>
         <div className="flex-1 overflow-y-auto p-8">
           {children}
         </div>
       </main>
+
+      {showCustomization && currentUser.role === UserRole.ADMIN && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Customize Platform</h3>
+              <button onClick={() => setShowCustomization(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Platform Name</label>
+              <input
+                type="text"
+                value={draftCustomization.platformName}
+                onChange={(event) => setDraftCustomization(prev => ({ ...prev, platformName: event.target.value }))}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Primary Color Code</label>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  type="color"
+                  value={draftCustomization.primaryColor}
+                  onChange={(event) => setDraftCustomization(prev => ({ ...prev, primaryColor: event.target.value }))}
+                  className="h-10 w-12 border border-slate-300 rounded"
+                />
+                <input
+                  type="text"
+                  value={draftCustomization.primaryColor}
+                  onChange={(event) => setDraftCustomization(prev => ({ ...prev, primaryColor: event.target.value }))}
+                  placeholder="#2563eb"
+                  className="flex-1 px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Environment Label</label>
+              <input
+                type="text"
+                value={draftCustomization.environmentLabel}
+                onChange={(event) => setDraftCustomization(prev => ({ ...prev, environmentLabel: event.target.value }))}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Login Subtitle</label>
+              <input
+                type="text"
+                value={draftCustomization.loginSubtitle}
+                onChange={(event) => setDraftCustomization(prev => ({ ...prev, loginSubtitle: event.target.value }))}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Support Email (optional)</label>
+              <input
+                type="email"
+                value={draftCustomization.supportEmail}
+                onChange={(event) => setDraftCustomization(prev => ({ ...prev, supportEmail: event.target.value }))}
+                className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button onClick={() => setShowCustomization(false)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50">Cancel</button>
+              <button onClick={saveCustomization} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: draftCustomization.primaryColor || '#2563eb' }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

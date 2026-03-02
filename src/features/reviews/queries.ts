@@ -9,7 +9,7 @@ export const reviewQueryKeys = {
   cycleDetail: (filters: { cycleId?: string; includeItems: true; managerId?: string; status?: string; top?: number }) => ['review-cycle-detail', filters] as const
 };
 
-export function useReviewCycles(filters: { appId?: string; status?: string; top?: number }) {
+export function useReviewCycles(filters: { appId?: string; status?: string; top?: number; enabled?: boolean }) {
   const debouncedStatus = useDebouncedValue(filters.status, 350);
   const normalized = useMemo(() => ({
     appId: filters.appId?.trim() || undefined,
@@ -22,7 +22,7 @@ export function useReviewCycles(filters: { appId?: string; status?: string; top?
     queryFn: () => getReviewCycles(normalized),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
-    enabled: true,
+    enabled: filters.enabled ?? true,
     select: (raw: any) => ({
       cycles: Array.isArray(raw?.cycles) ? raw.cycles : [],
       count: Number(raw?.count || 0)

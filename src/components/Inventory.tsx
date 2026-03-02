@@ -36,6 +36,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [bulkRole, setBulkRole] = useState<'ADMIN' | 'AUDITOR' | 'USER'>('USER');
   const [bulkUpdatingRole, setBulkUpdatingRole] = useState(false);
+  const [showBulkRoleModal, setShowBulkRoleModal] = useState(false);
   const [resetResult, setResetResult] = useState<{ userId: string; name: string; temporaryPassword: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   
@@ -680,6 +681,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       await onBulkSetUserRole(selectedUserIds, bulkRole);
       alert(`Updated role to ${bulkRole} for ${selectedUserIds.length} user(s).`);
       setSelectedUserIds([]);
+      setShowBulkRoleModal(false);
     } catch (e: any) {
       alert(`Bulk role update failed: ${e?.message || 'Unknown error'}`);
     } finally {
@@ -736,24 +738,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button onClick={() => hrInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800">
                 <Upload className="w-4 h-4" /> Upload HR Data
               </button>
-              <div className="flex items-center gap-2">
-                <select
-                  value={bulkRole}
-                  onChange={(e) => setBulkRole(e.target.value as 'ADMIN' | 'AUDITOR' | 'USER')}
-                  className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white"
-                >
-                  <option value="ADMIN">Admin</option>
-                  <option value="AUDITOR">Auditor</option>
-                  <option value="USER">User</option>
-                </select>
-                <button
-                  onClick={handleBulkRoleApply}
-                  disabled={bulkUpdatingRole || selectedUserIds.length === 0}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
-                >
-                  {bulkUpdatingRole ? 'Updating...' : `Set Role (${selectedUserIds.length})`}
-                </button>
-              </div>
+              <button
+                onClick={() => setShowBulkRoleModal(true)}
+                disabled={bulkUpdatingRole || selectedUserIds.length === 0}
+                className="px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
+              >
+                {bulkUpdatingRole ? 'Updating...' : `Set Role (${selectedUserIds.length})`}
+              </button>
             </div>
           </div>
 
@@ -883,9 +875,50 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </button>
               <button
                 onClick={closeResetPasswordModal}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
               >
                 OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkRoleModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-900">Bulk Role Assignment</h3>
+            <p className="text-sm text-slate-600 mt-1">Selected users: {selectedUserIds.length}</p>
+
+            <div className="mt-4">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Select Role</label>
+              <select
+                value={bulkRole}
+                onChange={(e) => setBulkRole(e.target.value as 'ADMIN' | 'AUDITOR' | 'USER')}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 bg-white"
+              >
+                <option value="ADMIN">Admin</option>
+                <option value="AUDITOR">Auditor</option>
+                <option value="USER">User</option>
+              </select>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowBulkRoleModal(false)}
+                disabled={bulkUpdatingRole}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkRoleApply}
+                disabled={bulkUpdatingRole || selectedUserIds.length === 0}
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                style={bulkUpdatingRole || selectedUserIds.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
+              >
+                {bulkUpdatingRole ? 'Updating...' : 'Apply Role'}
               </button>
             </div>
           </div>
@@ -912,7 +945,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button onClick={() => sodInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800">
                 <Upload className="w-4 h-4" /> Upload
               </button>
-              <button onClick={() => setShowAddSod(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              <button
+                onClick={() => setShowAddSod(true)}
+                className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+              >
                 <Plus className="w-4 h-4" /> New Policy
               </button>
             </div>
@@ -1006,7 +1043,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </button>
               <button 
                 onClick={() => setShowAddApp(true)} 
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-all"
+                className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-all"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
               >
                 <Plus className="w-4 h-4" /> Add Application
               </button>
@@ -1464,7 +1502,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             </div>
             <div className="flex gap-3 mt-8">
               <button onClick={() => setShowAddApp(false)} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={handleAddApp} className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700">Add App</button>
+              <button
+                onClick={handleAddApp}
+                className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+              >
+                Add App
+              </button>
             </div>
           </div>
         </div>
@@ -1538,7 +1582,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             </div>
             <div className="flex gap-3 mt-8">
               <button onClick={() => setEditingEnt(null)} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={() => { onUpdateEntitlement(editingEnt); setEditingEnt(null); }} className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 hover:bg-blue-700">Save Changes</button>
+              <button
+                onClick={() => { onUpdateEntitlement(editingEnt); setEditingEnt(null); }}
+                className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+              >
+                Save Changes
+              </button>
             </div>
           </div>
         </div>

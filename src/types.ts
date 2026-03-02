@@ -118,3 +118,11 @@ export interface AuditLog {
   action: string;
   details: string;
 }
+
+export interface AppCustomization {
+  platformName: string;
+  primaryColor: string;
+  environmentLabel: string;
+  loginSubtitle: string;
+  supportEmail: string;
+}

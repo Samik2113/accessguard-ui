@@ -306,7 +306,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           <h1 className="text-2xl font-bold text-slate-900">Review Campaigns</h1>
           <p className="text-slate-500">Monitor and manage access review workflows.</p>
         </div>
-        <button onClick={() => setShowLaunchModal(true)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold shadow-lg hover:bg-blue-700 transition-all">
+        <button
+          onClick={() => setShowLaunchModal(true)}
+          className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
+          style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
+        >
           <Play className="w-4 h-4 fill-current" /> Launch Campaign
         </button>
       </div>
@@ -363,7 +367,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                       setBulkReassignComment('');
                     }}
                     disabled={selectedCampaignItems.length === 0}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedCampaignItems.length > 0 ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${selectedCampaignItems.length > 0 ? 'text-white hover:opacity-90' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                    style={selectedCampaignItems.length > 0 ? { backgroundColor: 'var(--ag-primary, #2563eb)' } : undefined}
                   >
                     <Send className="w-4 h-4" /> Bulk Reassign ({selectedCampaignItems.length})
                   </button>
@@ -642,7 +647,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               </button>
               <button
                 onClick={submitReassignment}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700"
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)' }}
               >
                 Reassign
               </button>
@@ -713,7 +719,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <button
                 onClick={submitBulkReassignment}
                 disabled={selectedCampaignItemObjects.length === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                style={selectedCampaignItemObjects.length === 0 ? undefined : { backgroundColor: 'var(--ag-primary, #2563eb)' }}
               >
                 Reassign Selected
               </button>

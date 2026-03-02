@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -6,7 +6,7 @@ import Inventory from './components/Inventory';
 import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
-import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy } from './types';
+import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
 import { getApplications } from "./services/api";
@@ -40,13 +40,91 @@ import {
 import { useReviewCycles } from './features/reviews/queries';
 import { useAccountsByApp } from './features/accounts/queries';
 
+const SESSION_STORAGE_KEY = 'accessguard.session.v1';
+const CUSTOMIZATION_STORAGE_KEY = 'accessguard.customization.v1';
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const SESSION_TOUCH_THROTTLE_MS = 30 * 1000;
+
+const DEFAULT_CUSTOMIZATION: AppCustomization = {
+  platformName: 'AccessGuard',
+  primaryColor: '#2563eb',
+  environmentLabel: 'Development',
+  loginSubtitle: 'Sign in with emailId and password.',
+  supportEmail: ''
+};
+
+type PersistedSession = {
+  user: { name: string; id: string; role: UserRole };
+  activeTab: string;
+  expiresAt: number;
+};
+
+function readPersistedSession(): PersistedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedSession;
+    if (!parsed?.user?.id || !parsed?.expiresAt) return null;
+    if (Date.now() >= Number(parsed.expiresAt)) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedSession(user: { name: string; id: string; role: UserRole }, activeTab: string) {
+  const payload: PersistedSession = {
+    user,
+    activeTab,
+    expiresAt: Date.now() + SESSION_TTL_MS
+  };
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function clearPersistedSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function readCustomization(): AppCustomization {
+  try {
+    const raw = localStorage.getItem(CUSTOMIZATION_STORAGE_KEY);
+    if (!raw) return DEFAULT_CUSTOMIZATION;
+    const parsed = JSON.parse(raw) as Partial<AppCustomization>;
+    return {
+      platformName: String(parsed?.platformName || DEFAULT_CUSTOMIZATION.platformName),
+      primaryColor: normalizeHexColor(parsed?.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
+      environmentLabel: String(parsed?.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
+      loginSubtitle: String(parsed?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
+      supportEmail: String(parsed?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail)
+    };
+  } catch {
+    return DEFAULT_CUSTOMIZATION;
+  }
+}
+
+function writeCustomization(customization: AppCustomization) {
+  localStorage.setItem(CUSTOMIZATION_STORAGE_KEY, JSON.stringify(customization));
+}
+
+function normalizeHexColor(input: unknown, fallback: string) {
+  const value = String(input || '').trim();
+  if (/^#([0-9a-fA-F]{6})$/.test(value)) return value;
+  return fallback;
+}
+
 
 
 const App: React.FC = () => {
   const queryClient = useQueryClient();
+  const lastSessionTouchRef = useRef(0);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const [customization, setCustomization] = useState<AppCustomization>(DEFAULT_CUSTOMIZATION);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -80,7 +158,7 @@ const App: React.FC = () => {
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
-  const cyclesQuery = useReviewCycles({ top: 200 });
+  const cyclesQuery = useReviewCycles({ top: 200, enabled: isAuthenticated });
   const accountsQuery = useAccountsByApp({ appId: selectedAppId || undefined, top: 200 });
   const invalidateReviewQueries = async (cycleId?: string) => {
     await queryClient.invalidateQueries({ queryKey: ['review-cycles'] });
@@ -144,13 +222,16 @@ const App: React.FC = () => {
       const res: any = await loginUser({ email, password });
       const roleRaw = String(res?.user?.role || '').toUpperCase();
       const role = roleRaw === UserRole.ADMIN ? UserRole.ADMIN : roleRaw === UserRole.AUDITOR ? UserRole.AUDITOR : UserRole.USER;
-      setCurrentUser({
+      const loggedInUser = {
         name: String(res?.user?.name || res?.user?.userId || 'User'),
         id: String(res?.user?.id || res?.user?.userId || ''),
         role
-      });
-      setActiveTab(role === UserRole.USER ? 'my-access' : 'dashboard');
+      };
+      const nextTab = role === UserRole.USER ? 'my-access' : 'dashboard';
+      setCurrentUser(loggedInUser);
+      setActiveTab(nextTab);
       setIsAuthenticated(true);
+      writePersistedSession(loggedInUser, nextTab);
     } catch (err: any) {
       setLoginError(err?.message || 'Invalid emailId or password.');
     } finally {
@@ -166,7 +247,79 @@ const App: React.FC = () => {
     setLoginError(null);
     setLoggingIn(false);
     setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+    setUsers([]);
+    setApplications([]);
+    setAccess([]);
+    setEntitlements([]);
+    setSodPolicies([]);
+    setCycles([]);
+    setReviewItems([]);
+    setSelectedAppId(null);
+    clearPersistedSession();
+    queryClient.clear();
   };
+
+  useEffect(() => {
+    const persisted = readPersistedSession();
+    setCustomization(readCustomization());
+    if (persisted) {
+      setCurrentUser(persisted.user);
+      setActiveTab(persisted.activeTab || (persisted.user.role === UserRole.USER ? 'my-access' : 'dashboard'));
+      setIsAuthenticated(true);
+    }
+    setSessionHydrated(true);
+  }, []);
+
+  const handleSaveCustomization = (nextCustomization: AppCustomization) => {
+    const normalized: AppCustomization = {
+      ...nextCustomization,
+      platformName: String(nextCustomization.platformName || '').trim() || DEFAULT_CUSTOMIZATION.platformName,
+      primaryColor: normalizeHexColor(nextCustomization.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
+      environmentLabel: String(nextCustomization.environmentLabel || '').trim() || DEFAULT_CUSTOMIZATION.environmentLabel,
+      loginSubtitle: String(nextCustomization.loginSubtitle || '').trim() || DEFAULT_CUSTOMIZATION.loginSubtitle,
+      supportEmail: String(nextCustomization.supportEmail || '').trim()
+    };
+    setCustomization(normalized);
+    writeCustomization(normalized);
+  };
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--ag-primary', customization.primaryColor || DEFAULT_CUSTOMIZATION.primaryColor);
+  }, [customization.primaryColor]);
+
+  useEffect(() => {
+    if (!sessionHydrated || !isAuthenticated) return;
+    writePersistedSession(currentUser, activeTab);
+  }, [sessionHydrated, isAuthenticated, currentUser, activeTab]);
+
+  useEffect(() => {
+    if (!sessionHydrated || !isAuthenticated) return;
+
+    const touchSession = () => {
+      const now = Date.now();
+      if (now - lastSessionTouchRef.current < SESSION_TOUCH_THROTTLE_MS) return;
+      lastSessionTouchRef.current = now;
+      writePersistedSession(currentUser, activeTab);
+    };
+
+    const onUserActivity = () => touchSession();
+    const activityEvents: Array<keyof WindowEventMap> = ['click', 'keydown', 'mousemove', 'scroll', 'focus'];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, onUserActivity, { passive: true }));
+
+    const intervalId = window.setInterval(() => {
+      const session = readPersistedSession();
+      if (!session || Date.now() >= Number(session.expiresAt || 0)) {
+        handleLogout();
+      }
+    }, 60 * 1000);
+
+    touchSession();
+
+    return () => {
+      window.clearInterval(intervalId);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, onUserActivity));
+    };
+  }, [sessionHydrated, isAuthenticated, currentUser, activeTab]);
 
   const handleBootstrapFirstUser = async () => {
     setSetupError(null);
@@ -283,6 +436,7 @@ const addAuditLog = async (action: string, details: string) => {
 };
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   let isMounted = true;
 
   async function loadApps() {
@@ -308,15 +462,17 @@ useEffect(() => {
 
   loadApps();
   return () => { isMounted = false; };
-}, []); // ← run once on first render
+}, [isAuthenticated]); // load only after auth
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   if (!selectedAppId && applications.length > 0) {
     setSelectedAppId(getApplicationId(applications[0]));
   }
-}, [applications, selectedAppId]);
+}, [isAuthenticated, applications, selectedAppId]);
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   let alive = true;
   async function loadEnts() {
     if (!selectedAppId) return;
@@ -335,6 +491,7 @@ useEffect(() => {
 }, [selectedAppId]);
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   if (!selectedAppId) {
     setAccess([]);
     return;
@@ -351,9 +508,10 @@ useEffect(() => {
     const other = prev.filter(a => a.appId !== selectedAppId);
     return [...other, ...enriched];
   });
-}, [selectedAppId, accountsQuery.data, users]);
+}, [isAuthenticated, selectedAppId, accountsQuery.data, users]);
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   let alive = true;
   (async () => {
     setUsersLoading(true);
@@ -382,9 +540,10 @@ useEffect(() => {
     }
   })();
   return () => { alive = false; };
-}, []);
+}, [isAuthenticated]);
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   let alive = true;
   (async () => {
     try {
@@ -400,9 +559,15 @@ useEffect(() => {
     }
   })();
   return () => { alive = false; };
-}, []);
+}, [isAuthenticated]);
 
 useEffect(() => {
+  if (!isAuthenticated) {
+    setCycles([]);
+    setUarLoading(false);
+    setUarError(null);
+    return;
+  }
   const qCycles = Array.isArray((cyclesQuery.data as any)?.cycles) ? (cyclesQuery.data as any).cycles : [];
   setCycles(qCycles.map(normalizeCycle));
   setUarLoading(cyclesQuery.isLoading);
@@ -412,9 +577,10 @@ useEffect(() => {
   } else {
     setUarError(null);
   }
-}, [cyclesQuery.data, cyclesQuery.error, cyclesQuery.isLoading]);
+}, [isAuthenticated, cyclesQuery.data, cyclesQuery.error, cyclesQuery.isLoading]);
 
 useEffect(() => {
+  if (!isAuthenticated) return;
   let alive = true;
   (async () => {
     try {
@@ -432,7 +598,7 @@ useEffect(() => {
     }
   })();
   return () => { alive = false; };
-}, []);
+}, [isAuthenticated]);
 
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
@@ -822,7 +988,7 @@ useEffect(() => {
       console.log('[handleAction] Calling actOnItem');
       await actOnItem({
         itemId,
-        managerId: currentUser.id,
+        managerId: item.managerId || currentUser.id,
         status,
         comment,
         etag: (item as any)?._etag
@@ -861,7 +1027,7 @@ useEffect(() => {
             const target = reviewItems.find(i => i.id === itemId);
             return actOnItem({
               itemId,
-              managerId: currentUser.id,
+              managerId: target?.managerId || currentUser.id,
               status,
               comment,
               etag: (target as any)?._etag
@@ -1065,13 +1231,21 @@ useEffect(() => {
     await addAuditLog('ROLE_UPDATE_BULK', `Updated role to ${allowedRole} for users: ${successfulIds.join(', ')}`);
   };
 
+  if (!sessionHydrated) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+        <p className="text-sm text-slate-500">Loading session...</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-sm p-8 space-y-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">AccessGuard Login</h1>
-            <p className="text-sm text-slate-500 mt-1">Sign in with emailId and password.</p>
+            <h1 className="text-2xl font-bold text-slate-900">{customization.platformName} Login</h1>
+            <p className="text-sm text-slate-500 mt-1">{customization.loginSubtitle}</p>
           </div>
 
           <div className="space-y-4">
@@ -1111,7 +1285,8 @@ useEffect(() => {
             <button
               onClick={handleLogin}
               disabled={loggingIn}
-              className="w-full px-4 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+              style={{ backgroundColor: customization.primaryColor }}
+              className="w-full px-4 py-2.5 rounded-lg text-white font-semibold transition-colors"
             >
               {loggingIn ? 'Signing In...' : 'Sign In'}
             </button>
@@ -1299,7 +1474,14 @@ useEffect(() => {
   }
 
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout}>
+    <Layout
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      currentUser={currentUser}
+      onLogout={handleLogout}
+      customization={customization}
+      onSaveCustomization={handleSaveCustomization}
+    >
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} />}
       {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
