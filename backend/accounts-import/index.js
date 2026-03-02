@@ -233,7 +233,9 @@ module.exports = async function (context, req) {
       });
     }
 
-    // Concurrency pre-check for updates: existing rows must provide matching _etag
+    // Concurrency pre-check for updates:
+    // - If caller provides _etag (row) or If-Match (header), enforce optimistic concurrency.
+    // - If caller does not provide any precondition, allow source-of-truth sync updates.
     const ifMatchHeader = req.headers["if-match"] || req.headers["If-Match"];
     const updateRows = [];
     for (const d of finalDocs) {
@@ -242,20 +244,8 @@ module.exports = async function (context, req) {
         if (!existing) continue;
 
         const expectedEtag = String(d._etag || ifMatchHeader || "").trim();
-        if (!expectedEtag) {
-          return {
-            status: 428,
-            headers: cors(req),
-            body: {
-              ok: false,
-              error: {
-                code: "PRECONDITION_REQUIRED",
-                message: "If-Match is required for account updates",
-                details: { id: d.id }
-              }
-            }
-          };
-        }
+        if (!expectedEtag) continue;
+        if (expectedEtag === "*") continue;
 
         const currentEtag = String(existing._etag || "");
         if (isEtagMismatch(expectedEtag, currentEtag)) {
