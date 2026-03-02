@@ -73,7 +73,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       headers = ENTITLEMENT_TEMPLATE_HEADERS;
       if (selectedAppId) {
         rows = entitlements.filter(e => e.appId === selectedAppId).map(e => [
-          e.entitlement, e.description, e.owner, e.isPrivileged ? 'YES' : 'NO', e.risk, e.riskScore
+          e.entitlement, e.description, e.owner, e.isPrivileged ? 'YES' : 'NO'
         ]);
       }
     }
@@ -176,15 +176,6 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             }
           }
 
-          // Auto-calc risk and riskScore based on isPrivileged
-          if (obj.isPrivileged) {
-            obj.risk = 'HIGH';
-            obj.riskScore = '10';
-          } else {
-            // Preserve provided risk if present, otherwise default to LOW/1
-            obj.risk = obj.risk || 'LOW';
-            obj.riskScore = obj.riskScore || '1';
-          }
         }
 
         return obj;
@@ -403,7 +394,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     }
 
     // Classification Level
-    let level: 'CLEAR' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'CLEAR';
+    let level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'LOW';
     if (hasSod) level = 'CRITICAL';
     else if (isOrphan) level = 'HIGH';
     else if (hasPrivileged) level = 'MEDIUM';
@@ -417,7 +408,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             level === 'MEDIUM' ? 'bg-indigo-500 text-white' :
             'bg-emerald-500 text-white'
           }`}>
-            {level === 'CLEAR' ? 'LOW RISK' : `${level} RISK`}
+            {`${level} RISK`}
           </span>
         </div>
         
@@ -962,7 +953,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                   <th className="px-6 py-4">Policy ID / Name</th>
                   <th className="px-6 py-4">Condition 1 (App: Role)</th>
                   <th className="px-6 py-4">Condition 2 (App: Role)</th>
-                  <th className="px-6 py-4">Risk Level</th>
+                  <th className="px-6 py-4">Policy Severity</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1239,7 +1230,6 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                         <thead className="sticky top-0 bg-slate-100 z-10">
                           <tr className="text-slate-400 uppercase font-bold border-b">
                             <th className="px-4 py-3">Entitlement</th>
-                            <th className="px-4 py-3">Risk Level</th>
                             <th className="px-4 py-3">Privileged?</th>
                             <th className="px-4 py-3">Owner</th>
                             <th className="px-4 py-3">Description</th>
@@ -1248,18 +1238,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {selectedEntitlements.length === 0 ? (
-                            <tr><td colSpan={6} className="py-20 text-center opacity-50">No catalog data. Upload accounts to auto-generate.</td></tr>
+                            <tr><td colSpan={5} className="py-20 text-center opacity-50">No catalog data. Upload accounts to auto-generate.</td></tr>
                           ) : (
                             selectedEntitlements.map(ent => (
                               <tr key={ent.entitlement} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-4 py-3 font-bold">{ent.entitlement}</td>
-                                <td className="px-4 py-3">
-                                  <span className={`px-2 py-0.5 rounded font-black ${
-                                    ent.risk === 'HIGH' ? 'bg-red-50 text-red-600' : 
-                                    ent.risk === 'MEDIUM' ? 'bg-orange-50 text-orange-950' : 
-                                    'bg-blue-50 text-blue-600'
-                                  }`}>{ent.risk || 'LOW'} (Score: {ent.riskScore})</span>
-                                </td>
                                 <td className="px-4 py-3">
                                   {ent.isPrivileged ? (
                                     <span className="flex items-center gap-1 text-red-600 font-bold"><ShieldCheck className="w-3 h-3" /> YES</span>
@@ -1359,7 +1342,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                      </div>
                   </div>
                   <div className="flex items-center justify-between pt-4 border-t">
-                    <span className="text-xs font-bold text-slate-400 uppercase">Policy Risk Impact</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase">Policy Severity</span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
                         policy.riskLevel === 'HIGH' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-950'
                     }`}>{policy.riskLevel}</span>
@@ -1534,47 +1517,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                   {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
                 </select>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Risk Level</label>
-                <select 
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/10 outline-none" 
-                    value={editingEnt.risk} 
-                    onChange={e => setEditingEnt({...editingEnt, risk: e.target.value as any})}
-                >
-                  <option value="LOW">LOW</option>
-                  <option value="MEDIUM">MEDIUM</option>
-                  <option value="HIGH">HIGH</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Risk Score (1-10)</label>
-                <input 
-                    type="number" 
-                    min="1" 
-                    max="10" 
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/10 outline-none" 
-                    value={editingEnt.riskScore} 
-                    onChange={e => setEditingEnt({...editingEnt, riskScore: e.target.value})} 
-                />
-              </div>
-              <div className="flex items-center h-full pt-4">
+              <div className="flex items-center h-full pt-6">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input 
                     type="checkbox" 
                     className="w-4 h-4 rounded text-blue-600" 
                     checked={editingEnt.isPrivileged} 
-                    onChange={e => {
-                      const isPriv = e.target.checked;
-                      const newState = {...editingEnt, isPrivileged: isPriv};
-                      if (isPriv) {
-                        newState.risk = 'HIGH';
-                        newState.riskScore = '10';
-                      } else {
-                        newState.risk = 'LOW';
-                        newState.riskScore = '1';
-                      }
-                      setEditingEnt(newState);
-                    }} 
+                    onChange={e => setEditingEnt({...editingEnt, isPrivileged: e.target.checked})} 
                     />
                   <span className="text-sm font-bold text-slate-700">Privileged Entitlement?</span>
                 </label>
@@ -1648,7 +1597,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Risk Level</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Policy Severity</label>
                 <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl" value={newSod.riskLevel || 'HIGH'} onChange={e => setNewSod({...newSod, riskLevel: e.target.value as any})}>
                   <option value="HIGH">HIGH</option>
                   <option value="MEDIUM">MEDIUM</option>

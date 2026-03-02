@@ -34,6 +34,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [campaignEntitlementFilter, setCampaignEntitlementFilter] = useState('ALL');
   const [campaignStatusFilter, setCampaignStatusFilter] = useState('ALL');
   const [campaignRemediationFilter, setCampaignRemediationFilter] = useState('ALL');
+  const [campaignRiskFilter, setCampaignRiskFilter] = useState('ALL');
+  const [campaignRiskFactorFilter, setCampaignRiskFactorFilter] = useState('ALL');
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
   const [reassignModal, setReassignModal] = useState<{ itemId: string; fromManagerId: string; appUserId: string } | null>(null);
@@ -74,6 +76,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const uniqueUsersInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.userName))).sort(), [viewingItems]);
   const uniqueEntsInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.entitlement))).sort(), [viewingItems]);
 
+  const getRiskLevel = (item: ReviewItem) => {
+    if (item.isSoDConflict) return 'CRITICAL';
+    if (item.isOrphan) return 'HIGH';
+    if (item.isPrivileged) return 'MEDIUM';
+    return 'LOW';
+  };
+
   const filteredViewingItems = useMemo(() => {
     return viewingItems.filter(i => {
       const matchesUser = campaignUserFilter === 'ALL' || i.userName === campaignUserFilter;
@@ -81,9 +90,17 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
       const matchesStatus = campaignStatusFilter === 'ALL' || i.status === campaignStatusFilter;
       const remStatus = i.status === ActionStatus.REMEDIATED ? 'VERIFIED' : i.status === ActionStatus.REVOKED ? 'PENDING' : 'N/A';
       const matchesRem = campaignRemediationFilter === 'ALL' || remStatus === campaignRemediationFilter;
-      return matchesUser && matchesEnt && matchesStatus && matchesRem;
+      const level = getRiskLevel(i);
+      const matchesRisk = campaignRiskFilter === 'ALL' || level === campaignRiskFilter;
+      const hasAnyRiskFactor = i.isSoDConflict || i.isPrivileged || i.isOrphan;
+      const matchesRiskFactor = campaignRiskFactorFilter === 'ALL' ||
+        (campaignRiskFactorFilter === 'SOD' && i.isSoDConflict) ||
+        (campaignRiskFactorFilter === 'PRIVILEGED' && i.isPrivileged) ||
+        (campaignRiskFactorFilter === 'ORPHAN' && i.isOrphan) ||
+        (campaignRiskFactorFilter === 'NONE' && !hasAnyRiskFactor);
+      return matchesUser && matchesEnt && matchesStatus && matchesRem && matchesRisk && matchesRiskFactor;
     });
-  }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter]);
+  }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter, campaignRiskFilter, campaignRiskFactorFilter]);
 
   const selectedCampaign = cycles.find(c => c.id === selectedCampaignId);
 
@@ -257,11 +274,17 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 const isCompleted = cycle.status === ReviewStatus.COMPLETED;
                 const app = applications.find(a => a.id === cycle.appId);
                 const owner = users.find(u => u.id === app?.ownerId);
+                const dueDateLabel = cycle.dueDate
+                  ? new Date(cycle.dueDate).toLocaleDateString()
+                  : '—';
                 return (
                   <tr key={cycle.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-5">
                       <div className="font-bold text-slate-800">{cycle.name}</div>
                       <div className="text-xs text-blue-600 font-medium">{cycle.appName}</div>
+                      <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                        <Calendar className="w-3 h-3" /> Due: {dueDateLabel}
+                      </div>
                     </td>
                     <td className="px-8 py-5">
                       <div className="text-sm font-medium text-slate-700">{owner?.name || '---'}</div>
@@ -336,7 +359,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
             <div className="p-6 border-b flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
                 <Boxes className="w-5 h-5 text-blue-600" />
-                <h3 className="text-xl font-bold text-slate-900">{selectedCampaign?.name}</h3>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">{selectedCampaign?.name}</h3>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-slate-500">
+                    <Calendar className="w-3.5 h-3.5" /> Due: {selectedCampaign?.dueDate ? new Date(selectedCampaign.dueDate).toLocaleDateString() : '—'}
+                  </div>
+                </div>
               </div>
               <div className="flex gap-2">
                 {isAdmin && onSendNotifications && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
@@ -416,6 +444,26 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                         <option value="PENDING">Pending Verification</option>
                     </select>
                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Risk</span>
+                    <select value={campaignRiskFilter} onChange={e => setCampaignRiskFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
+                      <option value="ALL">All Levels</option>
+                      <option value="CRITICAL">Critical</option>
+                      <option value="HIGH">High</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="LOW">Low</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Risk Factor</span>
+                    <select value={campaignRiskFactorFilter} onChange={e => setCampaignRiskFactorFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
+                      <option value="ALL">All Factors</option>
+                      <option value="PRIVILEGED">Privileged</option>
+                      <option value="SOD">SoD Conflict</option>
+                      <option value="ORPHAN">Orphan</option>
+                      <option value="NONE">None</option>
+                    </select>
+                  </div>
               </div>
               
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -468,7 +516,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                       </th>
                     )}
                     <th className="px-6 py-3">User / Account</th>
-                    <th className="px-6 py-3">Entitlement & Risks</th>
+                    <th className="px-6 py-3">Entitlement</th>
+                    <th className="px-6 py-3">Risk Factors</th>
                     <th className="px-6 py-3">Reviewer</th>
                     <th className="px-6 py-3">Decision Detail</th>
                     <th className="px-6 py-3">Remediation</th>
@@ -476,10 +525,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 </thead>
                 <tbody className="divide-y text-sm">
                   {filteredViewingItems.length === 0 ? (
-                    <tr><td colSpan={isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED ? 6 : 5} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
+                    <tr><td colSpan={isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED ? 7 : 6} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
                   ) : (
                     filteredViewingItems.map(item => {
                         const reviewer = users.find(u => u.id === item.managerId);
+                      const level = getRiskLevel(item);
                         const canSelectForBulk = selectedCampaign?.status !== ReviewStatus.COMPLETED && item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments;
                         return (
                         <tr key={item.id} className="hover:bg-slate-50">
@@ -504,6 +554,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                                   {/* Fix: Lucide icons do not always expose the title prop correctly in some TypeScript environments. Wrapping in span is safer for tooltips. */}
                                   {item.isPrivileged && <span title="Privileged Entitlement"><ShieldCheck className="w-3 h-3 text-indigo-500 fill-indigo-50" /></span>}
                                 </div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="flex flex-col gap-1">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase w-fit ${level === 'CRITICAL' ? 'bg-red-600 text-white' : level === 'HIGH' ? 'bg-orange-500 text-white' : level === 'MEDIUM' ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                      {level} RISK
+                                    </span>
+                                </div>
                                 <div className="flex flex-wrap gap-1 mt-1.5">
                                     {item.isSoDConflict && (
                                       <div className="flex flex-col gap-0.5 w-full">
@@ -523,6 +580,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                                     )}
                                     {item.isPrivileged && <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-indigo-100 uppercase w-fit flex items-center gap-1"><ShieldCheck className="w-2.5 h-2.5" /> Privileged</span>}
                                     {item.isOrphan && <span className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Orphan</span>}
+                                    {!item.isSoDConflict && !item.isPrivileged && !item.isOrphan && (
+                                      <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[8px] font-black border border-slate-200 uppercase w-fit">Low Risk</span>
+                                    )}
                                 </div>
                             </td>
                             <td className="px-6 py-4">

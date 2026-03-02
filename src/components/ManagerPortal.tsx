@@ -25,6 +25,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const [appFilter, setAppFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [riskFilter, setRiskFilter] = useState('ALL');
+  const [riskFactorFilter, setRiskFactorFilter] = useState('ALL');
   const [dueDateSort, setDueDateSort] = useState<'ASC' | 'DESC'>('ASC');
   
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -50,19 +51,30 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const uniqueUsersInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.userName))).sort(), [managerItems]);
   const uniqueEntsInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.entitlement))).sort(), [managerItems]);
 
+  const getRiskLevel = (item: ReviewItem) => {
+    if (item.isSoDConflict) return 'CRITICAL';
+    if (item.isOrphan) return 'HIGH';
+    if (item.isPrivileged) return 'MEDIUM';
+    return 'LOW';
+  };
+
   const filteredItems = useMemo(() => {
     return managerItems.filter(item => {
       const matchesUser = userFilter === 'ALL' || item.userName === userFilter;
       const matchesEnt = entitlementFilter === 'ALL' || item.entitlement === entitlementFilter;
       const matchesApp = appFilter === 'ALL' || item.appName === appFilter;
       const matchesStatus = statusFilter === 'ALL' || item.status === statusFilter;
-      const matchesRisk = riskFilter === 'ALL' || 
-        (riskFilter === 'SOD' && item.isSoDConflict) ||
-        (riskFilter === 'PRIVILEGED' && item.isPrivileged) ||
-        (riskFilter === 'ORPHAN' && item.isOrphan);
-      return matchesUser && matchesEnt && matchesApp && matchesStatus && matchesRisk;
+      const level = getRiskLevel(item);
+      const matchesRisk = riskFilter === 'ALL' || level === riskFilter;
+      const hasAnyRiskFactor = item.isSoDConflict || item.isPrivileged || item.isOrphan;
+      const matchesRiskFactor = riskFactorFilter === 'ALL' ||
+        (riskFactorFilter === 'SOD' && item.isSoDConflict) ||
+        (riskFactorFilter === 'PRIVILEGED' && item.isPrivileged) ||
+        (riskFactorFilter === 'ORPHAN' && item.isOrphan) ||
+        (riskFactorFilter === 'NONE' && !hasAnyRiskFactor);
+      return matchesUser && matchesEnt && matchesApp && matchesStatus && matchesRisk && matchesRiskFactor;
     });
-  }, [managerItems, userFilter, entitlementFilter, appFilter, statusFilter, riskFilter]);
+  }, [managerItems, userFilter, entitlementFilter, appFilter, statusFilter, riskFilter, riskFactorFilter]);
 
   const getItemDueDateTs = (item: ReviewItem) => {
     const cycle = cycles.find(c => c.id === item.reviewCycleId);
@@ -253,10 +265,21 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Risk</span>
             <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
-              <option value="ALL">Any Risk</option>
+              <option value="ALL">All Levels</option>
+              <option value="CRITICAL">Critical</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Risk Factor</span>
+            <select value={riskFactorFilter} onChange={e => setRiskFactorFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
+              <option value="ALL">All Factors</option>
+              <option value="PRIVILEGED">Privileged</option>
               <option value="SOD">SoD Conflict</option>
-              <option value="ORPHAN">Orphan Account</option>
-              <option value="PRIVILEGED">Privileged Access</option>
+              <option value="ORPHAN">Orphan</option>
+              <option value="NONE">None</option>
             </select>
           </div>
           <div className="flex flex-col gap-1">
@@ -326,7 +349,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
           <tbody className="divide-y divide-slate-100">
             {sortedFilteredItems.map((item) => {
               const locked = isLocked(item);
-              const level = item.isSoDConflict ? 'CRITICAL' : item.isOrphan ? 'HIGH' : item.isPrivileged ? 'MEDIUM' : 'CLEAR';
+              const level = getRiskLevel(item);
               const reassignedByUser = item.reassignedBy ? users.find(u => u.id === item.reassignedBy) : null;
               const itemCycle = cycles.find(c => c.id === item.reviewCycleId);
               const dueDateTs = itemCycle?.dueDate ? new Date(itemCycle.dueDate).getTime() : Number.POSITIVE_INFINITY;

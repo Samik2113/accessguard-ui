@@ -1020,7 +1020,7 @@ useEffect(() => {
     } else if (type === 'APP_ENT') {
       const importedEnts: EntitlementDefinition[] = data.map(item => {
         const isPriv = String(item.isPrivileged).toLowerCase() === 'true' || item.isPrivileged === 'YES';
-        return { ...item, appId: appId!, isPrivileged: isPriv, risk: isPriv ? 'HIGH' : (item.risk || 'LOW'), riskScore: isPriv ? '10' : (item.riskScore || '0') };
+        return { ...item, appId: appId!, isPrivileged: isPriv, risk: item.risk || 'LOW', riskScore: item.riskScore || '0' };
       });
       setEntitlements(prev => [...prev.filter(e => e.appId !== appId), ...importedEnts]);
       addAuditLog('DATA_IMPORT', `Updated catalog for app: ${appId}.`);

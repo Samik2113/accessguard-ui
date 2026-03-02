@@ -24,7 +24,7 @@ export const HR_TEMPLATE_HEADERS = [
 ];
 
 export const APP_ACCESS_TEMPLATE_HEADERS = ['id', 'userId', 'userName', 'email', 'entitlement'];
-export const ENTITLEMENT_TEMPLATE_HEADERS = ['entitlement', 'description', 'owner', 'isPrivileged', 'risk', 'riskScore'];
+export const ENTITLEMENT_TEMPLATE_HEADERS = ['entitlement', 'description', 'owner', 'isPrivileged'];
 export const SOD_POLICY_TEMPLATE_HEADERS = ['policyName', 'appId1', 'entitlement1', 'appId2', 'entitlement2', 'riskLevel'];
 
 export const SAMPLE_USERS = [];
