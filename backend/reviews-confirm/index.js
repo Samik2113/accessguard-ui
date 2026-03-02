@@ -50,35 +50,39 @@ module.exports = async function (context, req) {
       etag = patchResp.resource?._etag || etag;
     }
 
-    // Everyone confirmed? We need the set of managers in the cycle
-    const { resources: mgrRows } = await itemsC.items
-      .query({ query: "SELECT DISTINCT c.managerId FROM c WHERE c.reviewCycleId=@id", parameters: [{ name: "@id", value: body.cycleId }] })
+    const { resources: cycleItems } = await itemsC.items
+      .query({
+        query: "SELECT c.status, c.managerId FROM c WHERE c.reviewCycleId=@id",
+        parameters: [{ name: "@id", value: body.cycleId }]
+      })
       .fetchAll();
-    const allManagers = mgrRows.map(x => x.managerId).filter(Boolean);
 
-    const everyoneConfirmed = allManagers.length > 0 && allManagers.every(m => union.includes(m));
-    const pending = cyc.pendingItems ?? 0;
+    const allManagers = Array.from(new Set((cycleItems || []).map((item) => item.managerId).filter(Boolean)));
+    const everyoneConfirmed = allManagers.length > 0 && allManagers.every((managerId) => union.includes(managerId));
 
-    // Decide status advance
-    if (everyoneConfirmed && pending === 0) {
-      const now = new Date().toISOString();
-      await cyclesC
-        .item(body.cycleId, body.appId)
-        .patch(
-          [
-            { op: "set", path: "/status",      value: "COMPLETED" },
-            { op: "set", path: "/completedAt", value: now }
-          ],
-          { accessCondition: { type: "IfMatch", condition: etag } }
-        );
-    } else if (pending === 0 && String(cyc.status).toUpperCase() === "ACTIVE") {
-      await cyclesC
-        .item(body.cycleId, body.appId)
-        .patch(
-          [{ op: "set", path: "/status", value: "PENDING_VERIFICATION" }],
-          { accessCondition: { type: "IfMatch", condition: etag } }
-        );
+    const pendingItems = (cycleItems || []).filter((item) => String(item.status || "").toUpperCase() === "PENDING").length;
+    const pendingRemediationItems = (cycleItems || []).filter((item) => String(item.status || "").toUpperCase() === "REVOKED").length;
+
+    let nextStatus = "ACTIVE";
+    if (everyoneConfirmed && pendingItems === 0 && pendingRemediationItems === 0) {
+      nextStatus = "COMPLETED";
+    } else if (everyoneConfirmed && pendingItems === 0 && pendingRemediationItems > 0) {
+      nextStatus = "REMEDIATION";
+    } else if (pendingItems === 0) {
+      nextStatus = "PENDING_VERIFICATION";
     }
+
+    const now = new Date().toISOString();
+    const cycleOps = [
+      { op: "set", path: "/pendingItems", value: pendingItems },
+      { op: "set", path: "/pendingRemediationItems", value: pendingRemediationItems },
+      { op: "set", path: "/status", value: nextStatus }
+    ];
+    cycleOps.push({ op: "set", path: "/completedAt", value: nextStatus === "COMPLETED" ? (cyc.completedAt || now) : null });
+
+    await cyclesC
+      .item(body.cycleId, body.appId)
+      .patch(cycleOps, { accessCondition: { type: "IfMatch", condition: etag } });
 
     // Audit
     await logsC.items.upsert({
