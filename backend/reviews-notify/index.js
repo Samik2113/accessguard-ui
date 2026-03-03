@@ -51,7 +51,7 @@ module.exports = async function (context, req) {
       }
 
       const remediationQuery = {
-        query: "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.userName, c.appUserId, c.entitlement, c.managerId, c.status, c.actionedAt, c.comment FROM c WHERE c.reviewCycleId=@cycleId AND c.appId=@appId AND UPPER(c.status)=@status",
+        query: "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.userName, c.appUserId, c.entitlement, c.managerId, c.status, c.actionedAt, c.comment, c.remediatedAt FROM c WHERE c.reviewCycleId=@cycleId AND c.appId=@appId AND UPPER(c.status)=@status AND (NOT IS_DEFINED(c.remediatedAt) OR IS_NULL(c.remediatedAt) OR c.remediatedAt='')",
         parameters: [
           { name: "@cycleId", value: cycleId },
           { name: "@appId", value: appId },
@@ -60,7 +60,11 @@ module.exports = async function (context, req) {
       };
 
       const { resources: remediationItems } = await itemsC.items.query(remediationQuery).fetchAll();
-      const openRemediationItems = remediationItems || [];
+      const openRemediationItems = (remediationItems || []).filter((item) => {
+        const status = String(item?.status || "").toUpperCase();
+        const remediatedAt = String(item?.remediatedAt || "").trim();
+        return status === "REVOKED" && remediatedAt.length === 0;
+      });
       if (openRemediationItems.length === 0) {
         return {
           status: 200,

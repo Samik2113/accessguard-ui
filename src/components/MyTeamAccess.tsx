@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Application, ApplicationAccess, SoDPolicy, User } from '../types';
-import { Layers, Users, ShieldAlert, ShieldCheck, AlertTriangle, X } from 'lucide-react';
+import { Layers, Users, Users2, Shield, ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, X } from 'lucide-react';
 
 interface MyTeamAccessProps {
   currentManagerId: string;
@@ -12,6 +12,7 @@ interface MyTeamAccessProps {
 
 const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, access, applications, sodPolicies }) => {
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
 
   const parseBool = (value: any) => {
     if (typeof value === 'boolean') return value;
@@ -73,17 +74,6 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
     if (!viewingUserId) return [];
     return teamAccessByUser.get(viewingUserId) || [];
   }, [teamAccessByUser, viewingUserId]);
-
-  const groupedByApp = useMemo(() => {
-    const map = new Map<string, ApplicationAccess[]>();
-    viewingAccess.forEach((item) => {
-      const key = String(item.appId || 'UNKNOWN');
-      const arr = map.get(key) || [];
-      arr.push(item);
-      map.set(key, arr);
-    });
-    return Array.from(map.entries()).map(([appId, items]) => ({ appId, appName: appNameById(appId), items }));
-  }, [viewingAccess, applications]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -167,106 +157,152 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
 
       {viewingUserId && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[88vh] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95">
             <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">{viewingUser?.name} ({viewingUser?.id})</h3>
-                <p className="text-xs text-slate-500">Applications and risk factors across all assigned access.</p>
+              <div className="flex items-center gap-4">
+                <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Users2 className="w-6 h-6" /></div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-900">{viewingUser?.name}</h3>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">{viewingUser?.department} • ID: {viewingUser?.id}</p>
+                </div>
               </div>
               <button onClick={() => setViewingUserId(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
 
-            <div className="p-6 flex-1 overflow-y-auto bg-slate-50/30 space-y-4">
-              {groupedByApp.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-500">No access found for this identity.</div>
-              ) : groupedByApp.map((group) => (
-                <div key={group.appId} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-indigo-600" />
-                    <h4 className="font-bold text-slate-800">{group.appName}</h4>
-                    <span className="ml-auto text-xs font-semibold text-slate-500">{group.items.length} item(s)</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-[10px] text-slate-400 uppercase font-bold border-b">
-                        <tr>
-                          <th className="px-4 py-2">Entitlement</th>
-                          <th className="px-4 py-2">Risk Level</th>
-                          <th className="px-4 py-2 text-right">Risk Factors</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {group.items.map((item) => {
-                          const level = getRiskLevel(item);
-                          const hasSod = parseBool((item as any).isSoDConflict);
-                          const isPrivileged = parseBool((item as any).isPrivileged);
-                          const isOrphan = parseBool((item as any).isOrphan);
-                          return (
-                            <tr key={item.id} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3">
-                                <div className="font-semibold text-slate-700 inline-flex items-center gap-1.5">
-                                  <span>{item.entitlement}</span>
-                                  {isPrivileged && (
+            <div className="p-6 flex-1 overflow-y-auto bg-slate-50/30">
+              <div className="space-y-6">
+                <div className="grid grid-cols-3 gap-4 mb-2">
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Apps with Access</p>
+                        <p className="text-2xl font-black text-slate-800">{Array.from(new Set(viewingAccess.map(a => a.appId))).length}</p>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Entitlements</p>
+                        <p className="text-2xl font-black text-slate-800">{viewingAccess.length}</p>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active SoD Violations</p>
+                        <p className="text-2xl font-black text-red-600">{viewingAccess.filter(a => parseBool((a as any).isSoDConflict)).length}</p>
+                    </div>
+                </div>
+
+                {applications.map(app => {
+                  const appKeys = new Set([String((app as any).id || '').trim(), String((app as any).appId || '').trim()].filter(Boolean));
+                  const appAccess = viewingAccess.filter(a => appKeys.has(String((a as any).appId || '').trim()));
+                  if (appAccess.length === 0) return null;
+                  const hasPrivilegedApp = appAccess.some(acc => parseBool((acc as any).isPrivileged));
+                  
+                  return (
+                    <div key={app.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                      <div className="bg-slate-50 px-4 py-3 border-b flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                           <Shield className="w-4 h-4 text-blue-600" />
+                           <span className="font-bold text-slate-700">{app.name}</span>
+                           {hasPrivilegedApp && (
+                             <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-black uppercase border border-indigo-100">
+                               <ShieldCheck className="w-2.5 h-2.5" /> Privileged Account
+                             </span>
+                           )}
+                        </div>
+                        <span className="text-[10px] bg-white border px-2 py-0.5 rounded font-bold text-slate-500">{appAccess.length} items</span>
+                      </div>
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50/50 text-[10px] text-slate-400 uppercase font-bold border-b">
+                          <tr>
+                            <th className="px-4 py-2">Account ID</th>
+                            <th className="px-4 py-2">Entitlement</th>
+                            <th className="px-4 py-2 text-right">Risk & SoD Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {appAccess.map(acc => {
+                            const isPriv = parseBool((acc as any).isPrivileged);
+                            const hasSod = parseBool((acc as any).isSoDConflict);
+                            return (
+                              <tr key={acc.id} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-2 font-mono text-slate-400">{acc.userId}</td>
+                                <td className="px-4 py-2 flex items-center gap-2">
+                                  <span className="font-medium text-slate-700">{acc.entitlement}</span>
+                                  {isPriv && (
                                     <span title="Privileged Entitlement">
-                                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                                      <ShieldCheck className="w-3 h-3 text-indigo-500 fill-current" />
                                     </span>
                                   )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                  level === 'CRITICAL' ? 'bg-red-600 text-white' :
-                                  level === 'HIGH' ? 'bg-orange-500 text-white' :
-                                  level === 'MEDIUM' ? 'bg-indigo-500 text-white' :
-                                  'bg-slate-200 text-slate-600'
-                                }`}>
-                                  {level} RISK
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="flex flex-wrap justify-end items-center gap-1.5">
-                                  {hasSod && (
-                                    <span className="inline-flex items-center gap-1 bg-red-50 text-red-600 border border-red-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                      <ShieldAlert className="w-3 h-3" /> SoD Conflict
-                                    </span>
-                                  )}
-                                  {isPrivileged && (
-                                    <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                      <ShieldCheck className="w-3 h-3" /> Privileged
-                                    </span>
-                                  )}
-                                  {isOrphan && (
-                                    <span className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 border border-orange-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                      <AlertTriangle className="w-3 h-3" /> Orphan
-                                    </span>
-                                  )}
-                                  {!hasSod && !isPrivileged && !isOrphan && (
-                                    <span className="inline-flex items-center gap-1 bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                      Low Risk
-                                    </span>
-                                  )}
-                                </div>
-                                {hasSod && (item.violatedPolicyNames?.length || 0) > 0 && (
-                                  <div className="mt-1 flex flex-col items-end gap-0.5">
-                                    {item.violatedPolicyNames?.map((name, idx) => (
-                                      <span key={`${item.id}_${idx}`} className="text-[9px] text-red-600 font-bold">
-                                        {name || sodPolicies.find(p => p.id === item.violatedPolicyIds?.[idx])?.policyName || 'SoD Policy'}
-                                      </span>
-                                    ))}
+                                </td>
+                                <td className="px-4 py-2 text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    {hasSod ? (
+                                      <>
+                                        <div className="flex flex-wrap justify-end gap-1">
+                                          {acc.violatedPolicyIds?.map((pid, idx) => (
+                                            <button 
+                                              key={pid}
+                                              onClick={() => setViewingPolicyId(pid)}
+                                              className="inline-flex items-center gap-1 text-red-600 font-black uppercase text-[10px] bg-red-50 px-2 py-0.5 rounded border border-red-100 hover:bg-red-100"
+                                            >
+                                              <ShieldAlert className="w-3 h-3" /> Conflict: {acc.violatedPolicyNames?.[idx] || 'SoD'}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <span className="text-[8px] text-slate-400 font-bold uppercase">Risk against this account</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-slate-400">Low Risk</span>
+                                    )}
                                   </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewingPolicyId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900">Policy Violation Details</h3>
+              <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            {(() => {
+              const policy = sodPolicies.find(p => p.id === viewingPolicyId);
+              if (!policy) return <p className="text-slate-500 italic">Policy details not found.</p>;
+              return (
+                <div className="space-y-6">
+                  <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3">
+                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-red-900 text-sm">{policy.policyName}</h4>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">This policy prevents users from possessing both roles due to excessive administrative or financial risk.</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Conflicting Entitlement 1</p>
+                      <p className="text-sm font-bold text-slate-800">{policy.entitlement1}</p>
+                      <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">Application: {appNameById(policy.appId1)}</p>
+                    </div>
+                    <div className="flex justify-center"><ChevronRight className="w-5 h-5 text-slate-300 rotate-90" /></div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Conflicting Entitlement 2</p>
+                      <p className="text-sm font-bold text-slate-800">{policy.entitlement2}</p>
+                      <p className="text-[10px] text-slate-500 font-medium uppercase mt-0.5">Application: {appNameById(policy.appId2)}</p>
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
+            <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Close Detail</button>
           </div>
         </div>
       )}
