@@ -205,7 +205,16 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                           const isOrphan = parseBool((item as any).isOrphan);
                           return (
                             <tr key={item.id} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 font-semibold text-slate-700">{item.entitlement}</td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-700 inline-flex items-center gap-1.5">
+                                  <span>{item.entitlement}</span>
+                                  {isPrivileged && (
+                                    <span title="Privileged Entitlement">
+                                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-4 py-3">
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
                                   level === 'CRITICAL' ? 'bg-red-600 text-white' :
