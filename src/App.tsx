@@ -6,6 +6,7 @@ import Inventory from './components/Inventory';
 import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
+import MyTeamAccess from './components/MyTeamAccess';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
@@ -274,7 +275,7 @@ const App: React.FC = () => {
         id: String(res?.user?.id || res?.user?.userId || ''),
         role
       };
-      const nextTab = role === UserRole.USER ? 'my-access' : 'dashboard';
+      const nextTab = role === UserRole.USER ? 'my-team-access' : 'dashboard';
       setCurrentUser(loggedInUser);
       setActiveTab(nextTab);
       setIsAuthenticated(true);
@@ -311,7 +312,8 @@ const App: React.FC = () => {
     setCustomization(readCustomization());
     if (persisted) {
       setCurrentUser(persisted.user);
-      setActiveTab(persisted.activeTab || (persisted.user.role === UserRole.USER ? 'my-access' : 'dashboard'));
+      const persistedTab = persisted.activeTab === 'my-access' ? 'my-team-access' : persisted.activeTab;
+      setActiveTab(persistedTab || (persisted.user.role === UserRole.USER ? 'my-team-access' : 'dashboard'));
       setIsAuthenticated(true);
     }
     setSessionHydrated(true);
@@ -1620,7 +1622,7 @@ useEffect(() => {
       onSaveCustomization={handleSaveCustomization}
     >
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} />}
-      {activeTab === 'my-access' && <MyAccess currentUserId={currentUser.id} applications={applications} sodPolicies={sodPolicies} />}
+      {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
     users={users}
