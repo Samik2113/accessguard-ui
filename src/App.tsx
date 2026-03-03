@@ -821,10 +821,17 @@ useEffect(() => {
     }
   };
 
-  const handleSendReviewNotifications = async (payload: { mode: 'REMINDER' | 'ESCALATE'; cycleId?: string; appId?: string; managerId?: string; dryRun?: boolean }) => {
+  const handleSendReviewNotifications = async (payload: { mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'; cycleId?: string; appId?: string; managerId?: string; selectedRecipientEmail?: string; dryRun?: boolean }) => {
     const response = await sendReviewNotifications(payload);
+    const auditAction = payload.mode === 'ESCALATE'
+      ? 'REVIEW_ESCALATION_TRIGGER'
+      : payload.mode === 'REMEDIATION_NOTIFY'
+        ? 'REMEDIATION_NOTIFICATION_TRIGGER'
+        : payload.mode === 'REMEDIATION_REMINDER'
+          ? 'REMEDIATION_REMINDER_TRIGGER'
+          : 'REVIEW_REMINDER_TRIGGER';
     await addAuditLog(
-      payload.mode === 'ESCALATE' ? 'REVIEW_ESCALATION_TRIGGER' : 'REVIEW_REMINDER_TRIGGER',
+      auditAction,
       `mode=${payload.mode}; cycleId=${payload.cycleId || 'ALL'}; appId=${payload.appId || 'ALL'}; sent=${response?.sent ?? 0}; skipped=${response?.skipped ?? 0}`
     );
     return response;

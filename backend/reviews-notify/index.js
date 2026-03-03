@@ -7,10 +7,11 @@ const schema = {
   type: "object",
   required: ["mode"],
   properties: {
-    mode: { type: "string", enum: ["REMINDER", "ESCALATE"] },
+    mode: { type: "string", enum: ["REMINDER", "ESCALATE", "REMEDIATION_NOTIFY", "REMEDIATION_REMINDER"] },
     cycleId: { type: "string" },
     appId: { type: "string" },
     managerId: { type: "string" },
+    selectedRecipientEmail: { type: "string" },
     dryRun: { type: "boolean" }
   },
   additionalProperties: true
@@ -30,6 +31,7 @@ module.exports = async function (context, req) {
     const cycleId = String(body.cycleId || "").trim();
     const appId = String(body.appId || "").trim();
     const managerIdFilter = String(body.managerId || "").trim();
+    const selectedRecipientEmail = String(body.selectedRecipientEmail || "").trim().toLowerCase();
     const dryRun = body.dryRun === true;
 
     const conn = process.env.COSMOS_CONN;
@@ -40,7 +42,157 @@ module.exports = async function (context, req) {
     const itemsC = db.container("reviewItems");
     const hrC = db.container("hrUsers");
     const cyclesC = db.container("reviewCycles");
+    const appsC = db.container("applications");
     const logsC = db.container("auditLogs");
+
+    if (mode === "REMEDIATION_NOTIFY" || mode === "REMEDIATION_REMINDER") {
+      if (!cycleId || !appId) {
+        return bad(400, "VALIDATION_ERROR", "cycleId and appId are required for remediation notifications", req);
+      }
+
+      const remediationQuery = {
+        query: "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.userName, c.appUserId, c.entitlement, c.managerId, c.status, c.actionedAt, c.comment FROM c WHERE c.reviewCycleId=@cycleId AND c.appId=@appId AND UPPER(c.status)=@status",
+        parameters: [
+          { name: "@cycleId", value: cycleId },
+          { name: "@appId", value: appId },
+          { name: "@status", value: "REVOKED" }
+        ]
+      };
+
+      const { resources: remediationItems } = await itemsC.items.query(remediationQuery).fetchAll();
+      const openRemediationItems = remediationItems || [];
+      if (openRemediationItems.length === 0) {
+        return {
+          status: 200,
+          headers: cors(req),
+          body: {
+            ok: true,
+            mode,
+            sent: 0,
+            skipped: 1,
+            results: [{ skipped: true, reason: "NO_REMEDIATION_ITEMS" }]
+          }
+        };
+      }
+
+      const cycleInfo = await readCycle(cyclesC, cycleId, appId);
+      const appInfo = await readAppByIdOrAppId(appsC, appId);
+      const ownerId = String(appInfo?.ownerId || appInfo?.ownerUserId || "").trim();
+      const ownerHr = ownerId ? await readHrUser(hrC, ownerId) : null;
+      const ownerEmail = String(ownerHr?.email || appInfo?.ownerEmail || "").trim().toLowerCase();
+
+      const recipients = new Set();
+      if (ownerEmail) recipients.add(ownerEmail);
+      if (selectedRecipientEmail) recipients.add(selectedRecipientEmail);
+
+      if (recipients.size === 0) {
+        return {
+          status: 200,
+          headers: cors(req),
+          body: {
+            ok: true,
+            mode,
+            sent: 0,
+            skipped: 1,
+            results: [{ skipped: true, reason: "NO_RECIPIENT_EMAIL" }]
+          }
+        };
+      }
+
+      const appLabel = String(cycleInfo?.appName || appInfo?.name || appId || "Unknown Application");
+      const dueDateLabel = cycleInfo?.dueDate ? new Date(cycleInfo.dueDate).toLocaleDateString() : "N/A";
+      const nowIso = new Date().toISOString();
+
+      const csvHeaders = [
+        "CampaignId",
+        "Application",
+        "User",
+        "AccountId",
+        "Entitlement",
+        "Reviewer",
+        "Status",
+        "DecisionedAt",
+        "Comment"
+      ];
+      const csvRows = openRemediationItems.map((item) => [
+        cycleId,
+        appLabel,
+        String(item.userName || ""),
+        String(item.appUserId || ""),
+        String(item.entitlement || ""),
+        String(item.managerId || ""),
+        String(item.status || ""),
+        String(item.actionedAt || ""),
+        String(item.comment || "")
+      ].map((val) => `"${String(val).replace(/"/g, '""')}"`).join(","));
+      const csvContent = [csvHeaders.join(","), ...csvRows].join("\n");
+      const csvBase64 = Buffer.from(csvContent, "utf8").toString("base64");
+
+      const subjectPrefix = mode === "REMEDIATION_REMINDER" ? "Reminder" : "Action Required";
+      const subject = `[AccessGuard] ${subjectPrefix}: ${openRemediationItems.length} remediation item(s) pending`;
+      const text = [
+        `Hello,`,
+        "",
+        `${openRemediationItems.length} item(s) are pending remediation for campaign ${cycleId}.`,
+        `Application: ${appLabel}`,
+        `Due date: ${dueDateLabel}`,
+        "",
+        "Attached CSV contains all open remediation items.",
+        ""
+      ].join("\n");
+
+      const sendResult = dryRun
+        ? { ok: true, skipped: true, reason: "DRY_RUN" }
+        : await sendEmail(context, {
+            to: Array.from(recipients),
+            subject,
+            text,
+            attachments: [
+              {
+                fileName: `remediation_items_${appId}_${cycleId}.csv`,
+                contentType: "text/csv",
+                contentBase64: csvBase64
+              }
+            ],
+            metadata: {
+              type: mode,
+              cycleId,
+              appId,
+              remediationItemCount: openRemediationItems.length,
+              selectedRecipientEmail: selectedRecipientEmail || null
+            }
+          });
+
+      const actorId = req.headers["x-actor-id"] || "ADM001";
+      const actorName = req.headers["x-actor-name"] || "Admin User";
+      await logsC.items.upsert({
+        id: `LOG_${Date.now()}`,
+        type: "audit",
+        timestamp: nowIso,
+        userId: actorId,
+        userName: actorName,
+        action: mode,
+        details: `mode=${mode}; cycleId=${cycleId}; appId=${appId}; remediationItems=${openRemediationItems.length}; recipients=${Array.from(recipients).join(";")}; sent=${sendResult.ok && !sendResult.skipped ? 1 : 0}`
+      });
+
+      return {
+        status: 200,
+        headers: cors(req),
+        body: {
+          ok: true,
+          mode,
+          remediationItemCount: openRemediationItems.length,
+          sent: sendResult.ok && !sendResult.skipped ? 1 : 0,
+          skipped: sendResult.skipped ? 1 : 0,
+          results: [
+            {
+              to: Array.from(recipients),
+              ...sendResult
+            }
+          ]
+        }
+      };
+    }
 
     let query = "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.userName, c.appUserId, c.entitlement, c.managerId, c.status, c.createdAt FROM c WHERE UPPER(c.status)=@pending";
     const parameters = [{ name: "@pending", value: "PENDING" }];
@@ -226,6 +378,32 @@ module.exports = async function (context, req) {
 async function readCycle(cyclesC, cycleId, appId) {
   try {
     const { resource } = await cyclesC.item(cycleId, appId).read();
+    return resource || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function readAppByIdOrAppId(appsC, appId) {
+  try {
+    const { resource } = await appsC.item(appId, appId).read();
+    if (resource) return resource;
+  } catch (_) {
+  }
+  try {
+    const { resources } = await appsC.items.query({
+      query: "SELECT TOP 1 * FROM c WHERE c.id=@appId OR c.appId=@appId",
+      parameters: [{ name: "@appId", value: appId }]
+    }).fetchAll();
+    return resources?.[0] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function readHrUser(hrC, userId) {
+  try {
+    const { resource } = await hrC.item(userId, userId).read();
     return resource || null;
   } catch (_) {
     return null;

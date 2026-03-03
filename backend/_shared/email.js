@@ -32,6 +32,7 @@ async function sendEmail(context, message) {
     subject: String(message?.subject || "AccessGuard Notification"),
     text: String(message?.text || ""),
     html: message?.html ? String(message.html) : undefined,
+    attachments: Array.isArray(message?.attachments) ? message.attachments : undefined,
     metadata: message?.metadata || {}
   };
 

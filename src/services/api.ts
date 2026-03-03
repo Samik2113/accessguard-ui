@@ -223,10 +223,11 @@ export const archiveCycle         = (payload: { cycleId: string; appId: string }
   postJson("/api/reviews-archive", payload);
 
 export const sendReviewNotifications = (payload: {
-  mode: 'REMINDER' | 'ESCALATE';
+  mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER';
   cycleId?: string;
   appId?: string;
   managerId?: string;
+  selectedRecipientEmail?: string;
   dryRun?: boolean;
 }) => postJson("/api/reviews-notify", payload);
 

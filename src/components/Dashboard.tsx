@@ -14,7 +14,7 @@ interface DashboardProps {
   isAdmin?: boolean;
   onReassign?: (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => void;
   onBulkReassign?: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
-  onSendNotifications?: (payload: { mode: 'REMINDER' | 'ESCALATE'; cycleId?: string; appId?: string; managerId?: string; dryRun?: boolean }) => Promise<any>;
+  onSendNotifications?: (payload: { mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'; cycleId?: string; appId?: string; managerId?: string; selectedRecipientEmail?: string; dryRun?: boolean }) => Promise<any>;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications }) => {
@@ -47,7 +47,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [bulkReassignSearch, setBulkReassignSearch] = useState('');
   const [bulkReassignToManagerId, setBulkReassignToManagerId] = useState('');
   const [bulkReassignComment, setBulkReassignComment] = useState('');
-  const [sendingNotificationMode, setSendingNotificationMode] = useState<null | 'REMINDER' | 'ESCALATE'>(null);
+  const [sendingNotificationMode, setSendingNotificationMode] = useState<null | 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'>(null);
+  const [selectedRemediationRecipientId, setSelectedRemediationRecipientId] = useState('');
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   const cycleDetailQuery = useReviewCycleDetail({ cycleId: selectedCampaignId || '', top: 500 });
 
@@ -234,14 +235,29 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     URL.revokeObjectURL(url);
   };
 
-  const handleSendNotifications = async (mode: 'REMINDER' | 'ESCALATE') => {
+  const handleSendNotifications = async (mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER') => {
     if (!onSendNotifications || !selectedCampaign) return;
     setSendingNotificationMode(mode);
     try {
-      const result: any = await onSendNotifications({ mode, cycleId: selectedCampaign.id, appId: selectedCampaign.appId });
-      alert(`${mode === 'REMINDER' ? 'Reminder' : 'Escalation'} completed. Sent: ${result?.sent ?? 0}, Skipped: ${result?.skipped ?? 0}`);
+      const selectedRecipientEmail = users.find(u => u.id === selectedRemediationRecipientId)?.email || undefined;
+      const result: any = await onSendNotifications({ mode, cycleId: selectedCampaign.id, appId: selectedCampaign.appId, selectedRecipientEmail });
+      const modeLabel = mode === 'REMINDER'
+        ? 'Reminder'
+        : mode === 'ESCALATE'
+          ? 'Escalation'
+          : mode === 'REMEDIATION_NOTIFY'
+            ? 'Remediation notification'
+            : 'Remediation reminder';
+      alert(`${modeLabel} completed. Sent: ${result?.sent ?? 0}, Skipped: ${result?.skipped ?? 0}`);
     } catch (error: any) {
-      alert(`Failed to send ${mode === 'REMINDER' ? 'reminders' : 'escalations'}: ${error?.message || 'Unknown error'}`);
+      const modeLabel = mode === 'REMINDER'
+        ? 'reminders'
+        : mode === 'ESCALATE'
+          ? 'escalations'
+          : mode === 'REMEDIATION_NOTIFY'
+            ? 'remediation notifications'
+            : 'remediation reminders';
+      alert(`Failed to send ${modeLabel}: ${error?.message || 'Unknown error'}`);
     } finally {
       setSendingNotificationMode(null);
     }
@@ -369,20 +385,52 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <div className="flex gap-2">
                 {isAdmin && onSendNotifications && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
                   <>
-                    <button
-                      onClick={() => handleSendNotifications('REMINDER')}
-                      disabled={sendingNotificationMode !== null}
-                      className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-all disabled:opacity-60"
-                    >
-                      <Clock className="w-4 h-4" /> {sendingNotificationMode === 'REMINDER' ? 'Sending...' : 'Send Reminder'}
-                    </button>
-                    <button
-                      onClick={() => handleSendNotifications('ESCALATE')}
-                      disabled={sendingNotificationMode !== null}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
-                    >
-                      <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'ESCALATE' ? 'Escalating...' : 'Escalate Pending'}
-                    </button>
+                    {selectedCampaign?.status === ReviewStatus.REMEDIATION || selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION ? (
+                      <>
+                        <select
+                          value={selectedRemediationRecipientId}
+                          onChange={(e) => setSelectedRemediationRecipientId(e.target.value)}
+                          disabled={sendingNotificationMode !== null}
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 shadow-sm outline-none disabled:opacity-60"
+                        >
+                          <option value="">Optional recipient</option>
+                          {users.filter(u => Boolean(u.email)).map(u => (
+                            <option key={u.id} value={u.id}>{u.name} ({u.id})</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleSendNotifications('REMEDIATION_NOTIFY')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-all disabled:opacity-60"
+                        >
+                          <Clock className="w-4 h-4" /> {sendingNotificationMode === 'REMEDIATION_NOTIFY' ? 'Sending...' : 'Notify Remediation'}
+                        </button>
+                        <button
+                          onClick={() => handleSendNotifications('REMEDIATION_REMINDER')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
+                        >
+                          <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'REMEDIATION_REMINDER' ? 'Sending...' : 'Remediation Reminder'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleSendNotifications('REMINDER')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-all disabled:opacity-60"
+                        >
+                          <Clock className="w-4 h-4" /> {sendingNotificationMode === 'REMINDER' ? 'Sending...' : 'Send Reminder'}
+                        </button>
+                        <button
+                          onClick={() => handleSendNotifications('ESCALATE')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
+                        >
+                          <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'ESCALATE' ? 'Escalating...' : 'Escalate Pending'}
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
                 {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
