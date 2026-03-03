@@ -1622,7 +1622,7 @@ useEffect(() => {
       onSaveCustomization={handleSaveCustomization}
     >
       {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} />}
-      {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} sodPolicies={sodPolicies} />}
+      {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} entitlements={entitlements} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
     users={users}

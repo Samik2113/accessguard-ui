@@ -1417,7 +1417,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {appAccess.map(acc => {
-                            const isPriv = isPrivilegedEntitlement(acc.appId, acc.entitlement);
+                            const isPriv = isPrivilegedAccount(acc);
+                            const isOrphan = parseBool((acc as any).isOrphan);
+                            const hasSod = acc.isSoDConflict;
+                            const level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = hasSod ? 'CRITICAL' : isOrphan ? 'HIGH' : isPriv ? 'MEDIUM' : 'LOW';
                             return (
                               <tr key={acc.id} className="hover:bg-slate-50/50">
                                 <td className="px-4 py-2 font-mono text-slate-400">{acc.userId}</td>
@@ -1431,7 +1434,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                 </td>
                                 <td className="px-4 py-2 text-right">
                                   <div className="flex flex-col items-end gap-1">
-                                    {acc.isSoDConflict ? (
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${level === 'CRITICAL' ? 'bg-red-600 text-white' : level === 'HIGH' ? 'bg-orange-500 text-white' : level === 'MEDIUM' ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                      {level} RISK
+                                    </span>
+                                    {hasSod ? (
                                       <>
                                         <div className="flex flex-wrap justify-end gap-1">
                                           {acc.violatedPolicyIds?.map((pid, idx) => (
@@ -1446,6 +1452,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                         </div>
                                         <span className="text-[8px] text-slate-400 font-bold uppercase">Risk against this account</span>
                                       </>
+                                    ) : isOrphan ? (
+                                      <span className="inline-flex items-center gap-1 text-orange-600 font-black uppercase text-[10px] bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                                        <AlertTriangle className="w-3 h-3" /> Orphan Account
+                                      </span>
+                                    ) : isPriv ? (
+                                      <span className="inline-flex items-center gap-1 text-indigo-600 font-black uppercase text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                        <ShieldCheck className="w-3 h-3" /> Privileged Access
+                                      </span>
                                     ) : (
                                       <span className="text-slate-400">Low Risk</span>
                                     )}

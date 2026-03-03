@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Application, ApplicationAccess, SoDPolicy, User } from '../types';
+import { Application, ApplicationAccess, EntitlementDefinition, SoDPolicy, User } from '../types';
 import { Layers, Users, Users2, Shield, ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, X } from 'lucide-react';
 
 interface MyTeamAccessProps {
@@ -7,10 +7,11 @@ interface MyTeamAccessProps {
   users: User[];
   access: ApplicationAccess[];
   applications: Application[];
+  entitlements: EntitlementDefinition[];
   sodPolicies: SoDPolicy[];
 }
 
-const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, access, applications, sodPolicies }) => {
+const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, access, applications, entitlements, sodPolicies }) => {
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
 
@@ -27,9 +28,17 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
   const getRiskLevel = (item: any) => {
     if (parseBool(item?.isSoDConflict)) return 'CRITICAL';
     if (parseBool(item?.isOrphan)) return 'HIGH';
-    if (parseBool(item?.isPrivileged)) return 'MEDIUM';
+    if (isPrivilegedAccount(item)) return 'MEDIUM';
     return 'LOW';
   };
+
+  const normalizeValue = (value: any) => String(value || '').trim().toLowerCase();
+  const isPrivilegedEntitlement = (appId: string, entitlement: string) => {
+    const appIdNorm = normalizeValue(appId);
+    const entNorm = normalizeValue(entitlement);
+    return entitlements.some((entry) => normalizeValue(entry.appId) === appIdNorm && normalizeValue(entry.entitlement) === entNorm && entry.isPrivileged);
+  };
+  const isPrivilegedAccount = (item: any) => parseBool(item?.isPrivileged) || isPrivilegedEntitlement(String(item?.appId || ''), String(item?.entitlement || ''));
 
   const reportees = useMemo(() => {
     return users
@@ -64,7 +73,7 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
       coveredIdentities: reportees.filter((u) => (teamAccessByUser.get(u.id) || []).length > 0).length,
       totalEntitlements: allItems.length,
       sodConflicts: allItems.filter((item) => parseBool((item as any).isSoDConflict)).length,
-      privileged: allItems.filter((item) => parseBool((item as any).isPrivileged)).length,
+      privileged: allItems.filter((item) => isPrivilegedAccount(item)).length,
       orphan: allItems.filter((item) => parseBool((item as any).isOrphan)).length
     };
   }, [teamAccessByUser, reportees]);
@@ -192,7 +201,7 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                   const appKeys = new Set([String((app as any).id || '').trim(), String((app as any).appId || '').trim()].filter(Boolean));
                   const appAccess = viewingAccess.filter(a => appKeys.has(String((a as any).appId || '').trim()));
                   if (appAccess.length === 0) return null;
-                  const hasPrivilegedApp = appAccess.some(acc => parseBool((acc as any).isPrivileged));
+                  const hasPrivilegedApp = appAccess.some(acc => isPrivilegedAccount(acc));
                   
                   return (
                     <div key={app.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -218,8 +227,10 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {appAccess.map(acc => {
-                            const isPriv = parseBool((acc as any).isPrivileged);
+                            const isPriv = isPrivilegedAccount(acc);
                             const hasSod = parseBool((acc as any).isSoDConflict);
+                            const isOrphan = parseBool((acc as any).isOrphan);
+                            const level = getRiskLevel(acc);
                             return (
                               <tr key={acc.id} className="hover:bg-slate-50/50">
                                 <td className="px-4 py-2 font-mono text-slate-400">{acc.userId}</td>
@@ -233,6 +244,9 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                                 </td>
                                 <td className="px-4 py-2 text-right">
                                   <div className="flex flex-col items-end gap-1">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${level === 'CRITICAL' ? 'bg-red-600 text-white' : level === 'HIGH' ? 'bg-orange-500 text-white' : level === 'MEDIUM' ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                                      {level} RISK
+                                    </span>
                                     {hasSod ? (
                                       <>
                                         <div className="flex flex-wrap justify-end gap-1">
@@ -248,6 +262,14 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                                         </div>
                                         <span className="text-[8px] text-slate-400 font-bold uppercase">Risk against this account</span>
                                       </>
+                                    ) : isOrphan ? (
+                                      <span className="inline-flex items-center gap-1 text-orange-600 font-black uppercase text-[10px] bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                                        <AlertTriangle className="w-3 h-3" /> Orphan Account
+                                      </span>
+                                    ) : isPriv ? (
+                                      <span className="inline-flex items-center gap-1 text-indigo-600 font-black uppercase text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                        <ShieldCheck className="w-3 h-3" /> Privileged Access
+                                      </span>
                                     ) : (
                                       <span className="text-slate-400">Low Risk</span>
                                     )}
