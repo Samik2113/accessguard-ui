@@ -26,13 +26,21 @@ async function sendEmail(context, message) {
     return { ok: false, skipped: true, reason: "No recipient email" };
   }
 
+  const attachments = Array.isArray(message?.attachments)
+    ? message.attachments.filter((attachment) => {
+        const fileName = String(attachment?.fileName || "").trim();
+        const contentBase64 = String(attachment?.contentBase64 || "").trim();
+        return fileName.length > 0 && contentBase64.length > 0;
+      })
+    : [];
+
   const payload = {
     from,
     to,
     subject: String(message?.subject || "AccessGuard Notification"),
     text: String(message?.text || ""),
     html: message?.html ? String(message.html) : undefined,
-    attachments: Array.isArray(message?.attachments) ? message.attachments : undefined,
+    attachments,
     metadata: message?.metadata || {}
   };
 
