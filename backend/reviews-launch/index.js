@@ -31,6 +31,11 @@ module.exports = async function (context, req) {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
     if (!validate(body)) return bad(400, ajv.errorsText(validate.errors), req);
 
+    const actorRole = String(req.headers?.["x-actor-role"] || req.headers?.["X-Actor-Role"] || "").trim().toUpperCase();
+    if (actorRole !== "ADMIN") {
+      return bad(403, "Only Admin can launch certification campaigns", req);
+    }
+
     // Initialize Cosmos dependencies
     const conn = process.env.COSMOS_CONN;
     if (!conn) return bad(500, "COSMOS_CONN not set", req);
@@ -477,7 +482,7 @@ function cors(req) {
   return {
     "Access-Control-Allow-Origin": req.headers?.origin || "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id, x-actor-name"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-actor-id, x-actor-name, x-actor-role"
   };
 }
 

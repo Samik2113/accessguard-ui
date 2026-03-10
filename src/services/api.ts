@@ -4,7 +4,7 @@ const FN_KEY = import.meta.env.VITE_AZ_FUNC_KEY ?? ""; // provided via env at bu
 
 type ApiError = Error & { code?: string; details?: unknown; status?: number };
 type GetJsonOptions = { keyInQuery?: boolean; signal?: AbortSignal; forceRevalidate?: boolean };
-type PostJsonOptions = { keyInQuery?: boolean; ifMatch?: string };
+type PostJsonOptions = { keyInQuery?: boolean; ifMatch?: string; headers?: Record<string, string> };
 
 type CacheEntry = {
   data: any;
@@ -110,6 +110,11 @@ async function postJson(path: string, body: any, params: Record<string, string |
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (FN_KEY && !opts?.keyInQuery) headers["x-functions-key"] = FN_KEY;   // prefer header
   if (opts?.ifMatch) headers["If-Match"] = opts.ifMatch;
+  if (opts?.headers) {
+    Object.entries(opts.headers).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) headers[key] = String(value);
+    });
+  }
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || (data as any)?.ok === false) {
@@ -184,10 +189,16 @@ export const getManagerItems      = (managerId: string, status?: string) =>
   getReviewItems({ managerId, status });
 
 // -------------------- UAR flows (Write) --------------------
-export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }) => {
+export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; launchIfExists?: boolean }, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
   console.debug('[API] launchReview payload:', payload);
   try {
-    const result = await postJson("/api/reviews-launch", payload);
+    const result = await postJson("/api/reviews-launch", payload, {}, {
+      headers: {
+        ...(actor?.id ? { "x-actor-id": actor.id } : {}),
+        ...(actor?.name ? { "x-actor-name": actor.name } : {}),
+        ...(actor?.role ? { "x-actor-role": actor.role } : {})
+      }
+    });
     console.debug('[API] launchReview result:', result);
     return result;
   } catch (err) {
@@ -195,6 +206,31 @@ export const launchReview = async (payload: { appId: string; name?: string; dueD
     throw err;
   }
 };
+
+export const getAppCustomization = () => getJson("/api/customization");
+
+export const saveAppCustomization = (payload: {
+  customization: {
+    platformName: string;
+    primaryColor: string;
+    environmentLabel: string;
+    loginSubtitle: string;
+    supportEmail: string;
+    idleTimeoutMinutes: number;
+  };
+  actor: { id: string; name: string; role: 'ADMIN' | 'AUDITOR' | 'USER' };
+}) => postJson(
+  "/api/customization",
+  payload.customization,
+  {},
+  {
+    headers: {
+      "x-actor-id": payload.actor.id,
+      "x-actor-name": payload.actor.name,
+      "x-actor-role": payload.actor.role
+    }
+  }
+);
 
 export const actOnItem            = (payload: {
   itemId: string;

@@ -62,11 +62,13 @@ const Layout: React.FC<LayoutProps> = ({
   };
 
   const openCustomization = () => {
+    if (currentUser.role !== UserRole.ADMIN) return;
     setDraftCustomization(customization);
     setShowCustomization(true);
   };
 
   const saveCustomization = () => {
+    if (currentUser.role !== UserRole.ADMIN) return;
     onSaveCustomization(draftCustomization);
     setShowCustomization(false);
   };

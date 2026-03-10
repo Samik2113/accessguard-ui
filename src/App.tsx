@@ -36,7 +36,9 @@ import {
   changePassword,
   resetUserPassword,
   setUserRole,
-  setUserRolesBulk
+  setUserRolesBulk,
+  getAppCustomization,
+  saveAppCustomization
 } from "./services/api";
 import { useReviewCycles } from './features/reviews/queries';
 import { useAccountsByApp } from './features/accounts/queries';
@@ -316,10 +318,35 @@ const App: React.FC = () => {
       setActiveTab(persistedTab || (persisted.user.role === UserRole.USER ? 'my-team-access' : 'dashboard'));
       setIsAuthenticated(true);
     }
+
+    (async () => {
+      try {
+        const res: any = await getAppCustomization();
+        const remote = res?.customization;
+        if (!remote) return;
+        const normalized: AppCustomization = {
+          platformName: String(remote.platformName || DEFAULT_CUSTOMIZATION.platformName),
+          primaryColor: normalizeHexColor(remote.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
+          environmentLabel: String(remote.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
+          loginSubtitle: String(remote.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
+          supportEmail: String(remote.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
+          idleTimeoutMinutes: normalizeIdleTimeoutMinutes(remote.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
+        };
+        setCustomization(normalized);
+        writeCustomization(normalized);
+      } catch (err) {
+        console.warn('Failed to load global customization, using local/default fallback.', err);
+      }
+    })();
+
     setSessionHydrated(true);
   }, []);
 
-  const handleSaveCustomization = (nextCustomization: AppCustomization) => {
+  const handleSaveCustomization = async (nextCustomization: AppCustomization) => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      alert('Only Admin can customize platform settings.');
+      return;
+    }
     const normalized: AppCustomization = {
       ...nextCustomization,
       platformName: String(nextCustomization.platformName || '').trim() || DEFAULT_CUSTOMIZATION.platformName,
@@ -329,8 +356,35 @@ const App: React.FC = () => {
       supportEmail: String(nextCustomization.supportEmail || '').trim(),
       idleTimeoutMinutes: normalizeIdleTimeoutMinutes(nextCustomization.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
     };
+
     setCustomization(normalized);
     writeCustomization(normalized);
+
+    try {
+      const res: any = await saveAppCustomization({
+        customization: normalized,
+        actor: {
+          id: currentUser.id,
+          name: currentUser.name,
+          role: currentUser.role
+        }
+      });
+      const saved = res?.customization;
+      if (saved) {
+        const normalizedSaved: AppCustomization = {
+          platformName: String(saved.platformName || DEFAULT_CUSTOMIZATION.platformName),
+          primaryColor: normalizeHexColor(saved.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
+          environmentLabel: String(saved.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
+          loginSubtitle: String(saved.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
+          supportEmail: String(saved.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
+          idleTimeoutMinutes: normalizeIdleTimeoutMinutes(saved.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
+        };
+        setCustomization(normalizedSaved);
+        writeCustomization(normalizedSaved);
+      }
+    } catch (err: any) {
+      alert(`Customization save failed: ${err?.message || 'Unknown error'}`);
+    }
   };
 
   useEffect(() => {
@@ -1048,6 +1102,10 @@ useEffect(() => {
   };
 
   const handleLaunchReview = async (appId: string, dueDateStr?: string) => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      alert('Only Admin can launch certifications.');
+      return;
+    }
     const targetApp = getApplicationById(appId);
     if (!targetApp) return;
     const normalizedAppId = getApplicationId(targetApp);
@@ -1085,11 +1143,18 @@ useEffect(() => {
       if (!normalizedAppId || typeof normalizedAppId !== 'string' || normalizedAppId.trim().length === 0) {
         throw new Error('No valid appId provided for UAR launch');
       }
-      const response = await launchReview({
-        appId: normalizedAppId.trim(),
-        name: targetApp.name,
-        dueDate: dueDate.toISOString()
-      });
+      const response = await launchReview(
+        {
+          appId: normalizedAppId.trim(),
+          name: targetApp.name,
+          dueDate: dueDate.toISOString()
+        },
+        {
+          id: currentUser.id,
+          name: currentUser.name,
+          role: currentUser.role
+        }
+      );
       await invalidateReviewQueries(response?.cycleId);
 
       // Refresh cycles and items from backend

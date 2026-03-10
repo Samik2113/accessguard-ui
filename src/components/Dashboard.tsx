@@ -345,13 +345,15 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           <h1 className="text-2xl font-bold text-slate-900">Review Campaigns</h1>
           <p className="text-slate-500">Monitor and manage access review workflows.</p>
         </div>
-        <button
-          onClick={() => setShowLaunchModal(true)}
-          className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
-          style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
-        >
-          <Play className="w-4 h-4 fill-current" /> Launch Campaign
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowLaunchModal(true)}
+            className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
+            style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
+          >
+            <Play className="w-4 h-4 fill-current" /> Launch Campaign
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-4">
@@ -878,7 +880,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         </div>
       )}
 
-      {showLaunchModal && (
+      {showLaunchModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-bold mb-6">Launch New Campaign</h3>
