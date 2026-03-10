@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { getAccounts, getAccountsByUser, importSodPolicies } from '../services/api';
+import { getAccounts, getAccountsByUser, getEntitlements, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
@@ -50,6 +50,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [showAddSod, setShowAddSod] = useState(false);
   const [newSod, setNewSod] = useState<Partial<SoDPolicy>>({ riskLevel: 'HIGH' });
   const [sodError, setSodError] = useState<string | null>(null);
+  const [sodEntitlementsByApp, setSodEntitlementsByApp] = useState<Record<string, string[]>>({});
 
   const hrInputRef = useRef<HTMLInputElement>(null);
   const accountInputRef = useRef<HTMLInputElement>(null);
@@ -299,6 +300,60 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const normalizeValue = (value: any) => String(value || '').trim().toLowerCase();
   const parseBool = (value: any) => value === true || value === 1 || String(value || '').trim().toLowerCase() === 'true' || String(value || '').trim().toLowerCase() === 'yes';
+  const getAppKey = (app: Application | any) => String(app?.appId || app?.id || '').trim();
+
+  useEffect(() => {
+    if (!showAddSod) return;
+    let alive = true;
+
+    const seed: Record<string, string[]> = {};
+    (entitlements || []).forEach((entry) => {
+      const appId = String((entry as any)?.appId || '').trim();
+      const entitlement = String((entry as any)?.entitlement || '').trim();
+      if (!appId || !entitlement) return;
+      if (!seed[appId]) seed[appId] = [];
+      if (!seed[appId].includes(entitlement)) seed[appId].push(entitlement);
+    });
+    Object.keys(seed).forEach((appId) => seed[appId].sort((a, b) => a.localeCompare(b)));
+    setSodEntitlementsByApp(seed);
+
+    (async () => {
+      const merged: Record<string, string[]> = { ...seed };
+      await Promise.all(applications.map(async (app) => {
+        const appKey = getAppKey(app);
+        if (!appKey) return;
+        try {
+          const res: any = await getEntitlements(appKey, undefined, 500);
+          const items = Array.isArray(res?.items) ? res.items : [];
+          const list = Array.from(new Set(items
+            .map((entry: any) => String(entry?.entitlement || '').trim())
+            .filter(Boolean)))
+            .sort((a, b) => a.localeCompare(b));
+          merged[appKey] = list;
+        } catch {
+          if (!merged[appKey]) merged[appKey] = [];
+        }
+      }));
+      if (alive) setSodEntitlementsByApp(merged);
+    })();
+
+    return () => { alive = false; };
+  }, [showAddSod, applications, entitlements]);
+
+  const getSodEntitlementOptions = (appId?: string) => {
+    const key = String(appId || '').trim();
+    if (!key) return [];
+    const direct = sodEntitlementsByApp[key] || [];
+    const app = applications.find((candidate: any) => String(candidate?.id || '') === key || String(candidate?.appId || '') === key);
+    const altId = String((app as any)?.id || '').trim();
+    const altAppId = String((app as any)?.appId || '').trim();
+    const merged = Array.from(new Set([
+      ...direct,
+      ...(altId ? (sodEntitlementsByApp[altId] || []) : []),
+      ...(altAppId ? (sodEntitlementsByApp[altAppId] || []) : [])
+    ]));
+    return merged.sort((a, b) => a.localeCompare(b));
+  };
 
   const accountIdentityKey = (acc: ApplicationAccess) => {
     if (acc.correlatedUserId) return `u:${normalizeValue(acc.correlatedUserId)}`;
@@ -1575,15 +1630,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Application</label>
                     <select className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg" value={newSod.appId1 || ''} onChange={e => setNewSod({...newSod, appId1: e.target.value, entitlement1: ''})}>
                       <option value="">Select App...</option>
-                      {applications.map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
+                      {applications.map(app => <option key={getAppKey(app)} value={getAppKey(app)}>{app.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Entitlement</label>
                     <select className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg" value={newSod.entitlement1 || ''} onChange={e => setNewSod({...newSod, entitlement1: e.target.value})} disabled={!newSod.appId1}>
                       <option value="">Select Entitlement...</option>
-                      {entitlements.filter(e => e.appId === newSod.appId1).map(e => <option key={e.entitlement} value={e.entitlement}>{e.entitlement}</option>)}
+                      {getSodEntitlementOptions(newSod.appId1).map((entitlement) => <option key={entitlement} value={entitlement}>{entitlement}</option>)}
                     </select>
+                    {newSod.appId1 && getSodEntitlementOptions(newSod.appId1).length === 0 && (
+                      <p className="mt-1 text-[10px] text-slate-400">No entitlements found for this app.</p>
+                    )}
                   </div>
                 </div>
 
@@ -1597,15 +1655,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Application</label>
                     <select className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg" value={newSod.appId2 || ''} onChange={e => setNewSod({...newSod, appId2: e.target.value, entitlement2: ''})}>
                       <option value="">Select App...</option>
-                      {applications.map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
+                      {applications.map(app => <option key={getAppKey(app)} value={getAppKey(app)}>{app.name}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-[9px] font-bold text-slate-500 mb-1">Entitlement</label>
                     <select className="w-full p-2 text-sm bg-white border border-slate-200 rounded-lg" value={newSod.entitlement2 || ''} onChange={e => setNewSod({...newSod, entitlement2: e.target.value})} disabled={!newSod.appId2}>
                       <option value="">Select Entitlement...</option>
-                      {entitlements.filter(e => e.appId === newSod.appId2).map(e => <option key={e.entitlement} value={e.entitlement}>{e.entitlement}</option>)}
+                      {getSodEntitlementOptions(newSod.appId2).map((entitlement) => <option key={entitlement} value={entitlement}>{entitlement}</option>)}
                     </select>
+                    {newSod.appId2 && getSodEntitlementOptions(newSod.appId2).length === 0 && (
+                      <p className="mt-1 text-[10px] text-slate-400">No entitlements found for this app.</p>
+                    )}
                   </div>
                 </div>
               </div>
