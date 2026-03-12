@@ -7,10 +7,22 @@ const { renderTemplatedEmail } = require("../_shared/email-templates");
 const ajv = new Ajv({ allErrors: true });
 const schema = {
   type: "object",
-  required: ["itemId", "managerId"],
   properties: {
     itemId: { type: "string", minLength: 1 },
     managerId: { type: "string", minLength: 1 },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["itemId", "managerId"],
+        properties: {
+          itemId: { type: "string", minLength: 1 },
+          managerId: { type: "string", minLength: 1 },
+          etag: { type: "string" }
+        },
+        additionalProperties: true
+      }
+    },
     status: { type: "string", minLength: 1 },
     reassignToManagerId: { type: "string" },
     comment: { type: "string" },
@@ -38,9 +50,163 @@ module.exports = async function (context, req) {
     const logsC = db.container("auditLogs");
     const hrC = db.container("hrUsers");
 
+    const actorId = req.headers["x-actor-id"] || body.managerId || "SYSTEM";
+    const now = new Date().toISOString();
+    const maxReassignments = Math.max(Number(process.env.MAX_REASSIGNMENTS || 3), 1);
+
+    const isBulkReassign = Array.isArray(body.items) && body.items.length > 0 && body.reassignToManagerId && String(body.reassignToManagerId).trim().length > 0;
+
+    if (isBulkReassign) {
+      const targetManagerId = String(body.reassignToManagerId).trim();
+      const itemInputs = body.items;
+      const customization = await readAppCustomization(logsC);
+      const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+
+      const results = [];
+      for (const input of itemInputs) {
+        try {
+          const reassigned = await executeReassignment({
+            itemsC,
+            logsC,
+            hrC,
+            context,
+            req,
+            actorId,
+            now,
+            maxReassignments,
+            itemId: String(input.itemId || "").trim(),
+            fromManagerId: String(input.managerId || "").trim(),
+            toManagerId: targetManagerId,
+            comment: body.comment,
+            requestIfMatch: input.etag,
+            sendNotification: false,
+            customization,
+            portalUrl
+          });
+          results.push({ ok: true, itemId: reassigned.itemId, managerId: reassigned.managerId });
+        } catch (error) {
+          results.push({
+            ok: false,
+            itemId: String(input.itemId || ""),
+            managerId: String(input.managerId || ""),
+            error: error?.message || "Unknown error",
+            code: error?.code || "INTERNAL_ERROR"
+          });
+        }
+      }
+
+      const successful = results.filter((result) => result.ok);
+      if (successful.length > 0) {
+        let targetHr = null;
+        try {
+          const hrRead = await hrC.item(targetManagerId, targetManagerId).read();
+          targetHr = hrRead?.resource || null;
+        } catch (_) {
+        }
+
+        const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
+        if (reviewerEmail) {
+          const { resources: reassignedItems } = await itemsC.items.query({
+            query: "SELECT c.id, c.appName, c.appId, c.entitlement, c.userName, c.appUserId FROM c WHERE ARRAY_CONTAINS(@ids, c.id)",
+            parameters: [{ name: "@ids", value: successful.map((entry) => entry.itemId) }]
+          }).fetchAll();
+
+          const summaryLines = (reassignedItems || []).map((item) => {
+            const appName = String(item.appName || item.appId || "Unknown");
+            const entitlement = String(item.entitlement || "Unknown");
+            const reviewedUser = String(item.userName || item.appUserId || "Unknown");
+            return `- ${item.id}: ${appName} | ${entitlement} | ${reviewedUser}`;
+          });
+
+          const fallbackText = [
+            `Hello ${targetHr?.name || targetManagerId},`,
+            "",
+            `${successful.length} review item(s) have been reassigned to you.`,
+            "",
+            "Items:",
+            ...summaryLines,
+            portalUrl ? `Portal: ${portalUrl}` : null,
+            "",
+            "Please review and take action."
+          ].filter(Boolean).join("\n");
+
+          const emailContent = renderTemplatedEmail(
+            customization,
+            "reviewReassignedBulk",
+            {
+              subject: `[AccessGuard] ${successful.length} review item(s) reassigned to you`,
+              text: fallbackText
+            },
+            {
+              reviewerName: targetHr?.name || targetManagerId,
+              pendingCount: successful.length,
+              itemCount: successful.length,
+              itemId: successful.map((entry) => entry.itemId).join(", "),
+              appName: "Multiple Applications",
+              entitlement: "Multiple",
+              reviewedUser: "Multiple",
+              itemSummary: summaryLines.join("\n"),
+              portalUrl,
+              portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+            }
+          );
+
+          await sendEmail(context, {
+            to: reviewerEmail,
+            subject: emailContent.subject,
+            text: emailContent.text,
+            html: emailContent.html,
+            metadata: {
+              type: "REVIEW_REASSIGNED_BULK",
+              itemIds: successful.map((entry) => entry.itemId),
+              toManagerId: targetManagerId,
+              itemCount: successful.length
+            }
+          });
+        }
+      }
+
+      return ok({
+        bulkReassigned: true,
+        totalCount: itemInputs.length,
+        successCount: successful.length,
+        failedCount: results.length - successful.length,
+        results
+      }, req);
+    }
+
+    if (!body.itemId || !body.managerId) {
+      return bad(400, "VALIDATION_ERROR", "itemId and managerId are required", req);
+    }
+
     const requestIfMatch = req.headers?.["if-match"] || req.headers?.["If-Match"];
     if (!requestIfMatch || String(requestIfMatch).trim().length === 0) {
       return bad(428, "PRECONDITION_REQUIRED", "If-Match header is required", req);
+    }
+
+    if (body.reassignToManagerId && String(body.reassignToManagerId).trim().length > 0) {
+      const targetManagerId = String(body.reassignToManagerId).trim();
+      const customization = await readAppCustomization(logsC);
+      const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+      const reassigned = await executeReassignment({
+        itemsC,
+        logsC,
+        hrC,
+        context,
+        req,
+        actorId,
+        now,
+        maxReassignments,
+        itemId: String(body.itemId),
+        fromManagerId: String(body.managerId),
+        toManagerId: targetManagerId,
+        comment: body.comment,
+        requestIfMatch,
+        sendNotification: true,
+        customization,
+        portalUrl
+      });
+      return ok({ itemId: reassigned.itemId, managerId: reassigned.managerId, reassigned: true, reassignmentCount: reassigned.reassignmentCount, maxReassignments }, req);
     }
 
     const { resource: itm } = await itemsC.item(body.itemId, body.managerId).read();
@@ -51,110 +217,6 @@ module.exports = async function (context, req) {
         expectedEtag: String(requestIfMatch),
         currentEtag: String(itm._etag || "")
       });
-    }
-
-    const actorId = req.headers["x-actor-id"] || body.managerId;
-    const now = new Date().toISOString();
-    const maxReassignments = Math.max(Number(process.env.MAX_REASSIGNMENTS || 3), 1);
-
-    if (body.reassignToManagerId && String(body.reassignToManagerId).trim().length > 0) {
-      const targetManagerId = String(body.reassignToManagerId).trim();
-      if (targetManagerId === String(body.managerId).trim()) {
-        return bad(400, "VALIDATION_ERROR", "Target reviewer must be different from current reviewer.", req);
-      }
-      if (targetManagerId === String(itm.appUserId || "").trim()) {
-        return bad(400, "VALIDATION_ERROR", "Reviewer cannot be the same user whose access is under review.", req);
-      }
-
-      const currentReassignmentCount = Number(itm.reassignmentCount || 0);
-      if (currentReassignmentCount >= maxReassignments) {
-        return bad(400, "VALIDATION_ERROR", `Maximum reassignment limit reached (${maxReassignments}) for this item.`, req);
-      }
-
-      let targetHr = null;
-      try {
-        const hrRead = await hrC.item(targetManagerId, targetManagerId).read();
-        targetHr = hrRead?.resource || null;
-      } catch (_) {
-      }
-      if (!targetHr) {
-        return bad(400, "VALIDATION_ERROR", `Target reviewer ${targetManagerId} not found in HR users.`, req);
-      }
-
-      const reassignedItem = {
-        ...itm,
-        id: itm.id,
-        managerId: targetManagerId,
-        reassignedAt: now,
-        reassignedBy: actorId,
-        reassignmentCount: currentReassignmentCount + 1,
-        reassignmentComment: typeof body.comment === "string" ? body.comment : (itm.reassignmentComment || null),
-        updatedAt: now
-      };
-
-      await itemsC.items.upsert(reassignedItem);
-      await itemsC.item(body.itemId, body.managerId).delete();
-
-      await logsC.items.upsert({
-        id: `LOG_${Date.now()}`,
-        userId: actorId,
-        userName: null,
-        timestamp: now,
-        action: "REVIEW_ITEM_REASSIGN",
-        details: `itemId=${body.itemId}; from=${body.managerId}; to=${targetManagerId}`,
-        type: "audit"
-      });
-
-      const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
-      if (reviewerEmail) {
-        const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
-        const customization = await readAppCustomization(logsC);
-        const fallbackText = [
-          `Hello ${targetHr?.name || targetManagerId},`,
-          "",
-          `A review item has been reassigned to you.`,
-          `Item ID: ${body.itemId}`,
-          `Application: ${itm.appName || itm.appId || "Unknown"}`,
-          `Entitlement: ${itm.entitlement || "Unknown"}`,
-          `Reviewed user: ${itm.userName || itm.appUserId || "Unknown"}`,
-          portalUrl ? `Portal: ${portalUrl}` : null,
-          "",
-          "Please review and take action."
-        ].filter(Boolean).join("\n");
-        const emailContent = renderTemplatedEmail(
-          customization,
-          "reviewReassigned",
-          {
-            subject: `[AccessGuard] Review item reassigned to you (${itm.appName || itm.appId || "App"})`,
-            text: fallbackText
-          },
-          {
-            reviewerName: targetHr?.name || targetManagerId,
-            itemId: body.itemId,
-            appName: itm.appName || itm.appId || "Unknown",
-            entitlement: itm.entitlement || "Unknown",
-            reviewedUser: itm.userName || itm.appUserId || "Unknown",
-            portalUrl,
-            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
-          }
-        );
-        await sendEmail(context, {
-          to: reviewerEmail,
-          subject: emailContent.subject,
-          text: emailContent.text,
-          html: emailContent.html,
-          metadata: {
-            type: "REVIEW_REASSIGNED",
-            itemId: body.itemId,
-            cycleId: itm.reviewCycleId,
-            appId: itm.appId,
-            fromManagerId: body.managerId,
-            toManagerId: targetManagerId
-          }
-        });
-      }
-
-      return ok({ itemId: body.itemId, managerId: targetManagerId, reassigned: true, reassignmentCount: currentReassignmentCount + 1, maxReassignments }, req);
     }
 
     if (!body.status || String(body.status).trim().length === 0) {
@@ -251,6 +313,9 @@ module.exports = async function (context, req) {
 
     return ok({ itemId: body.itemId, status: newStatus }, req);
   } catch (err) {
+    if (err?.status && err?.code) {
+      return bad(err.status, err.code, err.message || "Request failed", req, err.details);
+    }
     if (err.code === 412) {
       const itemId = req?.body?.itemId;
       const managerId = req?.body?.managerId;
@@ -289,3 +354,142 @@ function bad(status, code, message, req, details){
 module.exports.__test = {
   validateRequest: validate
 };
+
+async function executeReassignment({
+  itemsC,
+  logsC,
+  hrC,
+  context,
+  req,
+  actorId,
+  now,
+  maxReassignments,
+  itemId,
+  fromManagerId,
+  toManagerId,
+  comment,
+  requestIfMatch,
+  sendNotification,
+  customization,
+  portalUrl
+}) {
+  const { resource: itm } = await itemsC.item(itemId, fromManagerId).read();
+  if (!itm) throw createError(404, "ITEM_NOT_FOUND", `Item not found: ${itemId}`);
+
+  if (requestIfMatch && String(requestIfMatch).trim() !== String(itm._etag || "").trim()) {
+    throw createError(412, "ETAG_MISMATCH", "Resource changed", {
+      expectedEtag: String(requestIfMatch),
+      currentEtag: String(itm._etag || "")
+    });
+  }
+
+  if (toManagerId === String(fromManagerId).trim()) {
+    throw createError(400, "VALIDATION_ERROR", "Target reviewer must be different from current reviewer.");
+  }
+  if (toManagerId === String(itm.appUserId || "").trim()) {
+    throw createError(400, "VALIDATION_ERROR", "Reviewer cannot be the same user whose access is under review.");
+  }
+
+  const currentReassignmentCount = Number(itm.reassignmentCount || 0);
+  if (currentReassignmentCount >= maxReassignments) {
+    throw createError(400, "VALIDATION_ERROR", `Maximum reassignment limit reached (${maxReassignments}) for this item.`);
+  }
+
+  let targetHr = null;
+  try {
+    const hrRead = await hrC.item(toManagerId, toManagerId).read();
+    targetHr = hrRead?.resource || null;
+  } catch (_) {
+  }
+  if (!targetHr) {
+    throw createError(400, "VALIDATION_ERROR", `Target reviewer ${toManagerId} not found in HR users.`);
+  }
+
+  const reassignedItem = {
+    ...itm,
+    id: itm.id,
+    managerId: toManagerId,
+    reassignedAt: now,
+    reassignedBy: actorId,
+    reassignmentCount: currentReassignmentCount + 1,
+    reassignmentComment: typeof comment === "string" ? comment : (itm.reassignmentComment || null),
+    updatedAt: now
+  };
+
+  await itemsC.items.upsert(reassignedItem);
+  await itemsC.item(itemId, fromManagerId).delete();
+
+  await logsC.items.upsert({
+    id: `LOG_${Date.now()}`,
+    userId: actorId,
+    userName: null,
+    timestamp: now,
+    action: "REVIEW_ITEM_REASSIGN",
+    details: `itemId=${itemId}; from=${fromManagerId}; to=${toManagerId}`,
+    type: "audit"
+  });
+
+  if (sendNotification) {
+    const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
+    if (reviewerEmail) {
+      const fallbackText = [
+        `Hello ${targetHr?.name || toManagerId},`,
+        "",
+        `A review item has been reassigned to you.`,
+        `Item ID: ${itemId}`,
+        `Application: ${itm.appName || itm.appId || "Unknown"}`,
+        `Entitlement: ${itm.entitlement || "Unknown"}`,
+        `Reviewed user: ${itm.userName || itm.appUserId || "Unknown"}`,
+        portalUrl ? `Portal: ${portalUrl}` : null,
+        "",
+        "Please review and take action."
+      ].filter(Boolean).join("\n");
+      const emailContent = renderTemplatedEmail(
+        customization,
+        "reviewReassigned",
+        {
+          subject: `[AccessGuard] Review item reassigned to you (${itm.appName || itm.appId || "App"})`,
+          text: fallbackText
+        },
+        {
+          reviewerName: targetHr?.name || toManagerId,
+          itemId,
+          appName: itm.appName || itm.appId || "Unknown",
+          entitlement: itm.entitlement || "Unknown",
+          reviewedUser: itm.userName || itm.appUserId || "Unknown",
+          portalUrl,
+          portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+        }
+      );
+      await sendEmail(context, {
+        to: reviewerEmail,
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+        metadata: {
+          type: "REVIEW_REASSIGNED",
+          itemId,
+          cycleId: itm.reviewCycleId,
+          appId: itm.appId,
+          fromManagerId,
+          toManagerId
+        }
+      });
+    }
+  }
+
+  return {
+    itemId,
+    managerId: toManagerId,
+    reassignmentCount: currentReassignmentCount + 1,
+    targetHr
+  };
+}
+
+function createError(status, code, message, details) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  if (details !== undefined) error.details = details;
+  return error;
+}

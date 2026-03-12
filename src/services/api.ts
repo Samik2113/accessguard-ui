@@ -223,6 +223,7 @@ export const saveAppCustomization = (payload: {
       reviewEscalation: { subject: string; body: string };
       remediationNotify: { subject: string; body: string };
       reviewReassigned: { subject: string; body: string };
+      reviewReassignedBulk: { subject: string; body: string };
     };
   };
   actor: { id: string; name: string; role: 'ADMIN' | 'AUDITOR' | 'USER' };
@@ -258,6 +259,13 @@ export const reassignReviewItem = (payload: {
   etag?: string;
 }) =>
   postJson("/api/reviews-item-action", payload, {}, { ifMatch: payload.etag });
+
+export const reassignReviewItemsBulk = (payload: {
+  items: Array<{ itemId: string; managerId: string; etag?: string }>;
+  reassignToManagerId: string;
+  comment?: string;
+}) =>
+  postJson("/api/reviews-item-action", payload);
 
 export const confirmManager       = (payload: { cycleId: string; appId: string; managerId: string }) =>
   postJson("/api/reviews-confirm", payload);

@@ -147,5 +147,9 @@ export interface AppCustomization {
       subject: string;
       body: string;
     };
+    reviewReassignedBulk: {
+      subject: string;
+      body: string;
+    };
   };
 }

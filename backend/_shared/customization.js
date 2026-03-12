@@ -70,6 +70,20 @@ const DEFAULT_EMAIL_TEMPLATES = {
       "",
       "Please review and take action."
     ].join("\n")
+  },
+  reviewReassignedBulk: {
+    subject: "[AccessGuard] {{itemCount}} review item(s) reassigned to you",
+    body: [
+      "Hello {{reviewerName}},",
+      "",
+      "{{itemCount}} review item(s) have been reassigned to you.",
+      "",
+      "Items:",
+      "{{itemSummary}}",
+      "{{portalLine}}",
+      "",
+      "Please review and take action."
+    ].join("\n")
   }
 };
 
@@ -110,7 +124,8 @@ function normalizeEmailTemplates(input) {
     reviewReminder: normalizeTemplate(input?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
     reviewEscalation: normalizeTemplate(input?.reviewEscalation, DEFAULT_EMAIL_TEMPLATES.reviewEscalation),
     remediationNotify: normalizeTemplate(input?.remediationNotify, DEFAULT_EMAIL_TEMPLATES.remediationNotify),
-    reviewReassigned: normalizeTemplate(input?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned)
+    reviewReassigned: normalizeTemplate(input?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned),
+    reviewReassignedBulk: normalizeTemplate(input?.reviewReassignedBulk, DEFAULT_EMAIL_TEMPLATES.reviewReassignedBulk)
   };
 }
 

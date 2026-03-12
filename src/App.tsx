@@ -29,6 +29,7 @@ import {
   launchReview,
   actOnItem,
   reassignReviewItem,
+  reassignReviewItemsBulk,
   confirmManager,
   sendReviewNotifications,
   loginUser,
@@ -68,6 +69,10 @@ const DEFAULT_EMAIL_TEMPLATES = {
   reviewReassigned: {
     subject: '[AccessGuard] Review item reassigned to you ({{appName}})',
     body: 'Hello {{reviewerName}},\n\nA review item has been reassigned to you.\nItem ID: {{itemId}}\nApplication: {{appName}}\nEntitlement: {{entitlement}}\nReviewed user: {{reviewedUser}}\n{{portalLine}}\n\nPlease review and take action.'
+  },
+  reviewReassignedBulk: {
+    subject: '[AccessGuard] {{itemCount}} review item(s) reassigned to you',
+    body: 'Hello {{reviewerName}},\n\n{{itemCount}} review item(s) have been reassigned to you.\n\nItems:\n{{itemSummary}}\n{{portalLine}}\n\nPlease review and take action.'
   }
 };
 
@@ -166,7 +171,8 @@ function normalizeCustomization(input?: Partial<AppCustomization> | null): AppCu
       reviewReminder: normalizeTemplate(input?.emailTemplates?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
       reviewEscalation: normalizeTemplate(input?.emailTemplates?.reviewEscalation, DEFAULT_EMAIL_TEMPLATES.reviewEscalation),
       remediationNotify: normalizeTemplate(input?.emailTemplates?.remediationNotify, DEFAULT_EMAIL_TEMPLATES.remediationNotify),
-      reviewReassigned: normalizeTemplate(input?.emailTemplates?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned)
+      reviewReassigned: normalizeTemplate(input?.emailTemplates?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned),
+      reviewReassignedBulk: normalizeTemplate(input?.emailTemplates?.reviewReassignedBulk, DEFAULT_EMAIL_TEMPLATES.reviewReassignedBulk)
     }
   };
 }
@@ -1299,26 +1305,33 @@ useEffect(() => {
 
   const handleBulkReassignReviewItems = async (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => {
     try {
-      const results = await Promise.allSettled(
-        itemsToReassign.map(item => {
+      const payload = {
+        items: itemsToReassign.map(item => {
           const target = reviewItems.find(existing => existing.id === item.itemId && existing.managerId === item.fromManagerId);
-          return reassignReviewItem({ itemId: item.itemId, managerId: item.fromManagerId, reassignToManagerId: toManagerId, comment, etag: (target as any)?._etag });
-        })
-      );
+          return {
+            itemId: item.itemId,
+            managerId: item.fromManagerId,
+            etag: (target as any)?._etag
+          };
+        }),
+        reassignToManagerId: toManagerId,
+        comment
+      };
+      const bulkResult: any = await reassignReviewItemsBulk(payload);
       const impactedCycleId = reviewItems.find(existing => itemsToReassign.some(x => x.itemId === existing.id))?.reviewCycleId;
       await invalidateReviewQueries(impactedCycleId);
 
-      const successCount = results.filter(result => result.status === 'fulfilled').length;
-      const failed = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[];
+      const successCount = Number(bulkResult?.successCount || 0);
+      const failedCount = Number(bulkResult?.failedCount || 0);
 
       const itemsRes = await getReviewItems({ top: 500 });
       setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
 
       await addAuditLog('ITEM_REASSIGN_BULK', `Bulk reassigned ${successCount}/${itemsToReassign.length} items to ${toManagerId}`);
 
-      if (failed.length > 0) {
-        const firstFailure = failed[0]?.reason?.message || 'Unknown error';
-        alert(`Bulk reassignment completed with partial failures. Success: ${successCount}, Failed: ${failed.length}. First error: ${firstFailure}`);
+      if (failedCount > 0) {
+        const firstFailure = bulkResult?.results?.find((result: any) => !result?.ok)?.error || 'Unknown error';
+        alert(`Bulk reassignment completed with partial failures. Success: ${successCount}, Failed: ${failedCount}. First error: ${firstFailure}`);
       }
     } catch (e: any) {
       console.error('Failed to bulk reassign review items:', e);

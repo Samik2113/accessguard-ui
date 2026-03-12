@@ -59,6 +59,14 @@ const schema = {
             body: { type: "string" }
           },
           additionalProperties: true
+        },
+        reviewReassignedBulk: {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            body: { type: "string" }
+          },
+          additionalProperties: true
         }
       },
       additionalProperties: true

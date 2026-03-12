@@ -43,7 +43,8 @@ const Layout: React.FC<LayoutProps> = ({
     { key: 'reviewReminder', label: 'Review Reminder Email' },
     { key: 'reviewEscalation', label: 'Escalation Email' },
     { key: 'remediationNotify', label: 'Remediation Notification Email' },
-    { key: 'reviewReassigned', label: 'Reassigned Item Email' }
+    { key: 'reviewReassigned', label: 'Reassigned Item Email' },
+    { key: 'reviewReassignedBulk', label: 'Bulk Reassigned Items Email' }
   ] as const;
 
   const visibleItems = NAV_ITEMS.filter((item: any) => !Array.isArray(item.roles) || item.roles.includes(currentUser.role));
