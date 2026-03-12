@@ -104,6 +104,22 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter, campaignRiskFilter, campaignRiskFactorFilter]);
 
   const selectedCampaign = cycles.find(c => c.id === selectedCampaignId);
+  const pendingConfirmationReviewerIds = useMemo(() => {
+    if (!selectedCampaign) return [] as string[];
+    const confirmed = new Set((selectedCampaign.confirmedManagers || []).map(id => String(id)));
+    const allManagers = Array.from(new Set(viewingItems.map(item => String(item.managerId || '').trim()).filter(Boolean)));
+    return allManagers.filter(managerId => !confirmed.has(managerId));
+  }, [selectedCampaign, viewingItems]);
+  const pendingConfirmationReviewers = useMemo(() => {
+    return pendingConfirmationReviewerIds.map((managerId) => {
+      const user = users.find((entry) => entry.id === managerId);
+      return {
+        managerId,
+        name: user?.name || managerId,
+        email: user?.email || ''
+      };
+    });
+  }, [pendingConfirmationReviewerIds, users]);
 
   const reassignmentCandidates = useMemo(() => {
     if (!reassignModal) return [];
@@ -364,6 +380,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         <select value={dashboardStatusFilter} onChange={e => setDashboardStatusFilter(e.target.value)} className="px-4 py-2 bg-white border rounded-xl text-xs font-bold text-slate-600 shadow-sm outline-none">
           <option value="ALL">All Active Stages</option>
           <option value={ReviewStatus.ACTIVE}>In Review</option>
+          <option value={ReviewStatus.PENDING_VERIFICATION}>Pending Verification</option>
           <option value={ReviewStatus.REMEDIATION}>Remediation</option>
         </select>
       </div>
@@ -387,7 +404,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <div className="flex gap-2">
                 {isAdmin && onSendNotifications && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
                   <>
-                    {selectedCampaign?.status === ReviewStatus.REMEDIATION || selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION ? (
+                    {selectedCampaign?.status === ReviewStatus.REMEDIATION ? (
                       <>
                         <select
                           value={selectedRemediationRecipientId}
@@ -413,6 +430,23 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                           className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
                         >
                           <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'REMEDIATION_REMINDER' ? 'Sending...' : 'Remediation Reminder'}
+                        </button>
+                      </>
+                    ) : selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION ? (
+                      <>
+                        <button
+                          onClick={() => handleSendNotifications('REMINDER')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-all disabled:opacity-60"
+                        >
+                          <Clock className="w-4 h-4" /> {sendingNotificationMode === 'REMINDER' ? 'Sending...' : 'Reminder to Confirm'}
+                        </button>
+                        <button
+                          onClick={() => handleSendNotifications('ESCALATE')}
+                          disabled={sendingNotificationMode !== null}
+                          className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
+                        >
+                          <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'ESCALATE' ? 'Escalating...' : 'Escalate Confirmation'}
                         </button>
                       </>
                     ) : (
@@ -552,6 +586,24 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                    );
                  })()}
               </div>
+
+              {selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION && (
+                <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-amber-700">Awaiting Lock & Close Confirmation</p>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Decisions are completed, but campaign closure is blocked until these reviewer(s) confirm.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {pendingConfirmationReviewers.length === 0 ? (
+                      <span className="text-xs text-amber-700">No pending reviewers found.</span>
+                    ) : pendingConfirmationReviewers.map((reviewer) => (
+                      <span key={reviewer.managerId} className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white border border-amber-200 text-amber-800">
+                        {reviewer.name} ({reviewer.managerId})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto">

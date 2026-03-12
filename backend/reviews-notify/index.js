@@ -256,6 +256,40 @@ module.exports = async function (context, req) {
       grouped.set(managerId, entry);
     }
 
+    if (cycleId) {
+      let allItemsQuery = "SELECT c.managerId, c.appName, c.appId, c.reviewCycleId FROM c WHERE c.reviewCycleId=@cycleId";
+      const allItemsParams = [{ name: "@cycleId", value: cycleId }];
+      if (appId) {
+        allItemsQuery += " AND c.appId=@appId";
+        allItemsParams.push({ name: "@appId", value: appId });
+      }
+
+      const { resources: cycleItems } = await itemsC.items.query({ query: allItemsQuery, parameters: allItemsParams }).fetchAll();
+      const cycleInfo = appId ? await readCycle(cyclesC, cycleId, appId) : null;
+      const confirmedManagers = Array.isArray(cycleInfo?.confirmedManagers) ? cycleInfo.confirmedManagers.map((id) => String(id)) : [];
+
+      for (const item of cycleItems || []) {
+        const managerId = String(item.managerId || "").trim();
+        if (!managerId) continue;
+        if (managerIdFilter && managerId !== managerIdFilter) continue;
+        if (confirmedManagers.includes(managerId)) continue;
+
+        const entry = grouped.get(managerId) || {
+          managerId,
+          appNames: new Set(),
+          cycleIds: new Set(),
+          itemIds: [],
+          sampleUsers: new Set(),
+          oldestCreatedAt: null,
+          awaitingConfirmation: true
+        };
+        entry.awaitingConfirmation = true;
+        entry.appNames.add(String(item.appName || item.appId || "Unknown"));
+        entry.cycleIds.add(String(item.reviewCycleId || cycleId));
+        grouped.set(managerId, entry);
+      }
+    }
+
     const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
     const results = [];
 
@@ -272,6 +306,7 @@ module.exports = async function (context, req) {
       const appLabel = Array.from(group.appNames).slice(0, 3).join(", ");
       const pendingCount = group.itemIds.length;
       const cycleLabel = Array.from(group.cycleIds).filter(Boolean).join(", ");
+      const awaitingConfirmation = group.awaitingConfirmation === true && pendingCount === 0;
 
       if (mode === "REMINDER") {
         if (!reviewerEmail) {
@@ -279,7 +314,16 @@ module.exports = async function (context, req) {
           continue;
         }
 
-        const fallbackText = [
+        const fallbackText = awaitingConfirmation ? [
+          `Hello ${reviewerName},`,
+          "",
+          "All your review decisions are captured, but the campaign is still waiting for your final confirmation.",
+          cycleLabel ? `Campaign(s): ${cycleLabel}` : null,
+          appLabel ? `Applications: ${appLabel}` : null,
+          portalUrl ? `Portal: ${portalUrl}` : null,
+          "",
+          "Please lock and close your review submission."
+        ].filter(Boolean).join("\n") : [
           `Hello ${reviewerName},`,
           "",
           `You have ${pendingCount} pending review item(s).`,
@@ -316,7 +360,7 @@ module.exports = async function (context, req) {
               text: emailContent.text,
               html: emailContent.html,
               metadata: {
-                type: "REVIEW_REMINDER",
+                type: awaitingConfirmation ? "REVIEW_CONFIRMATION_REMINDER" : "REVIEW_REMINDER",
                 managerId: group.managerId,
                 pendingCount,
                 cycleIds: Array.from(group.cycleIds)
@@ -347,7 +391,17 @@ module.exports = async function (context, req) {
         const cycleInfo = cycleId && appId ? await readCycle(cyclesC, cycleId, appId) : null;
         const dueDate = cycleInfo?.dueDate ? new Date(cycleInfo.dueDate).toLocaleDateString() : null;
 
-        const fallbackText = [
+        const fallbackText = awaitingConfirmation ? [
+          `Hello ${lineManagerHr?.name || managerOfReviewerId},`,
+          "",
+          `Escalation for reviewer ${reviewerName} (${group.managerId}) who has not locked and closed the campaign.`,
+          appLabel ? `Applications: ${appLabel}` : null,
+          cycleLabel ? `Campaign(s): ${cycleLabel}` : null,
+          dueDate ? `Campaign due date: ${dueDate}` : null,
+          portalUrl ? `Portal: ${portalUrl}` : null,
+          "",
+          "Please follow up to ensure final confirmation is submitted."
+        ].filter(Boolean).join("\n") : [
           `Hello ${lineManagerHr?.name || managerOfReviewerId},`,
           "",
           `Escalation for reviewer ${reviewerName} (${group.managerId}).`,
@@ -389,7 +443,7 @@ module.exports = async function (context, req) {
               text: emailContent.text,
               html: emailContent.html,
               metadata: {
-                type: "REVIEW_ESCALATION",
+                type: awaitingConfirmation ? "REVIEW_CONFIRMATION_ESCALATION" : "REVIEW_ESCALATION",
                 reviewerId: group.managerId,
                 escalatedToManagerId: managerOfReviewerId,
                 pendingCount,
