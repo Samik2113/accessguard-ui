@@ -1356,16 +1356,54 @@ useEffect(() => {
   const uniqueActions = useMemo(() => Array.from(new Set(auditLogs.map(l => l.action))).sort(), [auditLogs]);
 
   const exportAuditLogs = () => {
-    const headers = ['Timestamp', 'User Name', 'User ID', 'Action', 'Details'];
+    const parseDetailValue = (details: string, key: string): string => {
+      const safe = String(details || '');
+      const pattern = new RegExp(`${key}=([^;]+)`);
+      const match = safe.match(pattern);
+      return match?.[1]?.trim() || '';
+    };
+
+    const headers = ['Timestamp', 'User Name', 'User ID', 'Action', 'Details', 'Cycle ID', 'Pending Confirmation Count', 'Pending Confirmation Reviewers'];
     const csvContent = [
       headers.join(','),
-      ...filteredAuditLogs.map(l => [
-        `"${new Date(l.timestamp).toLocaleString()}"`,
-        `"${l.userName}"`,
-        `"${l.userId}"`,
-        `"${l.action}"`,
-        `"${l.details.replace(/"/g, '""')}"`
-      ].join(','))
+      ...filteredAuditLogs.map(l => {
+        const cycleId = parseDetailValue(l.details, 'cycleId');
+        const appId = parseDetailValue(l.details, 'appId');
+
+        let pendingConfirmationReviewers = '';
+        let pendingConfirmationCount = 0;
+
+        if (cycleId) {
+          const matchedCycle = cycles.find(cycle => cycle.id === cycleId || cycle.cycleId === cycleId);
+          const managersInCycle = Array.from(new Set(
+            reviewItems
+              .filter(item => item.reviewCycleId === cycleId && (!appId || item.appId === appId))
+              .map(item => String(item.managerId || '').trim())
+              .filter(Boolean)
+          ));
+          const confirmedManagers = new Set((matchedCycle?.confirmedManagers || []).map(id => String(id)));
+          const pendingManagers = managersInCycle.filter(managerId => !confirmedManagers.has(managerId));
+
+          pendingConfirmationCount = pendingManagers.length;
+          pendingConfirmationReviewers = pendingManagers
+            .map(managerId => {
+              const user = users.find(u => u.id === managerId);
+              return `${user?.name || managerId} (${managerId})`;
+            })
+            .join('; ');
+        }
+
+        return [
+          `"${new Date(l.timestamp).toLocaleString()}"`,
+          `"${l.userName}"`,
+          `"${l.userId}"`,
+          `"${l.action}"`,
+          `"${l.details.replace(/"/g, '""')}"`,
+          `"${cycleId}"`,
+          `"${pendingConfirmationCount}"`,
+          `"${pendingConfirmationReviewers.replace(/"/g, '""')}"`
+        ].join(',');
+      })
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });

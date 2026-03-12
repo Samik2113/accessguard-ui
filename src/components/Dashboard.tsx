@@ -220,11 +220,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
   const exportCampaignDetail = () => {
     if (!selectedCampaign) return;
-    const headers = ['User', 'Account ID', 'Entitlement', 'Reviewer', 'Reassigned By', 'Reassigned At', 'Reassign Count', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
+    const confirmedManagerIds = new Set((selectedCampaign.confirmedManagers || []).map((id) => String(id)));
+    const headers = ['User', 'Account ID', 'Entitlement', 'Reviewer', 'Reviewer ID', 'Reviewer Confirmation', 'Pending With Reviewer', 'Reassigned By', 'Reassigned At', 'Reassign Count', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
     const csvContent = [
       headers.join(','),
       ...viewingItems.map(i => {
         const reviewer = users.find(u => u.id === i.managerId)?.name || i.managerId;
+        const reviewerId = String(i.managerId || '');
+        const isReviewerConfirmed = confirmedManagerIds.has(reviewerId);
+        const reviewerConfirmation = isReviewerConfirmed ? 'Confirmed' : 'Pending Confirmation';
+        const pendingWithReviewer = isReviewerConfirmed ? '' : `${reviewer} (${reviewerId})`;
         const reassignedBy = i.reassignedBy ? (users.find(u => u.id === i.reassignedBy)?.name || i.reassignedBy) : '';
         const risks = [
           i.isSoDConflict ? `SoD Conflict (${(i.violatedPolicyNames || []).join(';')})` : '',
@@ -236,6 +241,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           `"${i.appUserId}"`,
           `"${i.entitlement}"`,
           `"${reviewer}"`,
+          `"${reviewerId}"`,
+          `"${reviewerConfirmation}"`,
+          `"${pendingWithReviewer}"`,
           `"${reassignedBy}"`,
           `"${i.reassignedAt || ''}"`,
           `"${i.reassignmentCount || ''}"`,
