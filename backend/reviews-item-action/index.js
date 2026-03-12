@@ -107,15 +107,34 @@ module.exports = async function (context, req) {
         const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
         if (reviewerEmail) {
           const { resources: reassignedItems } = await itemsC.items.query({
-            query: "SELECT c.id, c.appName, c.appId, c.entitlement, c.userName, c.appUserId FROM c WHERE ARRAY_CONTAINS(@ids, c.id)",
+            query: "SELECT c.id, c.reviewCycleId, c.appName, c.appId, c.entitlement, c.userName, c.appUserId FROM c WHERE ARRAY_CONTAINS(@ids, c.id)",
             parameters: [{ name: "@ids", value: successful.map((entry) => entry.itemId) }]
           }).fetchAll();
 
+          const cycleNameByKey = new Map();
+          const cycleKeys = Array.from(new Set((reassignedItems || []).map((item) => {
+            const cycleId = String(item.reviewCycleId || "").trim();
+            const appId = String(item.appId || "").trim();
+            return `${cycleId}::${appId}`;
+          }).filter((key) => key !== "::")));
+
+          for (const key of cycleKeys) {
+            const [cycleId, appId] = key.split("::");
+            try {
+              const { resource } = await cyclesC.item(cycleId, appId).read();
+              cycleNameByKey.set(key, String(resource?.name || cycleId || "Unknown Campaign"));
+            } catch (_) {
+              cycleNameByKey.set(key, cycleId || "Unknown Campaign");
+            }
+          }
+
           const summaryLines = (reassignedItems || []).map((item) => {
+            const cycleKey = `${String(item.reviewCycleId || "").trim()}::${String(item.appId || "").trim()}`;
+            const cycleName = cycleNameByKey.get(cycleKey) || String(item.reviewCycleId || "Unknown Campaign");
             const appName = String(item.appName || item.appId || "Unknown");
             const entitlement = String(item.entitlement || "Unknown");
             const reviewedUser = String(item.userName || item.appUserId || "Unknown");
-            return `- ${item.id}: ${appName} | ${entitlement} | ${reviewedUser}`;
+            return `- ${cycleName}: ${appName} | ${entitlement} | ${reviewedUser}`;
           });
 
           const fallbackText = [
