@@ -62,6 +62,14 @@ const DEFAULT_EMAIL_TEMPLATES = {
     subject: '[AccessGuard] Escalation: reviewer has {{pendingCount}} pending item(s)',
     body: 'Hello {{lineManagerName}},\n\nEscalation for reviewer {{reviewerName}} ({{reviewerId}}).\nPending review items: {{pendingCount}}\nApplications: {{appLabel}}\nCampaign(s): {{cycleLabel}}\nCampaign due date: {{dueDate}}\nOldest pending assigned: {{oldestAssigned}}\n{{portalLine}}\n\nPlease follow up to ensure review completion.'
   },
+  reviewConfirmationReminder: {
+    subject: '[AccessGuard] Reminder: confirmation pending for {{cycleLabel}}',
+    body: 'Hello {{reviewerName}},\n\nAll your review decisions are captured, but your final confirmation is still pending.\nCampaign(s): {{cycleLabel}}\nApplications: {{appLabel}}\n{{portalLine}}\n\nPlease lock and close your review submission.'
+  },
+  reviewConfirmationEscalation: {
+    subject: '[AccessGuard] Escalation: confirmation pending for reviewer {{reviewerName}}',
+    body: 'Hello {{lineManagerName}},\n\nEscalation for reviewer {{reviewerName}} ({{reviewerId}}) who has not locked and closed the campaign.\nCampaign(s): {{cycleLabel}}\nApplications: {{appLabel}}\nCampaign due date: {{dueDate}}\n{{portalLine}}\n\nPlease follow up to ensure final confirmation is submitted.'
+  },
   remediationNotify: {
     subject: '[AccessGuard] {{subjectPrefix}}: {{pendingCount}} remediation item(s) pending',
     body: 'Hello,\n\n{{pendingCount}} item(s) are pending remediation for campaign {{cycleId}}.\nApplication: {{appName}}\nDue date: {{dueDate}}\n\nAttached CSV contains all open remediation items.'
@@ -170,6 +178,8 @@ function normalizeCustomization(input?: Partial<AppCustomization> | null): AppCu
       reviewAssignment: normalizeTemplate(input?.emailTemplates?.reviewAssignment, DEFAULT_EMAIL_TEMPLATES.reviewAssignment),
       reviewReminder: normalizeTemplate(input?.emailTemplates?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
       reviewEscalation: normalizeTemplate(input?.emailTemplates?.reviewEscalation, DEFAULT_EMAIL_TEMPLATES.reviewEscalation),
+      reviewConfirmationReminder: normalizeTemplate(input?.emailTemplates?.reviewConfirmationReminder, DEFAULT_EMAIL_TEMPLATES.reviewConfirmationReminder),
+      reviewConfirmationEscalation: normalizeTemplate(input?.emailTemplates?.reviewConfirmationEscalation, DEFAULT_EMAIL_TEMPLATES.reviewConfirmationEscalation),
       remediationNotify: normalizeTemplate(input?.emailTemplates?.remediationNotify, DEFAULT_EMAIL_TEMPLATES.remediationNotify),
       reviewReassigned: normalizeTemplate(input?.emailTemplates?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned),
       reviewReassignedBulk: normalizeTemplate(input?.emailTemplates?.reviewReassignedBulk, DEFAULT_EMAIL_TEMPLATES.reviewReassignedBulk)

@@ -44,6 +44,33 @@ const DEFAULT_EMAIL_TEMPLATES = {
       "Please follow up to ensure review completion."
     ].join("\n")
   },
+  reviewConfirmationReminder: {
+    subject: "[AccessGuard] Reminder: confirmation pending for {{cycleLabel}}",
+    body: [
+      "Hello {{reviewerName}},",
+      "",
+      "All your review decisions are captured, but your final confirmation is still pending.",
+      "Campaign(s): {{cycleLabel}}",
+      "Applications: {{appLabel}}",
+      "{{portalLine}}",
+      "",
+      "Please lock and close your review submission."
+    ].join("\n")
+  },
+  reviewConfirmationEscalation: {
+    subject: "[AccessGuard] Escalation: confirmation pending for reviewer {{reviewerName}}",
+    body: [
+      "Hello {{lineManagerName}},",
+      "",
+      "Escalation for reviewer {{reviewerName}} ({{reviewerId}}) who has not locked and closed the campaign.",
+      "Campaign(s): {{cycleLabel}}",
+      "Applications: {{appLabel}}",
+      "Campaign due date: {{dueDate}}",
+      "{{portalLine}}",
+      "",
+      "Please follow up to ensure final confirmation is submitted."
+    ].join("\n")
+  },
   remediationNotify: {
     subject: "[AccessGuard] {{subjectPrefix}}: {{pendingCount}} remediation item(s) pending",
     body: [
@@ -123,6 +150,8 @@ function normalizeEmailTemplates(input) {
     reviewAssignment: normalizeTemplate(input?.reviewAssignment, DEFAULT_EMAIL_TEMPLATES.reviewAssignment),
     reviewReminder: normalizeTemplate(input?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
     reviewEscalation: normalizeTemplate(input?.reviewEscalation, DEFAULT_EMAIL_TEMPLATES.reviewEscalation),
+    reviewConfirmationReminder: normalizeTemplate(input?.reviewConfirmationReminder, DEFAULT_EMAIL_TEMPLATES.reviewConfirmationReminder),
+    reviewConfirmationEscalation: normalizeTemplate(input?.reviewConfirmationEscalation, DEFAULT_EMAIL_TEMPLATES.reviewConfirmationEscalation),
     remediationNotify: normalizeTemplate(input?.remediationNotify, DEFAULT_EMAIL_TEMPLATES.remediationNotify),
     reviewReassigned: normalizeTemplate(input?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned),
     reviewReassignedBulk: normalizeTemplate(input?.reviewReassignedBulk, DEFAULT_EMAIL_TEMPLATES.reviewReassignedBulk)

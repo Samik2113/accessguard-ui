@@ -221,6 +221,8 @@ export const saveAppCustomization = (payload: {
       reviewAssignment: { subject: string; body: string };
       reviewReminder: { subject: string; body: string };
       reviewEscalation: { subject: string; body: string };
+      reviewConfirmationReminder: { subject: string; body: string };
+      reviewConfirmationEscalation: { subject: string; body: string };
       remediationNotify: { subject: string; body: string };
       reviewReassigned: { subject: string; body: string };
       reviewReassignedBulk: { subject: string; body: string };

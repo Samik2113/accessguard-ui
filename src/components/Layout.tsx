@@ -42,6 +42,8 @@ const Layout: React.FC<LayoutProps> = ({
     { key: 'reviewAssignment', label: 'Review Assignment Email' },
     { key: 'reviewReminder', label: 'Review Reminder Email' },
     { key: 'reviewEscalation', label: 'Escalation Email' },
+    { key: 'reviewConfirmationReminder', label: 'Confirmation Reminder Email' },
+    { key: 'reviewConfirmationEscalation', label: 'Confirmation Escalation Email' },
     { key: 'remediationNotify', label: 'Remediation Notification Email' },
     { key: 'reviewReassigned', label: 'Reassigned Item Email' },
     { key: 'reviewReassignedBulk', label: 'Bulk Reassigned Items Email' }

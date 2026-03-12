@@ -139,6 +139,14 @@ export interface AppCustomization {
       subject: string;
       body: string;
     };
+    reviewConfirmationReminder: {
+      subject: string;
+      body: string;
+    };
+    reviewConfirmationEscalation: {
+      subject: string;
+      body: string;
+    };
     remediationNotify: {
       subject: string;
       body: string;

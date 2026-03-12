@@ -44,6 +44,22 @@ const schema = {
           },
           additionalProperties: true
         },
+        reviewConfirmationReminder: {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            body: { type: "string" }
+          },
+          additionalProperties: true
+        },
+        reviewConfirmationEscalation: {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            body: { type: "string" }
+          },
+          additionalProperties: true
+        },
         remediationNotify: {
           type: "object",
           properties: {
