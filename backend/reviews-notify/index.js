@@ -336,7 +336,7 @@ module.exports = async function (context, req) {
         ].filter(Boolean).join("\n");
         const emailContent = renderTemplatedEmail(
           customization,
-          "reviewReminder",
+          awaitingConfirmation ? "reviewConfirmationReminder" : "reviewReminder",
           {
             subject: `[AccessGuard] Reminder: ${pendingCount} review item(s) pending`,
             text: fallbackText
@@ -416,7 +416,7 @@ module.exports = async function (context, req) {
         ].filter(Boolean).join("\n");
         const emailContent = renderTemplatedEmail(
           customization,
-          "reviewEscalation",
+          awaitingConfirmation ? "reviewConfirmationEscalation" : "reviewEscalation",
           {
             subject: `[AccessGuard] Escalation: reviewer has ${pendingCount} pending item(s)`,
             text: fallbackText

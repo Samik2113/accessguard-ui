@@ -120,6 +120,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
       };
     });
   }, [pendingConfirmationReviewerIds, users]);
+  const pendingReviewItemCount = useMemo(() => viewingItems.filter((item) => item.status === ActionStatus.PENDING).length, [viewingItems]);
+  const isConfirmationPending = useMemo(() => {
+    if (!selectedCampaign) return false;
+    if (selectedCampaign.status === ReviewStatus.COMPLETED) return false;
+    return pendingReviewItemCount === 0 && pendingConfirmationReviewers.length > 0;
+  }, [selectedCampaign, pendingReviewItemCount, pendingConfirmationReviewers.length]);
 
   const reassignmentCandidates = useMemo(() => {
     if (!reassignModal) return [];
@@ -432,7 +438,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                           <AlertCircle className="w-4 h-4" /> {sendingNotificationMode === 'REMEDIATION_REMINDER' ? 'Sending...' : 'Remediation Reminder'}
                         </button>
                       </>
-                    ) : selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION ? (
+                    ) : isConfirmationPending ? (
                       <>
                         <button
                           onClick={() => handleSendNotifications('REMINDER')}
@@ -587,7 +593,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                  })()}
               </div>
 
-              {selectedCampaign?.status === ReviewStatus.PENDING_VERIFICATION && (
+              {isConfirmationPending && (
                 <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50">
                   <p className="text-[11px] font-black uppercase tracking-wider text-amber-700">Awaiting Lock & Close Confirmation</p>
                   <p className="mt-1 text-xs text-amber-700">

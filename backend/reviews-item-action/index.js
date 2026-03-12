@@ -300,6 +300,8 @@ module.exports = async function (context, req) {
         nextStatus = "REMEDIATION";
       } else if (allManagersConfirmed && pendingItems === 0 && pendingRemediationItems === 0) {
         nextStatus = "COMPLETED";
+      } else if (pendingItems === 0) {
+        nextStatus = "PENDING_VERIFICATION";
       }
 
       const cycleOps = [
