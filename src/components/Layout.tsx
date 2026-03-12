@@ -38,6 +38,14 @@ const Layout: React.FC<LayoutProps> = ({
   const [showCustomization, setShowCustomization] = useState(false);
   const [draftCustomization, setDraftCustomization] = useState<AppCustomization>(customization);
 
+  const templateFields = [
+    { key: 'reviewAssignment', label: 'Review Assignment Email' },
+    { key: 'reviewReminder', label: 'Review Reminder Email' },
+    { key: 'reviewEscalation', label: 'Escalation Email' },
+    { key: 'remediationNotify', label: 'Remediation Notification Email' },
+    { key: 'reviewReassigned', label: 'Reassigned Item Email' }
+  ] as const;
+
   const visibleItems = NAV_ITEMS.filter((item: any) => !Array.isArray(item.roles) || item.roles.includes(currentUser.role));
   const workspaceItems = visibleItems.filter((item: any) => item.panel === 'workspace');
   const adminItems = visibleItems.filter((item: any) => item.panel === 'admin-auditor');
@@ -170,7 +178,7 @@ const Layout: React.FC<LayoutProps> = ({
 
       {showCustomization && currentUser.role === UserRole.ADMIN && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">Customize Platform</h3>
               <button onClick={() => setShowCustomization(false)} className="p-2 hover:bg-slate-100 rounded-lg">
@@ -248,6 +256,56 @@ const Layout: React.FC<LayoutProps> = ({
                 onChange={(event) => setDraftCustomization(prev => ({ ...prev, supportEmail: event.target.value }))}
                 className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
               />
+            </div>
+
+            <div className="pt-2 border-t border-slate-200">
+              <h4 className="text-sm font-bold text-slate-700">Email Templates</h4>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Use placeholders like {'{{reviewerName}}'} or {'{{pendingCount}}'}. Line breaks are preserved and links such as https://... become clickable.
+              </p>
+              <div className="mt-3 space-y-4">
+                {templateFields.map((field) => (
+                  <div key={field.key} className="rounded-xl border border-slate-200 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">{field.label}</p>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Subject</label>
+                      <input
+                        type="text"
+                        value={draftCustomization.emailTemplates[field.key].subject}
+                        onChange={(event) => setDraftCustomization(prev => ({
+                          ...prev,
+                          emailTemplates: {
+                            ...prev.emailTemplates,
+                            [field.key]: {
+                              ...prev.emailTemplates[field.key],
+                              subject: event.target.value
+                            }
+                          }
+                        }))}
+                        className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Body</label>
+                      <textarea
+                        value={draftCustomization.emailTemplates[field.key].body}
+                        onChange={(event) => setDraftCustomization(prev => ({
+                          ...prev,
+                          emailTemplates: {
+                            ...prev.emailTemplates,
+                            [field.key]: {
+                              ...prev.emailTemplates[field.key],
+                              body: event.target.value
+                            }
+                          }
+                        }))}
+                        rows={6}
+                        className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">

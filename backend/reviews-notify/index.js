@@ -1,6 +1,8 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { sendEmail } = require("../_shared/email");
+const { readAppCustomization } = require("../_shared/customization");
+const { renderTemplatedEmail } = require("../_shared/email-templates");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const schema = {
@@ -44,6 +46,7 @@ module.exports = async function (context, req) {
     const cyclesC = db.container("reviewCycles");
     const appsC = db.container("applications");
     const logsC = db.container("auditLogs");
+    const customization = await readAppCustomization(logsC);
 
     if (mode === "REMEDIATION_NOTIFY" || mode === "REMEDIATION_REMINDER") {
       if (!cycleId || !appId) {
@@ -133,8 +136,7 @@ module.exports = async function (context, req) {
       const csvBase64 = Buffer.from(csvContent, "utf8").toString("base64");
 
       const subjectPrefix = mode === "REMEDIATION_REMINDER" ? "Reminder" : "Action Required";
-      const subject = `[AccessGuard] ${subjectPrefix}: ${openRemediationItems.length} remediation item(s) pending`;
-      const text = [
+      const fallbackText = [
         `Hello,`,
         "",
         `${openRemediationItems.length} item(s) are pending remediation for campaign ${cycleId}.`,
@@ -144,13 +146,29 @@ module.exports = async function (context, req) {
         "Attached CSV contains all open remediation items.",
         ""
       ].join("\n");
+      const emailContent = renderTemplatedEmail(
+        customization,
+        "remediationNotify",
+        {
+          subject: `[AccessGuard] ${subjectPrefix}: ${openRemediationItems.length} remediation item(s) pending`,
+          text: fallbackText
+        },
+        {
+          subjectPrefix,
+          pendingCount: openRemediationItems.length,
+          cycleId,
+          appName: appLabel,
+          dueDate: dueDateLabel
+        }
+      );
 
       const sendResult = dryRun
         ? { ok: true, skipped: true, reason: "DRY_RUN" }
         : await sendEmail(context, {
             to: Array.from(recipients),
-            subject,
-            text,
+            subject: emailContent.subject,
+            text: emailContent.text,
+            html: emailContent.html,
             attachments: [
               {
                 fileName: `remediation_items_${appId}_${cycleId}.csv`,
@@ -261,8 +279,7 @@ module.exports = async function (context, req) {
           continue;
         }
 
-        const subject = `[AccessGuard] Reminder: ${pendingCount} review item(s) pending`;
-        const text = [
+        const fallbackText = [
           `Hello ${reviewerName},`,
           "",
           `You have ${pendingCount} pending review item(s).`,
@@ -273,13 +290,31 @@ module.exports = async function (context, req) {
           "",
           "Please review and submit your decisions."
         ].filter(Boolean).join("\n");
+        const emailContent = renderTemplatedEmail(
+          customization,
+          "reviewReminder",
+          {
+            subject: `[AccessGuard] Reminder: ${pendingCount} review item(s) pending`,
+            text: fallbackText
+          },
+          {
+            reviewerName,
+            pendingCount,
+            appLabel,
+            cycleLabel,
+            oldestAssigned: group.oldestCreatedAt ? new Date(group.oldestCreatedAt).toLocaleString() : "",
+            portalUrl,
+            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+          }
+        );
 
         const sendResult = dryRun
           ? { ok: true, skipped: true, reason: "DRY_RUN" }
           : await sendEmail(context, {
               to: reviewerEmail,
-              subject,
-              text,
+              subject: emailContent.subject,
+              text: emailContent.text,
+              html: emailContent.html,
               metadata: {
                 type: "REVIEW_REMINDER",
                 managerId: group.managerId,
@@ -312,8 +347,7 @@ module.exports = async function (context, req) {
         const cycleInfo = cycleId && appId ? await readCycle(cyclesC, cycleId, appId) : null;
         const dueDate = cycleInfo?.dueDate ? new Date(cycleInfo.dueDate).toLocaleDateString() : null;
 
-        const subject = `[AccessGuard] Escalation: reviewer has ${pendingCount} pending item(s)`;
-        const text = [
+        const fallbackText = [
           `Hello ${lineManagerHr?.name || managerOfReviewerId},`,
           "",
           `Escalation for reviewer ${reviewerName} (${group.managerId}).`,
@@ -326,13 +360,34 @@ module.exports = async function (context, req) {
           "",
           "Please follow up to ensure review completion."
         ].filter(Boolean).join("\n");
+        const emailContent = renderTemplatedEmail(
+          customization,
+          "reviewEscalation",
+          {
+            subject: `[AccessGuard] Escalation: reviewer has ${pendingCount} pending item(s)`,
+            text: fallbackText
+          },
+          {
+            lineManagerName: lineManagerHr?.name || managerOfReviewerId,
+            reviewerName,
+            reviewerId: group.managerId,
+            pendingCount,
+            appLabel,
+            cycleLabel,
+            dueDate: dueDate || "",
+            oldestAssigned: group.oldestCreatedAt ? new Date(group.oldestCreatedAt).toLocaleString() : "",
+            portalUrl,
+            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+          }
+        );
 
         const sendResult = dryRun
           ? { ok: true, skipped: true, reason: "DRY_RUN" }
           : await sendEmail(context, {
               to: lineManagerEmail,
-              subject,
-              text,
+              subject: emailContent.subject,
+              text: emailContent.text,
+              html: emailContent.html,
               metadata: {
                 type: "REVIEW_ESCALATION",
                 reviewerId: group.managerId,

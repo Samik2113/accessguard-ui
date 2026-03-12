@@ -48,13 +48,37 @@ const CUSTOMIZATION_STORAGE_KEY = 'accessguard.customization.v1';
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
 const SESSION_TOUCH_THROTTLE_MS = 30 * 1000;
 
+const DEFAULT_EMAIL_TEMPLATES = {
+  reviewAssignment: {
+    subject: '[AccessGuard] Review items assigned ({{appName}})',
+    body: 'Hello {{reviewerName}},\n\nYou have {{pendingCount}} review item(s) assigned for campaign "{{cycleName}}" ({{appName}}).\nDue date: {{dueDate}}\n{{portalLine}}\n\nPlease review and submit your decisions.'
+  },
+  reviewReminder: {
+    subject: '[AccessGuard] Reminder: {{pendingCount}} review item(s) pending',
+    body: 'Hello {{reviewerName}},\n\nYou have {{pendingCount}} pending review item(s).\nApplications: {{appLabel}}\nCampaign(s): {{cycleLabel}}\nOldest pending assigned: {{oldestAssigned}}\n{{portalLine}}\n\nPlease review and submit your decisions.'
+  },
+  reviewEscalation: {
+    subject: '[AccessGuard] Escalation: reviewer has {{pendingCount}} pending item(s)',
+    body: 'Hello {{lineManagerName}},\n\nEscalation for reviewer {{reviewerName}} ({{reviewerId}}).\nPending review items: {{pendingCount}}\nApplications: {{appLabel}}\nCampaign(s): {{cycleLabel}}\nCampaign due date: {{dueDate}}\nOldest pending assigned: {{oldestAssigned}}\n{{portalLine}}\n\nPlease follow up to ensure review completion.'
+  },
+  remediationNotify: {
+    subject: '[AccessGuard] {{subjectPrefix}}: {{pendingCount}} remediation item(s) pending',
+    body: 'Hello,\n\n{{pendingCount}} item(s) are pending remediation for campaign {{cycleId}}.\nApplication: {{appName}}\nDue date: {{dueDate}}\n\nAttached CSV contains all open remediation items.'
+  },
+  reviewReassigned: {
+    subject: '[AccessGuard] Review item reassigned to you ({{appName}})',
+    body: 'Hello {{reviewerName}},\n\nA review item has been reassigned to you.\nItem ID: {{itemId}}\nApplication: {{appName}}\nEntitlement: {{entitlement}}\nReviewed user: {{reviewedUser}}\n{{portalLine}}\n\nPlease review and take action.'
+  }
+};
+
 const DEFAULT_CUSTOMIZATION: AppCustomization = {
   platformName: 'AccessGuard',
   primaryColor: '#2563eb',
   environmentLabel: 'Development',
   loginSubtitle: 'Sign in with emailId and password.',
   supportEmail: '',
-  idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES
+  idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES,
+  emailTemplates: DEFAULT_EMAIL_TEMPLATES
 };
 
 type PersistedSession = {
@@ -97,14 +121,7 @@ function readCustomization(): AppCustomization {
     const raw = localStorage.getItem(CUSTOMIZATION_STORAGE_KEY);
     if (!raw) return DEFAULT_CUSTOMIZATION;
     const parsed = JSON.parse(raw) as Partial<AppCustomization>;
-    return {
-      platformName: String(parsed?.platformName || DEFAULT_CUSTOMIZATION.platformName),
-      primaryColor: normalizeHexColor(parsed?.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
-      environmentLabel: String(parsed?.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
-      loginSubtitle: String(parsed?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
-      supportEmail: String(parsed?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
-      idleTimeoutMinutes: normalizeIdleTimeoutMinutes(parsed?.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
-    };
+    return normalizeCustomization(parsed);
   } catch {
     return DEFAULT_CUSTOMIZATION;
   }
@@ -124,6 +141,34 @@ function normalizeIdleTimeoutMinutes(input: unknown, fallback: number) {
   const parsed = Number(input);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(24 * 60, Math.max(5, Math.round(parsed)));
+}
+
+function normalizeTemplate(input: unknown, fallback: { subject: string; body: string }) {
+  const template = (input || {}) as { subject?: unknown; body?: unknown };
+  const subject = String(template.subject || '').trim();
+  const body = String(template.body || '');
+  return {
+    subject: subject || fallback.subject,
+    body: body.length > 0 ? body : fallback.body
+  };
+}
+
+function normalizeCustomization(input?: Partial<AppCustomization> | null): AppCustomization {
+  return {
+    platformName: String(input?.platformName || DEFAULT_CUSTOMIZATION.platformName),
+    primaryColor: normalizeHexColor(input?.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
+    environmentLabel: String(input?.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
+    loginSubtitle: String(input?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
+    supportEmail: String(input?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
+    idleTimeoutMinutes: normalizeIdleTimeoutMinutes(input?.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes),
+    emailTemplates: {
+      reviewAssignment: normalizeTemplate(input?.emailTemplates?.reviewAssignment, DEFAULT_EMAIL_TEMPLATES.reviewAssignment),
+      reviewReminder: normalizeTemplate(input?.emailTemplates?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
+      reviewEscalation: normalizeTemplate(input?.emailTemplates?.reviewEscalation, DEFAULT_EMAIL_TEMPLATES.reviewEscalation),
+      remediationNotify: normalizeTemplate(input?.emailTemplates?.remediationNotify, DEFAULT_EMAIL_TEMPLATES.remediationNotify),
+      reviewReassigned: normalizeTemplate(input?.emailTemplates?.reviewReassigned, DEFAULT_EMAIL_TEMPLATES.reviewReassigned)
+    }
+  };
 }
 
 function getOnPrimaryTextColor(input: unknown, fallback: string) {
@@ -324,14 +369,7 @@ const App: React.FC = () => {
         const res: any = await getAppCustomization();
         const remote = res?.customization;
         if (!remote) return;
-        const normalized: AppCustomization = {
-          platformName: String(remote.platformName || DEFAULT_CUSTOMIZATION.platformName),
-          primaryColor: normalizeHexColor(remote.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
-          environmentLabel: String(remote.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
-          loginSubtitle: String(remote.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
-          supportEmail: String(remote.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
-          idleTimeoutMinutes: normalizeIdleTimeoutMinutes(remote.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
-        };
+        const normalized: AppCustomization = normalizeCustomization(remote);
         setCustomization(normalized);
         writeCustomization(normalized);
       } catch (err) {
@@ -347,15 +385,13 @@ const App: React.FC = () => {
       alert('Only Admin can customize platform settings.');
       return;
     }
-    const normalized: AppCustomization = {
+    const normalized: AppCustomization = normalizeCustomization({
       ...nextCustomization,
       platformName: String(nextCustomization.platformName || '').trim() || DEFAULT_CUSTOMIZATION.platformName,
-      primaryColor: normalizeHexColor(nextCustomization.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
       environmentLabel: String(nextCustomization.environmentLabel || '').trim() || DEFAULT_CUSTOMIZATION.environmentLabel,
       loginSubtitle: String(nextCustomization.loginSubtitle || '').trim() || DEFAULT_CUSTOMIZATION.loginSubtitle,
-      supportEmail: String(nextCustomization.supportEmail || '').trim(),
-      idleTimeoutMinutes: normalizeIdleTimeoutMinutes(nextCustomization.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
-    };
+      supportEmail: String(nextCustomization.supportEmail || '').trim()
+    });
 
     setCustomization(normalized);
     writeCustomization(normalized);
@@ -371,14 +407,7 @@ const App: React.FC = () => {
       });
       const saved = res?.customization;
       if (saved) {
-        const normalizedSaved: AppCustomization = {
-          platformName: String(saved.platformName || DEFAULT_CUSTOMIZATION.platformName),
-          primaryColor: normalizeHexColor(saved.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
-          environmentLabel: String(saved.environmentLabel || DEFAULT_CUSTOMIZATION.environmentLabel),
-          loginSubtitle: String(saved.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
-          supportEmail: String(saved.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
-          idleTimeoutMinutes: normalizeIdleTimeoutMinutes(saved.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes)
-        };
+        const normalizedSaved: AppCustomization = normalizeCustomization(saved);
         setCustomization(normalizedSaved);
         writeCustomization(normalizedSaved);
       }

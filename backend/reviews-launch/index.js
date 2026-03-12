@@ -3,6 +3,8 @@ const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { customAlphabet } = require("nanoid");
 const { sendEmail } = require("../_shared/email");
+const { readAppCustomization } = require("../_shared/customization");
+const { renderTemplatedEmail } = require("../_shared/email-templates");
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
@@ -405,6 +407,7 @@ module.exports = async function (context, req) {
 
     const notifyResults = [];
     const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+    const customization = await readAppCustomization(logsC);
     for (const [managerId, info] of assignmentByManager.entries()) {
       let reviewerHr = null;
       try {
@@ -420,8 +423,7 @@ module.exports = async function (context, req) {
       }
 
       const due = new Date(dueDate).toLocaleDateString();
-      const subject = `[AccessGuard] Review items assigned (${appNameResolved})`;
-      const text = [
+      const fallbackText = [
         `Hello ${reviewerHr?.name || managerId},`,
         "",
         `You have ${info.count} review item(s) assigned for campaign \"${cycleName}\" (${appNameResolved}).`,
@@ -430,11 +432,29 @@ module.exports = async function (context, req) {
         "",
         "Please review and submit your decisions."
       ].filter(Boolean).join("\n");
+      const emailContent = renderTemplatedEmail(
+        customization,
+        "reviewAssignment",
+        {
+          subject: `[AccessGuard] Review items assigned (${appNameResolved})`,
+          text: fallbackText
+        },
+        {
+          reviewerName: reviewerHr?.name || managerId,
+          pendingCount: info.count,
+          cycleName,
+          appName: appNameResolved,
+          dueDate: due,
+          portalUrl,
+          portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+        }
+      );
 
       const sendResult = await sendEmail(context, {
         to: reviewerEmail,
-        subject,
-        text,
+        subject: emailContent.subject,
+        text: emailContent.text,
+        html: emailContent.html,
         metadata: {
           type: "REVIEW_ASSIGNMENT",
           cycleId,

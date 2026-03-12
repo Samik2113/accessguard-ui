@@ -217,6 +217,13 @@ export const saveAppCustomization = (payload: {
     loginSubtitle: string;
     supportEmail: string;
     idleTimeoutMinutes: number;
+    emailTemplates: {
+      reviewAssignment: { subject: string; body: string };
+      reviewReminder: { subject: string; body: string };
+      reviewEscalation: { subject: string; body: string };
+      remediationNotify: { subject: string; body: string };
+      reviewReassigned: { subject: string; body: string };
+    };
   };
   actor: { id: string; name: string; role: 'ADMIN' | 'AUDITOR' | 'USER' };
 }) => postJson(

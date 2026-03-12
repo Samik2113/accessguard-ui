@@ -2,6 +2,8 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const { sendEmail } = require("../_shared/email");
+const { readAppCustomization } = require("../_shared/customization");
+const { renderTemplatedEmail } = require("../_shared/email-templates");
 const ajv = new Ajv({ allErrors: true });
 const schema = {
   type: "object",
@@ -106,21 +108,41 @@ module.exports = async function (context, req) {
       const reviewerEmail = String(targetHr?.email || "").trim().toLowerCase();
       if (reviewerEmail) {
         const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+        const customization = await readAppCustomization(logsC);
+        const fallbackText = [
+          `Hello ${targetHr?.name || targetManagerId},`,
+          "",
+          `A review item has been reassigned to you.`,
+          `Item ID: ${body.itemId}`,
+          `Application: ${itm.appName || itm.appId || "Unknown"}`,
+          `Entitlement: ${itm.entitlement || "Unknown"}`,
+          `Reviewed user: ${itm.userName || itm.appUserId || "Unknown"}`,
+          portalUrl ? `Portal: ${portalUrl}` : null,
+          "",
+          "Please review and take action."
+        ].filter(Boolean).join("\n");
+        const emailContent = renderTemplatedEmail(
+          customization,
+          "reviewReassigned",
+          {
+            subject: `[AccessGuard] Review item reassigned to you (${itm.appName || itm.appId || "App"})`,
+            text: fallbackText
+          },
+          {
+            reviewerName: targetHr?.name || targetManagerId,
+            itemId: body.itemId,
+            appName: itm.appName || itm.appId || "Unknown",
+            entitlement: itm.entitlement || "Unknown",
+            reviewedUser: itm.userName || itm.appUserId || "Unknown",
+            portalUrl,
+            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+          }
+        );
         await sendEmail(context, {
           to: reviewerEmail,
-          subject: `[AccessGuard] Review item reassigned to you (${itm.appName || itm.appId || "App"})`,
-          text: [
-            `Hello ${targetHr?.name || targetManagerId},`,
-            "",
-            `A review item has been reassigned to you.`,
-            `Item ID: ${body.itemId}`,
-            `Application: ${itm.appName || itm.appId || "Unknown"}`,
-            `Entitlement: ${itm.entitlement || "Unknown"}`,
-            `Reviewed user: ${itm.userName || itm.appUserId || "Unknown"}`,
-            portalUrl ? `Portal: ${portalUrl}` : null,
-            "",
-            "Please review and take action."
-          ].filter(Boolean).join("\n"),
+          subject: emailContent.subject,
+          text: emailContent.text,
+          html: emailContent.html,
           metadata: {
             type: "REVIEW_REASSIGNED",
             itemId: body.itemId,
