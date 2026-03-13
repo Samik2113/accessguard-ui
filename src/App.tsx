@@ -1146,7 +1146,7 @@ useEffect(() => {
     addAuditLog('SOD_UPDATE', `SoD policies updated manually.`);
   };
 
-  const handleLaunchReview = async (appId: string, dueDateStr?: string) => {
+  const handleLaunchReview = async (appId: string, dueDateStr?: string, certificationType: 'MANAGER' | 'APPLICATION_OWNER' = 'MANAGER') => {
     if (currentUser.role !== UserRole.ADMIN) {
       alert('Only Admin can launch certifications.');
       return;
@@ -1192,7 +1192,8 @@ useEffect(() => {
         {
           appId: normalizedAppId.trim(),
           name: targetApp.name,
-          dueDate: dueDate.toISOString()
+          dueDate: dueDate.toISOString(),
+          certificationType
         },
         {
           id: currentUser.id,

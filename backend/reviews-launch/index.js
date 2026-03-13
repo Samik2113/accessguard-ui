@@ -15,6 +15,7 @@ const schema = {
     appId: { type: "string", minLength: 1 },
     dueDate: { type: "string" },
     name: { type: "string" },
+    certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER"] },
     launchIfExists: { type: "boolean" }
   },
   additionalProperties: true
@@ -59,6 +60,10 @@ module.exports = async function (context, req) {
     const nowIso = now.toISOString();
     const appId = body.appId.trim();
     const appIdSafe = SAFE(appId);
+    const certificationType = String(body.certificationType || "MANAGER").trim().toUpperCase() === "APPLICATION_OWNER"
+      ? "APPLICATION_OWNER"
+      : "MANAGER";
+    const reviewerLabel = certificationType === "APPLICATION_OWNER" ? "Application Owner" : "Manager";
     const dueDate = body.dueDate
       ? new Date(body.dueDate).toISOString()
       : new Date(now.getTime() + 14 * 86400000).toISOString();
@@ -302,7 +307,7 @@ module.exports = async function (context, req) {
     const stamp = nowIso.slice(0, 19).replace(/[-:T]/g, "");
     const cycleId = `CYC_${appIdSafe}_${stamp}_${nanoid()}`;
     const appNameResolved = await resolveAppName(appId, body.name);
-    const cycleName = `Manager Campaign - ${appNameResolved} - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+    const cycleName = `${reviewerLabel} Campaign - ${appNameResolved} - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
     const total = accounts.length;
 
     await cyclesC.items.upsert({
@@ -318,6 +323,7 @@ module.exports = async function (context, req) {
       launchedAt: nowIso,
       dueDate,
       confirmedManagers: [],
+      certificationType,
       type: "review-cycle"
     });
 
@@ -333,11 +339,16 @@ module.exports = async function (context, req) {
           const hr = account.userId ? hrCache.get(account.userId) : null;
 
           let managerId;
-          // Manager priority: HR manager -> app owner mapped to HR -> OWNER fallback token
-          if (hr && hr.managerId && String(hr.managerId).trim().length > 0) {
-            managerId = String(hr.managerId).trim();
-          } else {
+          // Reviewer assignment strategy depends on certification type
+          if (certificationType === "APPLICATION_OWNER") {
             managerId = await resolveAppOwnerManagerId(account.appId, appIdSafe);
+          } else {
+            // Manager priority: HR manager -> app owner mapped to HR -> OWNER fallback token
+            if (hr && hr.managerId && String(hr.managerId).trim().length > 0) {
+              managerId = String(hr.managerId).trim();
+            } else {
+              managerId = await resolveAppOwnerManagerId(account.appId, appIdSafe);
+            }
           }
           if (!managerId || String(managerId).trim().length === 0) {
             managerId = `OWNER_${appIdSafe}`;
@@ -401,7 +412,7 @@ module.exports = async function (context, req) {
       userName: actorName,
       timestamp: nowIso,
       action: "REVIEW_LAUNCH",
-      details: `cycleId=${cycleId}; appId=${appId}; appName=${appNameResolved}; itemsCreated=${created}; errors=${errors.length}`,
+      details: `cycleId=${cycleId}; appId=${appId}; appName=${appNameResolved}; certificationType=${certificationType}; itemsCreated=${created}; errors=${errors.length}`,
       type: "audit"
     });
 
@@ -477,6 +488,7 @@ module.exports = async function (context, req) {
       cycleId,
       appId,
       appName: appNameResolved,
+      certificationType,
       itemsCreated: created,
       pending: created,
       status: "ACTIVE",

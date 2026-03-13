@@ -7,7 +7,7 @@ import { useReviewCycleDetail } from '../features/reviews/queries';
 interface DashboardProps {
   cycles: ReviewCycle[];
   applications: Application[];
-  onLaunch: (appId: string, dueDate?: string) => void;
+  onLaunch: (appId: string, dueDate?: string, certificationType?: 'MANAGER' | 'APPLICATION_OWNER') => void;
   reviewItems: ReviewItem[];
   users: User[];
   sodPolicies: SoDPolicy[];
@@ -25,6 +25,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     d.setDate(d.getDate() + 14);
     return d.toISOString().split('T')[0];
   });
+  const [launchCertificationType, setLaunchCertificationType] = useState<'MANAGER' | 'APPLICATION_OWNER'>('MANAGER');
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
@@ -954,12 +955,23 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Review Completion Due Date</label>
               <input type="date" value={launchDueDate} onChange={e => setLaunchDueDate(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10" />
             </div>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Certification Type</label>
+              <select
+                value={launchCertificationType}
+                onChange={e => setLaunchCertificationType(e.target.value as 'MANAGER' | 'APPLICATION_OWNER')}
+                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+              >
+                <option value="MANAGER">Manager Certification</option>
+                <option value="APPLICATION_OWNER">Application Owner Certification</option>
+              </select>
+            </div>
             <div className="space-y-2">
               {applications.map(app => (
                 <button
                   key={app.appId || app.id || app.name}
                   onClick={() => {
-                    onLaunch(String(app.appId || app.id || ''), launchDueDate);
+                    onLaunch(String(app.appId || app.id || ''), launchDueDate, launchCertificationType);
                     setShowLaunchModal(false);
                   }}
                   className="w-full text-left p-4 bg-slate-50 border rounded-xl hover:bg-blue-50 hover:border-blue-400 flex justify-between items-center transition-all"
