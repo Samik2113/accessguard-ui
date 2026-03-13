@@ -1001,7 +1001,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   alert('Select an application to launch campaign.');
                   return;
                 }
-                const selectedApp = launchApplicationsSorted.find(app => String(app.name || '').trim().toLowerCase() === selectedName.toLowerCase());
+                const matchedApps = launchApplicationsSorted.filter(app => String(app.name || '').trim().toLowerCase() === selectedName.toLowerCase());
+                if (matchedApps.length > 1) {
+                  alert('Multiple applications exist with this name. Please make application names unique before launching.');
+                  return;
+                }
+                const selectedApp = matchedApps[0];
                 const selectedId = String((selectedApp as any)?.appId || selectedApp?.id || '').trim();
                 if (!selectedId) {
                   alert('Selected application is invalid. Please choose from the dropdown list.');

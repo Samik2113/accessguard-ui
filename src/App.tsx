@@ -987,6 +987,45 @@ useEffect(() => {
       setAccess(prev => recalculateSoD(prev, sodPolicies));
       return;
     } else if (type === 'APPLICATIONS') {
+      const normalizedRows = (Array.isArray(data) ? data : []).map((entry: any) => ({
+        ...entry,
+        appId: String(entry?.appId ?? entry?.id ?? '').trim(),
+        name: String(entry?.name ?? '').trim()
+      }));
+
+      const existingNameToAppId = new Map(
+        applications
+          .map(app => [String(app.name || '').trim().toLowerCase(), String((app as any).appId || app.id || '').trim()] as const)
+          .filter(([nameKey, appKey]) => Boolean(nameKey) && Boolean(appKey))
+      );
+
+      const payloadNameToAppId = new Map<string, string>();
+      const duplicateErrors: string[] = [];
+
+      normalizedRows.forEach((entry) => {
+        const appId = String(entry.appId || '').trim();
+        const name = String(entry.name || '').trim();
+        const nameKey = name.toLowerCase();
+        if (!appId || !nameKey) return;
+
+        const existingAppId = existingNameToAppId.get(nameKey);
+        if (existingAppId && existingAppId !== appId) {
+          duplicateErrors.push(`'${name}' already exists for appId '${existingAppId}'`);
+        }
+
+        const payloadAppId = payloadNameToAppId.get(nameKey);
+        if (payloadAppId && payloadAppId !== appId) {
+          duplicateErrors.push(`'${name}' is duplicated in import for appIds '${payloadAppId}' and '${appId}'`);
+        }
+
+        payloadNameToAppId.set(nameKey, appId);
+      });
+
+      if (duplicateErrors.length > 0) {
+        alert(`Application Name must be unique.\n${Array.from(new Set(duplicateErrors)).join('\n')}`);
+        return;
+      }
+
       await importApplications(data);
       const res = await getApplications(100);
       setApplications(res.items ?? []);
@@ -1458,15 +1497,15 @@ useEffect(() => {
       const res = await importApplications([app]);
       if (!res?.ok) {
         console.error('Create application failed:', res);
-        window.alert('Failed to create application. See console for details.');
+        window.alert(res?.error || 'Failed to create application. See console for details.');
         return;
       }
-      // Add to local state (backend should persist)
-      setApplications(prev => [...prev, app]);
+      const refreshed = await getApplications(100);
+      setApplications(refreshed.items ?? []);
       await addAuditLog('APP_CREATE', `Created application ${app.name} (${app.id})`);
     } catch (err: any) {
       console.error('Create application error:', err);
-      window.alert('Failed to create application. See console for details.');
+      window.alert(err?.message || 'Failed to create application. See console for details.');
     }
   };
 
