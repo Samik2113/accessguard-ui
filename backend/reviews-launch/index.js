@@ -68,7 +68,7 @@ module.exports = async function (context, req) {
     const riskScope = ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"].includes(riskScopeRaw)
       ? riskScopeRaw
       : "ALL_ACCESS";
-    const certificationType = riskScope === "SOD_ONLY" ? "MANAGER" : requestedCertificationType;
+    const certificationType = requestedCertificationType;
     const reviewerLabel = certificationType === "APPLICATION_OWNER" ? "Application Owner" : "Manager";
     const riskScopeLabel = riskScope === "SOD_ONLY"
       ? "SoD Conflicts"
@@ -179,7 +179,7 @@ module.exports = async function (context, req) {
     // Block duplicate non-completed cycles unless caller explicitly overrides
     if (!body.launchIfExists) {
       const { resources: existing } = await cyclesC.items.query({
-        query: "SELECT TOP 1 * FROM c WHERE c.appId=@a AND c.status <> 'COMPLETED' ORDER BY c.launchedAt DESC",
+        query: "SELECT TOP 1 * FROM c WHERE c.appId=@a AND c.status NOT IN ('COMPLETED','CANCELLED') ORDER BY c.launchedAt DESC",
         parameters: [{ name: "@a", value: appId }]
       }).fetchAll();
       if (existing.length > 0) {

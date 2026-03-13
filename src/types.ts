@@ -82,6 +82,8 @@ export interface ReviewCycle {
   launchedAt?: string;
   dueDate?: string;
   completedAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
   totalItems: number;
   pendingItems: number;
   pendingRemediationItems?: number;

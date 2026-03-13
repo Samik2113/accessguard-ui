@@ -267,6 +267,8 @@ const App: React.FC = () => {
     ...cycle,
     appId: String(cycle?.appId ?? cycle?.applicationId ?? ''),
     appName: cycle?.appName || getApplicationNameById(cycle?.appId),
+    cancelledAt: cycle?.cancelledAt || undefined,
+    cancelReason: typeof cycle?.cancelReason === 'string' ? cycle.cancelReason : undefined,
     pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
     confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
     certificationType: cycle?.certificationType === 'APPLICATION_OWNER' ? 'APPLICATION_OWNER' : 'MANAGER',

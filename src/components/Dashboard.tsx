@@ -343,12 +343,14 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">No campaigns found.</td></tr>
             ) : (
               cycleList.map((cycle) => {
-                const isCompleted = isClosedCycle(cycle.status);
+                const isCancelled = cycle.status === ReviewStatus.CANCELLED;
+                const isCompleted = cycle.status === ReviewStatus.COMPLETED;
                 const app = applications.find(a => a.id === cycle.appId);
                 const owner = users.find(u => u.id === app?.ownerId);
                 const dueDateLabel = cycle.dueDate
                   ? new Date(cycle.dueDate).toLocaleDateString()
                   : '—';
+                const progressPercent = cycle.totalItems > 0 ? Math.round(((cycle.totalItems - cycle.pendingItems) / cycle.totalItems) * 100) : 0;
                 return (
                   <tr key={cycle.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-5">
@@ -359,6 +361,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                           {getRiskScopeLabel(cycle.riskScope)}
                         </span>
                       </div>
+                      {isCancelled && cycle.cancelReason && (
+                        <div className="mt-1 text-[10px] text-slate-500">Cancel reason: {cycle.cancelReason}</div>
+                      )}
                       <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-slate-500">
                         <Calendar className="w-3 h-3" /> Due: {dueDateLabel}
                       </div>
@@ -378,12 +383,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                         </span>
                     </td>
                     <td className="px-8 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden max-w-[100px]">
-                          <div className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${cycle.totalItems > 0 ? ((cycle.totalItems - cycle.pendingItems) / cycle.totalItems) * 100 : 0}%` }}></div>
+                      {isCancelled ? (
+                        <span className="text-xs font-bold text-slate-500">N/A</span>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden max-w-[100px]">
+                            <div className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${progressPercent}%` }}></div>
+                          </div>
+                          <span className="text-xs font-medium text-slate-600">{progressPercent}%</span>
                         </div>
-                        <span className="text-xs font-medium text-slate-600">{Math.round(((cycle.totalItems - cycle.pendingItems) / cycle.totalItems) * 100)}%</span>
-                      </div>
+                      )}
                     </td>
                     <td className="px-8 py-5 text-right">
                       <button onClick={() => setSelectedCampaignId(cycle.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-all ml-auto">
@@ -462,6 +471,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                       Risk Scope: {getRiskScopeLabel(selectedCampaign?.riskScope)}
                     </span>
                   </div>
+                  {selectedCampaign?.status === ReviewStatus.CANCELLED && selectedCampaign?.cancelReason && (
+                    <div className="mt-1 text-[11px] text-slate-600 font-medium">Cancel reason: {selectedCampaign.cancelReason}</div>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1052,17 +1064,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Certification Type</label>
               <select
-                value={launchRiskScope === 'SOD_ONLY' ? 'MANAGER' : launchCertificationType}
+                value={launchCertificationType}
                 onChange={e => setLaunchCertificationType(e.target.value as 'MANAGER' | 'APPLICATION_OWNER')}
-                disabled={launchRiskScope === 'SOD_ONLY'}
                 className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
               >
                 <option value="MANAGER">Manager Certification</option>
                 <option value="APPLICATION_OWNER">Application Owner Certification</option>
               </select>
-              {launchRiskScope === 'SOD_ONLY' && (
-                <p className="mt-1 text-[11px] text-slate-500">SoD-only certification is always assigned to Managers.</p>
-              )}
             </div>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Risk Scope</label>
@@ -1095,8 +1103,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   alert('Selected application is invalid. Please choose from the dropdown list.');
                   return;
                 }
-                const effectiveCertificationType = launchRiskScope === 'SOD_ONLY' ? 'MANAGER' : launchCertificationType;
-                onLaunch(selectedId, launchDueDate, effectiveCertificationType, launchRiskScope);
+                onLaunch(selectedId, launchDueDate, launchCertificationType, launchRiskScope);
                 setShowLaunchModal(false);
               }}
               className="w-full py-3 rounded-xl font-bold text-white hover:opacity-90 transition-all inline-flex items-center justify-center gap-2"
