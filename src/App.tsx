@@ -31,6 +31,7 @@ import {
   reassignReviewItem,
   reassignReviewItemsBulk,
   confirmManager,
+  cancelCycle,
   sendReviewNotifications,
   loginUser,
   bootstrapFirstUser,
@@ -267,7 +268,15 @@ const App: React.FC = () => {
     appId: String(cycle?.appId ?? cycle?.applicationId ?? ''),
     appName: cycle?.appName || getApplicationNameById(cycle?.appId),
     pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
-    confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : []
+    confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
+    certificationType: cycle?.certificationType === 'APPLICATION_OWNER' ? 'APPLICATION_OWNER' : 'MANAGER',
+    riskScope: cycle?.riskScope === 'SOD_ONLY'
+      ? 'SOD_ONLY'
+      : cycle?.riskScope === 'PRIVILEGED_ONLY'
+        ? 'PRIVILEGED_ONLY'
+        : cycle?.riskScope === 'ORPHAN_ONLY'
+          ? 'ORPHAN_ONLY'
+          : 'ALL_ACCESS'
   });
 
   const normalizeReviewItems = (items: any[]): ReviewItem[] =>
@@ -937,6 +946,28 @@ useEffect(() => {
     );
     return response;
   };
+
+  const handleCancelCampaign = async (cycleId: string, reason: string) => {
+    try {
+      const cycle = cycles.find(c => c.id === cycleId);
+      if (!cycle) throw new Error('Review cycle not found');
+
+      await cancelCycle({ cycleId, appId: cycle.appId, reason });
+      await invalidateReviewQueries(cycleId);
+
+      const cyclesRes = await getReviewCycles({ top: 200 });
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
+
+      const itemsRes = await getReviewItems({ top: 500 });
+      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
+
+      await addAuditLog('CAMPAIGN_CANCEL', `Cancelled review campaign: ${cycleId}. Reason: ${reason}`);
+      alert('Campaign cancelled successfully.');
+    } catch (error: any) {
+      console.error('Failed to cancel campaign:', error);
+      alert(`Failed to cancel campaign: ${error?.message || 'Unknown error'}`);
+    }
+  };
   const handleDataImport = async (
   type: 'HR' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD' | 'APPLICATIONS',
   data: any[],
@@ -1185,7 +1216,12 @@ useEffect(() => {
     addAuditLog('SOD_UPDATE', `SoD policies updated manually.`);
   };
 
-  const handleLaunchReview = async (appId: string, dueDateStr?: string, certificationType: 'MANAGER' | 'APPLICATION_OWNER' = 'MANAGER') => {
+  const handleLaunchReview = async (
+    appId: string,
+    dueDateStr?: string,
+    certificationType: 'MANAGER' | 'APPLICATION_OWNER' = 'MANAGER',
+    riskScope: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY' = 'ALL_ACCESS'
+  ) => {
     if (currentUser.role !== UserRole.ADMIN) {
       alert('Only Admin can launch certifications.');
       return;
@@ -1198,7 +1234,7 @@ useEffect(() => {
         .map(v => String(v || '').trim())
         .filter(Boolean)
     );
-    const existingActive = cycles.find(c => candidateAppIds.has(String(c.appId || '').trim()) && c.status !== ReviewStatus.COMPLETED);
+    const existingActive = cycles.find(c => candidateAppIds.has(String(c.appId || '').trim()) && c.status !== ReviewStatus.COMPLETED && c.status !== ReviewStatus.CANCELLED);
     if (existingActive) { alert(`A campaign for ${targetApp.name} is already running.`); return; }
     const appAccess = access.filter(a => candidateAppIds.has(String(a.appId || '').trim()));
     let hasAccounts = appAccess.length > 0;
@@ -1232,7 +1268,8 @@ useEffect(() => {
           appId: normalizedAppId.trim(),
           name: targetApp.name,
           dueDate: dueDate.toISOString(),
-          certificationType
+          certificationType,
+          riskScope
         },
         {
           id: currentUser.id,
@@ -1816,7 +1853,7 @@ useEffect(() => {
       customization={customization}
       onSaveCustomization={handleSaveCustomization}
     >
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} />}
       {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} entitlements={entitlements} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory
@@ -1853,7 +1890,7 @@ useEffect(() => {
         <ManagerPortal 
           items={reviewItems.filter(i => {
             const cycle = cycles.find(c => c.id === i.reviewCycleId);
-            return cycle?.status !== ReviewStatus.COMPLETED;
+            return cycle?.status !== ReviewStatus.COMPLETED && cycle?.status !== ReviewStatus.CANCELLED;
           })} 
           onAction={handleAction} onBulkAction={handleBulkAction} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} currentManagerId={currentUser.id} isAdmin={currentUser.role === UserRole.ADMIN} 
           applications={applications} sodPolicies={sodPolicies} users={users} access={access} cycles={cycles} onConfirmReview={handleConfirmReview}

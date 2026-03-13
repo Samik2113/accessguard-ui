@@ -16,6 +16,7 @@ const schema = {
     dueDate: { type: "string" },
     name: { type: "string" },
     certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER"] },
+    riskScope: { type: "string", enum: ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"] },
     launchIfExists: { type: "boolean" }
   },
   additionalProperties: true
@@ -60,10 +61,22 @@ module.exports = async function (context, req) {
     const nowIso = now.toISOString();
     const appId = body.appId.trim();
     const appIdSafe = SAFE(appId);
-    const certificationType = String(body.certificationType || "MANAGER").trim().toUpperCase() === "APPLICATION_OWNER"
+    const requestedCertificationType = String(body.certificationType || "MANAGER").trim().toUpperCase() === "APPLICATION_OWNER"
       ? "APPLICATION_OWNER"
       : "MANAGER";
+    const riskScopeRaw = String(body.riskScope || "ALL_ACCESS").trim().toUpperCase();
+    const riskScope = ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"].includes(riskScopeRaw)
+      ? riskScopeRaw
+      : "ALL_ACCESS";
+    const certificationType = riskScope === "SOD_ONLY" ? "MANAGER" : requestedCertificationType;
     const reviewerLabel = certificationType === "APPLICATION_OWNER" ? "Application Owner" : "Manager";
+    const riskScopeLabel = riskScope === "SOD_ONLY"
+      ? "SoD Conflicts"
+      : riskScope === "PRIVILEGED_ONLY"
+        ? "Privileged Access"
+        : riskScope === "ORPHAN_ONLY"
+          ? "Orphan Accounts"
+          : "All Access";
     const dueDate = body.dueDate
       ? new Date(body.dueDate).toISOString()
       : new Date(now.getTime() + 14 * 86400000).toISOString();
@@ -303,12 +316,38 @@ module.exports = async function (context, req) {
       return hits;
     };
 
+    const appNameResolved = await resolveAppName(appId, body.name);
+
+    const accountsForLaunch = [];
+    for (const account of accounts) {
+      const hr = account.userId ? hrCache.get(account.userId) : null;
+      const conflictIds = conflictsFor(account, account.appId, account.entitlement);
+      const conflictNames = conflictIds.map(id => {
+        const hit = policies.find(policy => (policy.id || policy.policyId) === id);
+        return hit?.policyName || String(id);
+      });
+      const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
+      const isOrphan = !hr || parseBool(account.isOrphan);
+
+      const includeByScope =
+        riskScope === "ALL_ACCESS" ||
+        (riskScope === "SOD_ONLY" && conflictIds.length > 0) ||
+        (riskScope === "PRIVILEGED_ONLY" && isPrivileged) ||
+        (riskScope === "ORPHAN_ONLY" && isOrphan);
+
+      if (!includeByScope) continue;
+      accountsForLaunch.push({ account, hr, conflictIds, conflictNames, isPrivileged, isOrphan });
+    }
+
+    if (accountsForLaunch.length === 0) {
+      return bad(400, `No accounts matched selected risk scope (${riskScopeLabel}) for appId=${appId}`, req);
+    }
+
     // Create cycle header first, then fan out review item creation
     const stamp = nowIso.slice(0, 19).replace(/[-:T]/g, "");
     const cycleId = `CYC_${appIdSafe}_${stamp}_${nanoid()}`;
-    const appNameResolved = await resolveAppName(appId, body.name);
-    const cycleName = `${reviewerLabel} Campaign - ${appNameResolved} - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
-    const total = accounts.length;
+    const cycleName = `${reviewerLabel} Campaign - ${riskScopeLabel} - ${appNameResolved} - ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`;
+    const total = accountsForLaunch.length;
 
     await cyclesC.items.upsert({
       id: cycleId,
@@ -324,6 +363,7 @@ module.exports = async function (context, req) {
       dueDate,
       confirmedManagers: [],
       certificationType,
+      riskScope,
       type: "review-cycle"
     });
 
@@ -332,11 +372,12 @@ module.exports = async function (context, req) {
     let created = 0;
     const errors = [];
     const assignmentByManager = new Map();
-    for (let i = 0; i < accounts.length; i += BATCH) {
-      const chunk = accounts.slice(i, i + BATCH);
-      await Promise.all(chunk.map(async (account, idx) => {
+    for (let i = 0; i < accountsForLaunch.length; i += BATCH) {
+      const chunk = accountsForLaunch.slice(i, i + BATCH);
+      await Promise.all(chunk.map(async (launchEntry, idx) => {
         try {
-          const hr = account.userId ? hrCache.get(account.userId) : null;
+          const account = launchEntry.account;
+          const hr = launchEntry.hr;
 
           let managerId;
           // Reviewer assignment strategy depends on certification type
@@ -354,12 +395,9 @@ module.exports = async function (context, req) {
             managerId = `OWNER_${appIdSafe}`;
           }
 
-          const conflictIds = conflictsFor(account, account.appId, account.entitlement);
-          const conflictNames = conflictIds.map(id => {
-            const hit = policies.find(policy => (policy.id || policy.policyId) === id);
-            return hit?.policyName || String(id);
-          });
-          const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
+          const conflictIds = launchEntry.conflictIds;
+          const conflictNames = launchEntry.conflictNames;
+          const isPrivileged = launchEntry.isPrivileged;
 
           // Item payload is shaped for manager-portal rendering and action lifecycle tracking
           const item = {
@@ -372,7 +410,7 @@ module.exports = async function (context, req) {
             userName: account.userName || null,
             entitlement: account.entitlement,
             status: "PENDING",
-            isOrphan: !hr || parseBool(account.isOrphan),
+            isOrphan: launchEntry.isOrphan,
             isPrivileged,
             isSoDConflict: conflictIds.length > 0,
             violatedPolicyIds: conflictIds,
@@ -489,6 +527,7 @@ module.exports = async function (context, req) {
       appId,
       appName: appNameResolved,
       certificationType,
+      riskScope,
       itemsCreated: created,
       pending: created,
       status: "ACTIVE",

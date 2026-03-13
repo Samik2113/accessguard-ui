@@ -7,7 +7,12 @@ import { useReviewCycleDetail } from '../features/reviews/queries';
 interface DashboardProps {
   cycles: ReviewCycle[];
   applications: Application[];
-  onLaunch: (appId: string, dueDate?: string, certificationType?: 'MANAGER' | 'APPLICATION_OWNER') => void;
+  onLaunch: (
+    appId: string,
+    dueDate?: string,
+    certificationType?: 'MANAGER' | 'APPLICATION_OWNER',
+    riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'
+  ) => void;
   reviewItems: ReviewItem[];
   users: User[];
   sodPolicies: SoDPolicy[];
@@ -15,9 +20,10 @@ interface DashboardProps {
   onReassign?: (itemId: string, fromManagerId: string, toManagerId: string, comment?: string) => void;
   onBulkReassign?: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
   onSendNotifications?: (payload: { mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'; cycleId?: string; appId?: string; managerId?: string; selectedRecipientEmail?: string; dryRun?: boolean }) => Promise<any>;
+  onCancelCampaign?: (cycleId: string, reason: string) => Promise<void> | void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [launchDueDate, setLaunchDueDate] = useState<string>(() => {
@@ -27,9 +33,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   });
   const [launchCertificationType, setLaunchCertificationType] = useState<'MANAGER' | 'APPLICATION_OWNER'>('MANAGER');
   const [launchSelectedAppName, setLaunchSelectedAppName] = useState('');
+  const [launchRiskScope, setLaunchRiskScope] = useState<'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'>('ALL_ACCESS');
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
+  const [dashboardRiskScopeFilter, setDashboardRiskScopeFilter] = useState<'ALL' | 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'>('ALL');
 
   // Campaign Detail Filters (Modal)
   const [campaignUserFilter, setCampaignUserFilter] = useState('ALL');
@@ -51,6 +59,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [bulkReassignComment, setBulkReassignComment] = useState('');
   const [sendingNotificationMode, setSendingNotificationMode] = useState<null | 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'>(null);
   const [selectedRemediationRecipientId, setSelectedRemediationRecipientId] = useState('');
+  const [cancellingCampaignId, setCancellingCampaignId] = useState<string | null>(null);
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   const cycleDetailQuery = useReviewCycleDetail({ cycleId: selectedCampaignId || '', top: 500 });
 
@@ -58,16 +67,20 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     setSelectedCampaignItems([]);
   }, [selectedCampaignId]);
 
+  const isClosedCycle = (status?: ReviewStatus) => status === ReviewStatus.COMPLETED || status === ReviewStatus.CANCELLED;
+
   const activeCyclesList = useMemo(() => {
-    return cycles.filter(c => c.status !== ReviewStatus.COMPLETED)
+    return cycles.filter(c => !isClosedCycle(c.status))
       .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter)
+      .filter(c => dashboardRiskScopeFilter === 'ALL' || (c.riskScope || 'ALL_ACCESS') === dashboardRiskScopeFilter)
       .filter(c => dashboardStatusFilter === 'ALL' || c.status === dashboardStatusFilter);
-  }, [cycles, dashboardAppFilter, dashboardStatusFilter]);
+  }, [cycles, dashboardAppFilter, dashboardRiskScopeFilter, dashboardStatusFilter]);
 
   const archivedCyclesList = useMemo(() => {
-    return cycles.filter(c => c.status === ReviewStatus.COMPLETED)
-      .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter);
-  }, [cycles, dashboardAppFilter]);
+    return cycles.filter(c => isClosedCycle(c.status))
+      .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter)
+      .filter(c => dashboardRiskScopeFilter === 'ALL' || (c.riskScope || 'ALL_ACCESS') === dashboardRiskScopeFilter);
+  }, [cycles, dashboardAppFilter, dashboardRiskScopeFilter]);
 
   const launchApplicationsSorted = useMemo(() => {
     return [...applications].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
@@ -82,6 +95,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
   const uniqueUsersInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.userName))).sort(), [viewingItems]);
   const uniqueEntsInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.entitlement))).sort(), [viewingItems]);
+
+  const getRiskScopeLabel = (riskScope?: ReviewCycle['riskScope']) => {
+    if (riskScope === 'SOD_ONLY') return 'SoD Conflicts Only';
+    if (riskScope === 'PRIVILEGED_ONLY') return 'Privileged Access Only';
+    if (riskScope === 'ORPHAN_ONLY') return 'Orphan Accounts Only';
+    return 'All Access';
+  };
 
   const getRiskLevel = (item: ReviewItem) => {
     if (item.isSoDConflict) return 'CRITICAL';
@@ -129,7 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const pendingReviewItemCount = useMemo(() => viewingItems.filter((item) => item.status === ActionStatus.PENDING).length, [viewingItems]);
   const isConfirmationPending = useMemo(() => {
     if (!selectedCampaign) return false;
-    if (selectedCampaign.status === ReviewStatus.COMPLETED) return false;
+    if (isClosedCycle(selectedCampaign.status)) return false;
     return pendingReviewItemCount === 0 && pendingConfirmationReviewers.length > 0;
   }, [selectedCampaign, pendingReviewItemCount, pendingConfirmationReviewers.length]);
 
@@ -175,7 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
   const selectableCampaignItems = useMemo(() => {
     if (!isAdmin || !onBulkReassign) return [];
-    if (selectedCampaign?.status === ReviewStatus.COMPLETED) return [];
+    if (isClosedCycle(selectedCampaign?.status)) return [];
     return filteredViewingItems.filter(item => item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments);
   }, [filteredViewingItems, isAdmin, onBulkReassign, selectedCampaign, maxReassignments]);
 
@@ -323,7 +343,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <tr><td colSpan={5} className="px-8 py-10 text-center text-slate-400 italic">No campaigns found.</td></tr>
             ) : (
               cycleList.map((cycle) => {
-                const isCompleted = cycle.status === ReviewStatus.COMPLETED;
+                const isCompleted = isClosedCycle(cycle.status);
                 const app = applications.find(a => a.id === cycle.appId);
                 const owner = users.find(u => u.id === app?.ownerId);
                 const dueDateLabel = cycle.dueDate
@@ -334,6 +354,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                     <td className="px-8 py-5">
                       <div className="font-bold text-slate-800">{cycle.name}</div>
                       <div className="text-xs text-blue-600 font-medium">{cycle.appName}</div>
+                      <div className="mt-1">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          {getRiskScopeLabel(cycle.riskScope)}
+                        </span>
+                      </div>
                       <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider text-slate-500">
                         <Calendar className="w-3 h-3" /> Due: {dueDateLabel}
                       </div>
@@ -346,6 +371,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase w-fit ${
                           cycle.status === ReviewStatus.ACTIVE ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                           (cycle.status === ReviewStatus.REMEDIATION || cycle.status === ReviewStatus.PENDING_VERIFICATION) ? 'bg-orange-50 text-orange-600 border border-orange-100' :
+                          cycle.status === ReviewStatus.CANCELLED ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                           'bg-green-50 text-green-600 border border-green-100'
                         }`}>
                           {cycle.status.replace('_', ' ')}
@@ -385,6 +411,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           <button
             onClick={() => {
               setLaunchSelectedAppName('');
+              setLaunchRiskScope('ALL_ACCESS');
+              setLaunchCertificationType('MANAGER');
               setShowLaunchModal(true);
             }}
             className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
@@ -399,6 +427,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         <select value={dashboardAppFilter} onChange={e => setDashboardAppFilter(e.target.value)} className="px-4 py-2 bg-white border rounded-xl text-xs font-bold text-slate-600 shadow-sm outline-none">
           <option value="ALL">All Applications</option>
           {applications.map(app => <option key={app.id} value={app.id}>{app.name}</option>)}
+        </select>
+        <select value={dashboardRiskScopeFilter} onChange={e => setDashboardRiskScopeFilter(e.target.value as 'ALL' | 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY')} className="px-4 py-2 bg-white border rounded-xl text-xs font-bold text-slate-600 shadow-sm outline-none">
+          <option value="ALL">All Risk Scopes</option>
+          <option value="ALL_ACCESS">All Access</option>
+          <option value="SOD_ONLY">SoD Conflicts Only</option>
+          <option value="PRIVILEGED_ONLY">Privileged Access Only</option>
+          <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
         </select>
         <select value={dashboardStatusFilter} onChange={e => setDashboardStatusFilter(e.target.value)} className="px-4 py-2 bg-white border rounded-xl text-xs font-bold text-slate-600 shadow-sm outline-none">
           <option value="ALL">All Active Stages</option>
@@ -422,10 +457,15 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-slate-500">
                     <Calendar className="w-3.5 h-3.5" /> Due: {selectedCampaign?.dueDate ? new Date(selectedCampaign.dueDate).toLocaleDateString() : '—'}
                   </div>
+                  <div className="mt-1">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                      Risk Scope: {getRiskScopeLabel(selectedCampaign?.riskScope)}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2">
-                {isAdmin && onSendNotifications && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                {isAdmin && onSendNotifications && !isClosedCycle(selectedCampaign?.status) && (
                   <>
                     {selectedCampaign?.status === ReviewStatus.REMEDIATION ? (
                       <>
@@ -492,7 +532,33 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                     )}
                   </>
                 )}
-                {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                {isAdmin && onCancelCampaign && selectedCampaign && !isClosedCycle(selectedCampaign.status) && (
+                  <button
+                    onClick={async () => {
+                      if (!selectedCampaign) return;
+                      const confirmed = window.confirm(`Cancel campaign '${selectedCampaign.name}'? This will mark campaign and all items as CANCELLED and archive it.`);
+                      if (!confirmed) return;
+                      const reasonInput = window.prompt('Enter cancel reason (mandatory):', '');
+                      if (reasonInput === null) return;
+                      const reason = String(reasonInput || '').trim();
+                      if (!reason) {
+                        alert('Cancel reason is required.');
+                        return;
+                      }
+                      setCancellingCampaignId(selectedCampaign.id);
+                      try {
+                        await onCancelCampaign(selectedCampaign.id, reason);
+                      } finally {
+                        setCancellingCampaignId(null);
+                      }
+                    }}
+                    disabled={cancellingCampaignId === selectedCampaign.id}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-900 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-slate-700 transition-all disabled:opacity-60"
+                  >
+                    <X className="w-4 h-4" /> {cancellingCampaignId === selectedCampaign.id ? 'Cancelling...' : 'Cancel Campaign'}
+                  </button>
+                )}
+                {isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) && (
                   <button
                     onClick={() => {
                       if (selectedCampaignItems.length === 0) return;
@@ -633,7 +699,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold sticky top-0 border-b z-10">
                   <tr>
-                    {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                    {isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) && (
                       <th className="px-6 py-3 w-12">
                         <button onClick={() => setSelectedCampaignItems(selectedCampaignItems.length === selectableCampaignItems.length ? [] : selectableCampaignItems.map(i => i.id))}>
                           {selectedCampaignItems.length > 0 && selectedCampaignItems.length === selectableCampaignItems.length ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
@@ -650,15 +716,15 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 </thead>
                 <tbody className="divide-y text-sm">
                   {filteredViewingItems.length === 0 ? (
-                    <tr><td colSpan={isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED ? 7 : 6} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
+                    <tr><td colSpan={isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) ? 7 : 6} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
                   ) : (
                     filteredViewingItems.map(item => {
                         const reviewer = users.find(u => u.id === item.managerId);
                       const level = getRiskLevel(item);
-                        const canSelectForBulk = selectedCampaign?.status !== ReviewStatus.COMPLETED && item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments;
+                        const canSelectForBulk = !isClosedCycle(selectedCampaign?.status) && item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments;
                         return (
                         <tr key={item.id} className="hover:bg-slate-50">
-                            {isAdmin && onBulkReassign && selectedCampaign?.status !== ReviewStatus.COMPLETED && (
+                            {isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) && (
                               <td className="px-6 py-4">
                                 {canSelectForBulk ? (
                                   <button onClick={() => setSelectedCampaignItems(prev => prev.includes(item.id) ? prev.filter(i => i !== item.id) : [...prev, item.id])}>
@@ -723,7 +789,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                                 {isAdmin && onReassign && (
                                   <button
                                     onClick={() => {
-                                      if (selectedCampaign?.status === ReviewStatus.COMPLETED) return;
+                                      if (isClosedCycle(selectedCampaign?.status)) return;
                                       if (item.status !== ActionStatus.PENDING) return;
                                       if (Number(item.reassignmentCount || 0) >= maxReassignments) return;
                                       setReassignModal({ itemId: item.id, fromManagerId: item.managerId, appUserId: item.appUserId });
@@ -731,8 +797,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                                       setReassignToManagerId('');
                                       setReassignComment('');
                                     }}
-                                    disabled={selectedCampaign?.status === ReviewStatus.COMPLETED || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments}
-                                    className={`mt-2 px-2.5 py-1 rounded text-[10px] font-bold uppercase inline-flex items-center gap-1 ${selectedCampaign?.status === ReviewStatus.COMPLETED || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100'}`}
+                                    disabled={isClosedCycle(selectedCampaign?.status) || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments}
+                                    className={`mt-2 px-2.5 py-1 rounded text-[10px] font-bold uppercase inline-flex items-center gap-1 ${isClosedCycle(selectedCampaign?.status) || item.status !== ActionStatus.PENDING || Number(item.reassignmentCount || 0) >= maxReassignments ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100'}`}
                                   >
                                     <Send className="w-3 h-3" /> Reassign
                                   </button>
@@ -986,12 +1052,29 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Certification Type</label>
               <select
-                value={launchCertificationType}
+                value={launchRiskScope === 'SOD_ONLY' ? 'MANAGER' : launchCertificationType}
                 onChange={e => setLaunchCertificationType(e.target.value as 'MANAGER' | 'APPLICATION_OWNER')}
+                disabled={launchRiskScope === 'SOD_ONLY'}
                 className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
               >
                 <option value="MANAGER">Manager Certification</option>
                 <option value="APPLICATION_OWNER">Application Owner Certification</option>
+              </select>
+              {launchRiskScope === 'SOD_ONLY' && (
+                <p className="mt-1 text-[11px] text-slate-500">SoD-only certification is always assigned to Managers.</p>
+              )}
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Risk Scope</label>
+              <select
+                value={launchRiskScope}
+                onChange={e => setLaunchRiskScope(e.target.value as 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY')}
+                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+              >
+                <option value="ALL_ACCESS">All Access</option>
+                <option value="SOD_ONLY">SoD Conflicts Only</option>
+                <option value="PRIVILEGED_ONLY">Privileged Access Only</option>
+                <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
               </select>
             </div>
             <button
@@ -1012,7 +1095,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   alert('Selected application is invalid. Please choose from the dropdown list.');
                   return;
                 }
-                onLaunch(selectedId, launchDueDate, launchCertificationType);
+                const effectiveCertificationType = launchRiskScope === 'SOD_ONLY' ? 'MANAGER' : launchCertificationType;
+                onLaunch(selectedId, launchDueDate, effectiveCertificationType, launchRiskScope);
                 setShowLaunchModal(false);
               }}
               className="w-full py-3 rounded-xl font-bold text-white hover:opacity-90 transition-all inline-flex items-center justify-center gap-2"

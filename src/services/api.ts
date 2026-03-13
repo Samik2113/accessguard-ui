@@ -189,7 +189,7 @@ export const getManagerItems      = (managerId: string, status?: string) =>
   getReviewItems({ managerId, status });
 
 // -------------------- UAR flows (Write) --------------------
-export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; certificationType?: 'MANAGER' | 'APPLICATION_OWNER'; launchIfExists?: boolean }, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
+export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; certificationType?: 'MANAGER' | 'APPLICATION_OWNER'; riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'; launchIfExists?: boolean }, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
   console.debug('[API] launchReview payload:', payload);
   try {
     const result = await postJson("/api/reviews-launch", payload, {}, {
@@ -274,6 +274,9 @@ export const confirmManager       = (payload: { cycleId: string; appId: string; 
 
 export const archiveCycle         = (payload: { cycleId: string; appId: string }) =>
   postJson("/api/reviews-archive", payload);
+
+export const cancelCycle          = (payload: { cycleId: string; appId: string; reason: string }) =>
+  postJson("/api/reviews-cancel", payload);
 
 export const sendReviewNotifications = (payload: {
   mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER';

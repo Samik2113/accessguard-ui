@@ -9,14 +9,16 @@ export enum ReviewStatus {
   ACTIVE = 'ACTIVE',
   REMEDIATION = 'REMEDIATION',
   PENDING_VERIFICATION = 'PENDING_VERIFICATION',
-  COMPLETED = 'COMPLETED'
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED'
 }
 
 export enum ActionStatus {
   PENDING = 'PENDING',
   APPROVED = 'APPROVED',
   REVOKED = 'REVOKED',
-  REMEDIATED = 'REMEDIATED'
+  REMEDIATED = 'REMEDIATED',
+  CANCELLED = 'CANCELLED'
 }
 
 export interface User {
@@ -84,6 +86,8 @@ export interface ReviewCycle {
   pendingItems: number;
   pendingRemediationItems?: number;
   confirmedManagers: string[]; // List of manager IDs who submitted
+  certificationType?: 'MANAGER' | 'APPLICATION_OWNER';
+  riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
 }
 
 export interface ReviewItem {
