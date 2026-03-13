@@ -24,6 +24,8 @@ const appSchema = {
 };
 const validateApp = ajv.compile(appSchema);
 
+const normalizeKey = (value) => String(value || "").trim().toLowerCase();
+
 async function runBatches(items, batchSize, fn) {
   let ok = 0, fail = 0, errors = [];
   for (let i = 0; i < items.length; i += batchSize) {
@@ -62,6 +64,70 @@ module.exports = async function (context, req) {
     const appsC = db.container("applications"); // PK: /appId
     const logsC = db.container("auditLogs");
     const now = new Date().toISOString();
+
+    const { resources: existingApps } = await appsC.items.query({
+      query: "SELECT c.appId, c.name FROM c WHERE c.type='application'"
+    }).fetchAll();
+
+    const existingNameToAppId = new Map();
+    (existingApps || []).forEach((entry) => {
+      const appId = String(entry?.appId || "").trim();
+      const nameKey = normalizeKey(entry?.name);
+      if (!appId || !nameKey) return;
+      existingNameToAppId.set(nameKey, appId);
+    });
+
+    const payloadNameToAppId = new Map();
+    const payloadAppIdToNameKey = new Map();
+    const validationErrors = [];
+    payload.forEach((entry, index) => {
+      const appId = String(entry?.appId || "").trim();
+      const name = String(entry?.name || "").trim();
+      const nameKey = normalizeKey(name);
+
+      if (!appId || !nameKey) return;
+
+      const existingAppIdForName = existingNameToAppId.get(nameKey);
+      if (existingAppIdForName && existingAppIdForName !== appId) {
+        validationErrors.push({
+          index,
+          appId,
+          name,
+          error: `Application name '${name}' already exists for appId '${existingAppIdForName}'`
+        });
+      }
+
+      const payloadAppIdForName = payloadNameToAppId.get(nameKey);
+      if (payloadAppIdForName && payloadAppIdForName !== appId) {
+        validationErrors.push({
+          index,
+          appId,
+          name,
+          error: `Duplicate application name '${name}' in request (also used by appId '${payloadAppIdForName}')`
+        });
+      }
+
+      const payloadNameForAppId = payloadAppIdToNameKey.get(appId);
+      if (payloadNameForAppId && payloadNameForAppId !== nameKey) {
+        validationErrors.push({
+          index,
+          appId,
+          name,
+          error: `Same appId '${appId}' appears with multiple names in request`
+        });
+      }
+
+      payloadNameToAppId.set(nameKey, appId);
+      payloadAppIdToNameKey.set(appId, nameKey);
+    });
+
+    if (validationErrors.length > 0) {
+      return {
+        status: 409,
+        headers: cors(req),
+        body: { ok: false, error: "Application name must be unique", errors: validationErrors }
+      };
+    }
 
     const upsertApp = async (a) => {
       if (!validateApp(a)) {

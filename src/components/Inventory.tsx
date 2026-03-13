@@ -227,8 +227,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       window.alert("Please fill in Application Name and select an Owner.");
       return;
     }
+    const normalizedNewName = String(newApp.name || '').trim().toLowerCase();
+    const duplicateApp = applications.find(app => String(app.name || '').trim().toLowerCase() === normalizedNewName);
+    if (duplicateApp) {
+      window.alert('Application Name already exists. Please use a unique name.');
+      return;
+    }
     const appId = `APP_${Date.now()}`;
-    onAddApp({ ...newApp, id: appId, appId });
+    onAddApp({ ...newApp, name: String(newApp.name || '').trim(), id: appId, appId });
     setNewApp({ name: '', ownerId: '', description: '' });
     setShowAddApp(false);
   };
