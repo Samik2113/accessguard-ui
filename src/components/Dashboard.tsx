@@ -26,6 +26,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     return d.toISOString().split('T')[0];
   });
   const [launchCertificationType, setLaunchCertificationType] = useState<'MANAGER' | 'APPLICATION_OWNER'>('MANAGER');
+  const [launchSelectedAppId, setLaunchSelectedAppId] = useState('');
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
@@ -67,6 +68,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     return cycles.filter(c => c.status === ReviewStatus.COMPLETED)
       .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter);
   }, [cycles, dashboardAppFilter]);
+
+  const launchApplicationsSorted = useMemo(() => {
+    return [...applications].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }, [applications]);
 
   const viewingItems = useMemo(() => {
     if (!selectedCampaignId) return [];
@@ -378,7 +383,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         </div>
         {isAdmin && (
           <button
-            onClick={() => setShowLaunchModal(true)}
+            onClick={() => {
+              setLaunchSelectedAppId('');
+              setShowLaunchModal(true);
+            }}
             className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
             style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
           >
@@ -952,6 +960,27 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
           <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-bold mb-6">Launch New Campaign</h3>
             <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application</label>
+              <input
+                list="launch-applications-list"
+                value={launchSelectedAppId}
+                onChange={e => setLaunchSelectedAppId(e.target.value)}
+                placeholder="Search and select application"
+                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+              />
+              <datalist id="launch-applications-list">
+                {launchApplicationsSorted.map(app => {
+                  const appId = String((app as any).appId || app.id || '');
+                  return (
+                    <option key={appId || app.name} value={appId}>
+                      {app.name}
+                    </option>
+                  );
+                })}
+              </datalist>
+              <p className="mt-1 text-[11px] text-slate-500">Type to search. Value must be an application ID.</p>
+            </div>
+            <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Review Completion Due Date</label>
               <input type="date" value={launchDueDate} onChange={e => setLaunchDueDate(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10" />
             </div>
@@ -966,24 +995,21 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 <option value="APPLICATION_OWNER">Application Owner Certification</option>
               </select>
             </div>
-            <div className="space-y-2">
-              {applications.map(app => (
-                <button
-                  key={app.appId || app.id || app.name}
-                  onClick={() => {
-                    onLaunch(String(app.appId || app.id || ''), launchDueDate, launchCertificationType);
-                    setShowLaunchModal(false);
-                  }}
-                  className="w-full text-left p-4 bg-slate-50 border rounded-xl hover:bg-blue-50 hover:border-blue-400 flex justify-between items-center transition-all"
-                >
-                  <div>
-                    <div className="font-bold text-slate-800">{app.name}</div>
-                    <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Target App</div>
-                  </div>
-                  <Play className="w-4 h-4 text-blue-600" />
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => {
+                const selectedId = String(launchSelectedAppId || '').trim();
+                if (!selectedId) {
+                  alert('Select an application to launch campaign.');
+                  return;
+                }
+                onLaunch(selectedId, launchDueDate, launchCertificationType);
+                setShowLaunchModal(false);
+              }}
+              className="w-full py-3 rounded-xl font-bold text-white hover:opacity-90 transition-all inline-flex items-center justify-center gap-2"
+              style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
+            >
+              <Play className="w-4 h-4 fill-current" /> Launch Campaign
+            </button>
             <button onClick={() => setShowLaunchModal(false)} className="w-full mt-6 py-3 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
           </div>
         </div>
