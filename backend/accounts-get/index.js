@@ -20,7 +20,7 @@ module.exports = async function (context, req) {
 
     if (accountId) {
       const { resources } = await c.items.query({
-        query: "SELECT TOP 1 c.id, c.appId, c.userId, c.userName, c.email, c.entitlement, c.correlation, c.sod, c.isOrphan, c.isPrivileged, c.updatedAt, c.createdAt, c._etag, c._ts FROM c WHERE c.appId=@a AND c.id=@id",
+        query: "SELECT TOP 1 c.id, c.appId, c.userId, c.userName, c.email, c.entitlement, c.accountStatus, c.correlation, c.sod, c.isOrphan, c.isPrivileged, c.updatedAt, c.createdAt, c._etag, c._ts FROM c WHERE c.appId=@a AND c.id=@id",
         parameters: [{ name: "@a", value: appId }, { name: "@id", value: accountId }]
       }, { partitionKey: appId }).fetchAll();
 
@@ -36,7 +36,7 @@ module.exports = async function (context, req) {
       return ok({ appId, account }, req, etag, lastModified);
     }
 
-    let query = "SELECT c.id, c.appId, c.userId, c.userName, c.email, c.entitlement, c.correlation, c.sod, c.isOrphan, c.isPrivileged, c.updatedAt, c.createdAt, c._etag, c._ts FROM c WHERE c.appId=@a";
+    let query = "SELECT c.id, c.appId, c.userId, c.userName, c.email, c.entitlement, c.accountStatus, c.correlation, c.sod, c.isOrphan, c.isPrivileged, c.updatedAt, c.createdAt, c._etag, c._ts FROM c WHERE c.appId=@a";
     const parameters = [{ name: "@a", value: appId }];
     if (userId) { query += " AND c.userId=@u"; parameters.push({ name: "@u", value: userId }); }
     if (entitlement) { query += " AND c.entitlement=@e"; parameters.push({ name: "@e", value: entitlement }); }

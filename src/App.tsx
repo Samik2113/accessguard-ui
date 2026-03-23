@@ -44,6 +44,7 @@ import {
 } from "./services/api";
 import { useReviewCycles } from './features/reviews/queries';
 import { useAccountsByApp } from './features/accounts/queries';
+import { APP_TYPE_SCHEMA_TEMPLATES, buildDefaultAccountSchema } from './constants';
 
 const SESSION_STORAGE_KEY = 'accessguard.session.v1';
 const CUSTOMIZATION_STORAGE_KEY = 'accessguard.customization.v1';
@@ -263,6 +264,49 @@ const App: React.FC = () => {
     const app = getApplicationById(appId);
     return app?.name || String(appId || 'Unknown App');
   };
+  const normalizeApplicationType = (value: any): NonNullable<Application['appType']> => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw === 'database') return 'Database';
+    if (raw === 'server' || raw === 'servers') return 'Servers';
+    if (raw === 'shared mailbox' || raw === 'shared_mailbox' || raw === 'shared-mailbox') return 'Shared Mailbox';
+    return 'Application';
+  };
+  const normalizeAccountSchema = (app: any) => {
+    const appType = normalizeApplicationType(app?.appType);
+    const template = APP_TYPE_SCHEMA_TEMPLATES[appType] || APP_TYPE_SCHEMA_TEMPLATES.Application;
+    const fallback = buildDefaultAccountSchema(appType);
+    const current = app?.accountSchema || {};
+
+    return {
+      schemaAppType: appType,
+      mappings: {
+        ...fallback.mappings,
+        ...(current?.mappings || {})
+      },
+      ignoreColumns: Array.isArray(current?.ignoreColumns)
+        ? current.ignoreColumns.map((value: any) => String(value || '').trim()).filter(Boolean)
+        : [],
+      statusRules: {
+        activeValues: Array.isArray(current?.statusRules?.activeValues)
+          ? current.statusRules.activeValues.map((value: any) => String(value || '').trim().toLowerCase()).filter(Boolean)
+          : [...template.statusRules.activeValues],
+        inactiveValues: Array.isArray(current?.statusRules?.inactiveValues)
+          ? current.statusRules.inactiveValues.map((value: any) => String(value || '').trim().toLowerCase()).filter(Boolean)
+          : [...template.statusRules.inactiveValues]
+      }
+    };
+  };
+  const normalizeApplicationRecord = (app: any): Application => ({
+    ...app,
+    appType: normalizeApplicationType(app?.appType),
+    ownerId: String(app?.ownerId ?? '').trim(),
+    ownerAdminId: String(app?.ownerAdminId ?? '').trim(),
+    description: String(app?.description ?? ''),
+    serverHost: String(app?.serverHost ?? '').trim(),
+    serverHostName: String(app?.serverHostName ?? '').trim(),
+    serverEnvironment: String(app?.serverEnvironment ?? '').trim() as any,
+    accountSchema: normalizeAccountSchema(app)
+  });
   const normalizeCycle = (cycle: any): ReviewCycle => ({
     ...cycle,
     appId: String(cycle?.appId ?? cycle?.applicationId ?? ''),
@@ -615,7 +659,7 @@ useEffect(() => {
 
       // res.items = array of applications from Cosmos
       // Each item has at least: { appId, name, ownerId, description, ... }
-      setApplications(res.items || []);
+      setApplications((res.items || []).map(normalizeApplicationRecord));
     } catch (e) {
       // optional: surface a toast/log
       console.error("Failed to load applications:", e);
@@ -1023,7 +1067,11 @@ useEffect(() => {
       const normalizedRows = (Array.isArray(data) ? data : []).map((entry: any) => ({
         ...entry,
         appId: String(entry?.appId ?? entry?.id ?? '').trim(),
-        name: String(entry?.name ?? '').trim()
+        name: String(entry?.name ?? '').trim(),
+        appType: normalizeApplicationType(entry?.appType),
+        ownerId: String(entry?.ownerId ?? '').trim(),
+        ownerAdminId: String(entry?.ownerAdminId ?? '').trim(),
+        description: String(entry?.description ?? '')
       }));
 
       const existingNameToAppId = new Map(
@@ -1059,9 +1107,9 @@ useEffect(() => {
         return;
       }
 
-      await importApplications(data);
+      await importApplications(normalizedRows);
       const res = await getApplications(100);
-      setApplications(res.items ?? []);
+      setApplications((res.items ?? []).map(normalizeApplicationRecord));
       // If needed, auto-select the first app again
       if (!selectedAppId && (res.items ?? []).length > 0) {
         setSelectedAppId(res.items[0].appId ?? res.items[0].id);
@@ -1533,18 +1581,45 @@ useEffect(() => {
   // Create a single application by reusing the import endpoint (upsert)
   const createApplication = async (app: Application) => {
     try {
-      const res = await importApplications([app]);
+      const payload = {
+        ...app,
+        appType: normalizeApplicationType(app.appType),
+        accountSchema: app.accountSchema || buildDefaultAccountSchema(normalizeApplicationType(app.appType))
+      };
+      const res = await importApplications([payload]);
       if (!res?.ok) {
         console.error('Create application failed:', res);
         window.alert(res?.error || 'Failed to create application. See console for details.');
         return;
       }
       const refreshed = await getApplications(100);
-      setApplications(refreshed.items ?? []);
+      setApplications((refreshed.items ?? []).map(normalizeApplicationRecord));
       await addAuditLog('APP_CREATE', `Created application ${app.name} (${app.id})`);
     } catch (err: any) {
       console.error('Create application error:', err);
       window.alert(err?.message || 'Failed to create application. See console for details.');
+    }
+  };
+
+  const updateApplication = async (app: Application) => {
+    try {
+      const payload = {
+        ...app,
+        appType: normalizeApplicationType(app.appType),
+        accountSchema: app.accountSchema || buildDefaultAccountSchema(normalizeApplicationType(app.appType))
+      };
+      const res = await importApplications([payload]);
+      if (!res?.ok) {
+        console.error('Update application failed:', res);
+        window.alert(res?.error || 'Failed to update application configuration.');
+        return;
+      }
+      const refreshed = await getApplications(100);
+      setApplications((refreshed.items ?? []).map(normalizeApplicationRecord));
+      await addAuditLog('APP_UPDATE', `Updated application configuration for ${app.name} (${app.id})`);
+    } catch (err: any) {
+      console.error('Update application error:', err);
+      window.alert(err?.message || 'Failed to update application configuration.');
     }
   };
 
@@ -1870,6 +1945,7 @@ useEffect(() => {
     onSelectApp={setSelectedAppId}         // <-- add this if Inventory can drive selection
     onDataImport={handleDataImport}
     onAddApp={app => { createApplication(app); }}
+    onUpdateApp={app => { updateApplication(app); }}
     onRemoveApp={id => { removeApplication(id); }}
     onUpdateEntitlement={async (ent) => {
       try {

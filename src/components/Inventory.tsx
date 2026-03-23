@@ -2,7 +2,14 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getAccountsByUser, getEntitlements, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
 import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
-import { HR_TEMPLATE_HEADERS, APP_ACCESS_TEMPLATE_HEADERS, ENTITLEMENT_TEMPLATE_HEADERS, SOD_POLICY_TEMPLATE_HEADERS } from '../constants';
+import {
+  APP_TYPE_SCHEMA_TEMPLATES,
+  buildDefaultAccountSchema,
+  getTemplateHeadersForAppType,
+  HR_TEMPLATE_HEADERS,
+  ENTITLEMENT_TEMPLATE_HEADERS,
+  SOD_POLICY_TEMPLATE_HEADERS
+} from '../constants';
 
 interface InventoryProps {
   users: User[];
@@ -12,6 +19,7 @@ interface InventoryProps {
   sodPolicies: SoDPolicy[];
   onDataImport: (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD', data: any[], appId?: string) => void;
   onAddApp: (app: Application) => void;
+  onUpdateApp: (app: Application) => void;
   onRemoveApp: (appId: string) => void;
   onUpdateEntitlement: (ent: EntitlementDefinition) => void;
   onUpdateSoD: (policies: SoDPolicy[]) => void;
@@ -21,12 +29,30 @@ interface InventoryProps {
   onSelectApp?: (appId: string) => void;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
+const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onUpdateApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
+  const APPLICATION_TYPE_OPTIONS: Array<NonNullable<Application['appType']>> = ['Application', 'Database', 'Servers', 'Shared Mailbox'];
+
+  const getOwnerLabels = (appType?: Application['appType']) => {
+    if (appType === 'Database') return { primary: 'Database Owner', secondary: 'Database Admin' };
+    if (appType === 'Servers') return { primary: 'Server Owner', secondary: 'Server Admin / Team' };
+    if (appType === 'Shared Mailbox') return { primary: 'Mailbox Owner', secondary: 'Mailbox Admin / Team' };
+    return { primary: 'Application Owner', secondary: 'Application Admin / Team' };
+  };
+
   const [activeSubTab, setActiveSubTab] = useState<'identities' | 'applications' | 'sod'>('identities');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [appManagementTab, setAppManagementTab] = useState<'accounts' | 'definitions'>('accounts');
   const [showAddApp, setShowAddApp] = useState(false);
-  const [newApp, setNewApp] = useState({ name: '', ownerId: '', description: '' });
+  const [newApp, setNewApp] = useState({
+    name: '',
+    appType: 'Application' as NonNullable<Application['appType']>,
+    ownerId: '',
+    ownerAdminId: '',
+    description: '',
+    serverHost: '',
+    serverHostName: '',
+    serverEnvironment: '' as 'UAT' | 'PROD' | ''
+  });
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
   const [groupInApp, setGroupInApp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -39,6 +65,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [showBulkRoleModal, setShowBulkRoleModal] = useState(false);
   const [resetResult, setResetResult] = useState<{ userId: string; name: string; temporaryPassword: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
+  const [showSchemaConfig, setShowSchemaConfig] = useState(false);
+  const [schemaDraft, setSchemaDraft] = useState<Application['accountSchema'] | null>(null);
   
   // Editing state for Entitlements
   const [editingEnt, setEditingEnt] = useState<EntitlementDefinition | null>(null);
@@ -58,6 +86,228 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const sodInputRef = useRef<HTMLInputElement>(null);
   const appsInputRef = useRef<HTMLInputElement>(null);
 
+  const normalizeHeader = (value: string) => String(value || '').trim().toLowerCase();
+  const getAppRecord = (id?: string | null) => applications.find(app => String((app as any).id || (app as any).appId) === String(id || ''));
+  const getResolvedAppType = (app?: Application | null): NonNullable<Application['appType']> => {
+    if (app?.appType && APP_TYPE_SCHEMA_TEMPLATES[app.appType]) return app.appType;
+    return 'Application';
+  };
+  const getResolvedAccountSchema = (app?: Application | null) => {
+    const appType = getResolvedAppType(app);
+    const fallback = buildDefaultAccountSchema(appType);
+    const current = app?.accountSchema;
+    return {
+      schemaAppType: appType,
+      mappings: {
+        ...fallback.mappings,
+        ...(current?.mappings || {})
+      },
+      ignoreColumns: Array.isArray(current?.ignoreColumns)
+        ? current.ignoreColumns.map(v => String(v || '').trim()).filter(Boolean)
+        : [],
+      statusRules: {
+        activeValues: Array.isArray(current?.statusRules?.activeValues) ? current!.statusRules!.activeValues : fallback.statusRules.activeValues,
+        inactiveValues: Array.isArray(current?.statusRules?.inactiveValues) ? current!.statusRules!.inactiveValues : fallback.statusRules.inactiveValues
+      }
+    };
+  };
+
+  const normalizeAccountStatus = (raw: any, app?: Application | null) => {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    const schema = getResolvedAccountSchema(app);
+    const lowered = value.toLowerCase();
+    if (schema.statusRules.activeValues.map(v => v.toLowerCase()).includes(lowered)) return 'ACTIVE';
+    if (schema.statusRules.inactiveValues.map(v => v.toLowerCase()).includes(lowered)) return 'INACTIVE';
+    return value;
+  };
+
+  const getHrFallback = (seed: { employeeId?: string; email?: string; loginId?: string; userId?: string }) => {
+    const employeeId = String(seed.employeeId || '').trim();
+    const email = String(seed.email || '').trim().toLowerCase();
+    const loginId = String(seed.loginId || seed.userId || '').trim();
+
+    if (employeeId) {
+      const byId = users.find(u => String(u.id || '').trim().toLowerCase() === employeeId.toLowerCase());
+      if (byId) return byId;
+    }
+    if (email) {
+      const byEmail = users.find(u => String(u.email || '').trim().toLowerCase() === email);
+      if (byEmail) return byEmail;
+    }
+    if (loginId) {
+      const byLogin = users.find(u => String(u.id || '').trim().toLowerCase() === loginId.toLowerCase());
+      if (byLogin) return byLogin;
+    }
+    return undefined;
+  };
+
+  const downloadImportErrorReport = (errors: Array<{ row: number; reasons: string[]; raw: Record<string, any> }>) => {
+    const headers = ['row', 'errors', 'raw'];
+    const rows = errors.map((item) => [
+      String(item.row),
+      item.reasons.join(' | '),
+      JSON.stringify(item.raw || {})
+    ]);
+    const content = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+    const blob = new Blob([content], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `account_import_row_errors_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const mapAccountUploadRows = (headers: string[], rows: any[], app?: Application | null) => {
+    const appType = getResolvedAppType(app);
+    const schema = getResolvedAccountSchema(app);
+    const template = APP_TYPE_SCHEMA_TEMPLATES[appType];
+    const headerLookup = new Map(headers.map(h => [normalizeHeader(h), h]));
+    const ignoreSet = new Set(schema.ignoreColumns.map(col => normalizeHeader(col)));
+
+    const resolveHeader = (fieldKey: string, aliases: string[] = []) => {
+      const configured = String(schema.mappings[fieldKey] || '').trim();
+      if (configured && headerLookup.has(normalizeHeader(configured))) {
+        return headerLookup.get(normalizeHeader(configured)) || '';
+      }
+      const defaultKey = String(template.defaultMappings[fieldKey] || '').trim();
+      if (defaultKey && headerLookup.has(normalizeHeader(defaultKey))) {
+        return headerLookup.get(normalizeHeader(defaultKey)) || '';
+      }
+      const allAliases = [fieldKey, ...aliases];
+      for (const alias of allAliases) {
+        const found = headerLookup.get(normalizeHeader(alias));
+        if (found) return found;
+      }
+      return '';
+    };
+
+    const resolvedByField: Record<string, string> = {};
+    template.fields.forEach(field => {
+      resolvedByField[field.key] = resolveHeader(field.key, field.aliases || []);
+    });
+
+    const validRows: any[] = [];
+    const failedRows: Array<{ row: number; reasons: string[]; raw: Record<string, any> }> = [];
+
+    rows.forEach((raw, index) => {
+      const rowNum = index + 2;
+      const reasons: string[] = [];
+      const pick = (fieldKey: string) => {
+        const sourceHeader = resolvedByField[fieldKey];
+        if (!sourceHeader) return '';
+        if (ignoreSet.has(normalizeHeader(sourceHeader))) return '';
+        return String(raw[sourceHeader] ?? '').trim();
+      };
+
+      if (appType === 'Application') {
+        const loginId = pick('loginId');
+        const role = pick('role');
+        let email = pick('email');
+        let employeeId = pick('employeeId');
+        const lastLoginAt = pick('lastLoginAt');
+        let accountOwnerName = pick('accountOwnerName');
+        const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
+
+        const hr = getHrFallback({ employeeId, email, loginId });
+        if (!email && employeeId && hr?.email) email = String(hr.email || '').trim();
+        if (!employeeId && hr?.id) employeeId = String(hr.id || '').trim();
+        if (!accountOwnerName) accountOwnerName = loginId;
+
+        if (!loginId) reasons.push('Missing required field: Login ID/Name');
+        if (!role) reasons.push('Missing required field: Role');
+        if (!email) reasons.push('Missing required field: E-mail ID (including HR fallback)');
+        if (!employeeId) reasons.push('Missing required field: Employee ID (including HR fallback)');
+        if (!accountOwnerName) reasons.push('Missing required field: ID Owner/User Name');
+
+        if (reasons.length > 0) {
+          failedRows.push({ row: rowNum, reasons, raw });
+          return;
+        }
+
+        validRows.push({
+          appId: String((app as any)?.id || (app as any)?.appId || '').trim(),
+          userId: loginId,
+          userName: accountOwnerName,
+          email,
+          entitlement: role,
+          accountStatus,
+          employeeId,
+          lastLoginDetails: lastLoginAt,
+          accountOwnerName,
+          accountId: loginId
+        });
+        return;
+      }
+
+      if (appType === 'Database') {
+        const loginName = pick('loginName');
+        const userType = pick('userType');
+        const dbRole = pick('dbRole');
+        const createDate = pick('createDate');
+        let userDetails = pick('userDetails');
+        const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
+
+        const hr = getHrFallback({ loginId: loginName, userId: loginName });
+        if (!userDetails && hr?.name) userDetails = String(hr.name || '').trim();
+
+        if (!loginName) reasons.push('Missing required field: Login Name');
+        if (!userType) reasons.push('Missing required field: User Type');
+        if (!dbRole) reasons.push('Missing required field: DB Role');
+        if (!userDetails) reasons.push('Missing required field: User Details (including HR fallback)');
+
+        if (reasons.length > 0) {
+          failedRows.push({ row: rowNum, reasons, raw });
+          return;
+        }
+
+        validRows.push({
+          appId: String((app as any)?.id || (app as any)?.appId || '').trim(),
+          userId: loginName,
+          userName: userDetails,
+          email: String(hr?.email || '').trim(),
+          entitlement: dbRole,
+          accountStatus,
+          userType,
+          createDate,
+          userDetails,
+          accountId: loginName
+        });
+        return;
+      }
+
+      const userId = pick('userId');
+      const userName = pick('userName');
+      const privilegeLevel = pick('privilegeLevel');
+      const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
+
+      if (!userId) reasons.push('Missing required field: Users ID');
+      if (!userName) reasons.push('Missing required field: User Name');
+      if (!privilegeLevel) reasons.push('Missing required field: Admin/root');
+
+      if (reasons.length > 0) {
+        failedRows.push({ row: rowNum, reasons, raw });
+        return;
+      }
+
+      validRows.push({
+        appId: String((app as any)?.id || (app as any)?.appId || '').trim(),
+        userId,
+        userName,
+        entitlement: privilegeLevel,
+        isPrivileged: /admin|root/i.test(privilegeLevel),
+        accountStatus,
+        accountId: userId
+      });
+    });
+
+    return { validRows, failedRows };
+  };
+
   const downloadTemplate = (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD') => {
     let headers: string[] = [];
     let rows: any[] = [];
@@ -65,11 +315,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (type === 'HR') headers = HR_TEMPLATE_HEADERS;
 	else if (type === 'APPLICATIONS') {
   // Minimal columns your import expects
-  headers = ['appId', 'name', 'ownerId', 'description'];
+  headers = ['appId', 'name', 'appType', 'ownerId', 'ownerAdminId', 'description'];
   // (Optional) pre-fill existing apps to let admins "export" and re-import
-  rows = applications.map(a => [a.id ?? a.appId, a.name, a.ownerId ?? '', a.description ?? '']);
+  rows = applications.map(a => [a.id ?? (a as any).appId, a.name, a.appType ?? 'Application', a.ownerId ?? '', a.ownerAdminId ?? '', a.description ?? '']);
 }
-    else if (type === 'APP_ACCESS') headers = APP_ACCESS_TEMPLATE_HEADERS;
+    else if (type === 'APP_ACCESS') {
+      const app = getAppRecord(selectedAppId);
+      headers = getTemplateHeadersForAppType(app?.appType);
+    }
     else if (type === 'APP_ENT') {
       headers = ENTITLEMENT_TEMPLATE_HEADERS;
       if (selectedAppId) {
@@ -110,11 +363,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       const headers = lines[0].split(',').map(h => h.trim());
       let expectedHeaders: string[] = [];
       if (type === 'HR') expectedHeaders = HR_TEMPLATE_HEADERS;
-      else if (type === 'APP_ACCESS') expectedHeaders = APP_ACCESS_TEMPLATE_HEADERS;
       else if (type === 'APP_ENT') expectedHeaders = ENTITLEMENT_TEMPLATE_HEADERS;
       else if (type === 'APP_SOD') expectedHeaders = SOD_POLICY_TEMPLATE_HEADERS;
 
-      const isValid = expectedHeaders.every(h => headers.includes(h));
+      const isValid = type === 'APP_ACCESS' ? true : expectedHeaders.every(h => headers.includes(h));
       if (!isValid) {
         alert(`Invalid CSV headers. Expected: ${expectedHeaders.join(', ')}`);
         return;
@@ -126,17 +378,6 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         headers.forEach((header, i) => {
           obj[header] = values[i];
         });
-
-        // For app account uploads, ensure backend-required fields exist
-        if (type === 'APP_ACCESS') {
-          // Ensure appId comes from the selected app (don't rely on CSV)
-          if (appId) obj.appId = appId;
-
-          // Account ID should default to userId (or id/email) so CSV need not include it
-          obj.accountId = obj.accountId || obj.userId || obj.id || obj.email || `ACC_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-          // Make sure userId is present as well
-          obj.userId = obj.userId || obj.accountId;
-        }
 
         // For entitlement uploads, coerce common truthy/falsey values into actual boolean for isPrivileged
         if (type === 'APP_ENT') {
@@ -181,6 +422,26 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
         return obj;
       });
+      if (type === 'APP_ACCESS') {
+        const targetApp = getAppRecord(appId);
+        if (!targetApp) {
+          alert('Select an application before uploading accounts.');
+          return;
+        }
+        const mapped = mapAccountUploadRows(headers, data, targetApp);
+        if (mapped.failedRows.length > 0) {
+          downloadImportErrorReport(mapped.failedRows);
+          alert(`Imported ${mapped.validRows.length} row(s). ${mapped.failedRows.length} row(s) failed validation. Error report downloaded.`);
+        }
+        if (mapped.validRows.length === 0) {
+          alert('No valid rows found in file. Please review the error report and try again.');
+          if (e.target) e.target.value = '';
+          return;
+        }
+        onDataImport(type, mapped.validRows, appId);
+        if (e.target) e.target.value = '';
+        return;
+      }
       // Special handling for SoD policies: dedupe by policyName and mark existing id for upsert
       if (type === 'APP_SOD') {
         const normalized: any[] = [];
@@ -223,8 +484,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   };
 
   const handleAddApp = () => {
-    if (!newApp.name || !newApp.ownerId) {
-      window.alert("Please fill in Application Name and select an Owner.");
+    if (!newApp.name || !newApp.ownerId || !newApp.ownerAdminId) {
+      window.alert("Please fill in Application Name and select both owner levels.");
+      return;
+    }
+    if (newApp.appType === 'Servers' && (!newApp.serverHost || !newApp.serverHostName || !newApp.serverEnvironment)) {
+      window.alert('For Servers type, Server Host, Server Host Name, and UAT/PROD are required.');
       return;
     }
     const normalizedNewName = String(newApp.name || '').trim().toLowerCase();
@@ -234,8 +499,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       return;
     }
     const appId = `APP_${Date.now()}`;
-    onAddApp({ ...newApp, name: String(newApp.name || '').trim(), id: appId, appId });
-    setNewApp({ name: '', ownerId: '', description: '' });
+    onAddApp({
+      ...newApp,
+      name: String(newApp.name || '').trim(),
+      appType: newApp.appType,
+      accountSchema: buildDefaultAccountSchema(newApp.appType),
+      id: appId,
+      appId
+    });
+    setNewApp({
+      name: '',
+      appType: 'Application',
+      ownerId: '',
+      ownerAdminId: '',
+      description: '',
+      serverHost: '',
+      serverHostName: '',
+      serverEnvironment: ''
+    });
     setShowAddApp(false);
   };
 
@@ -307,6 +588,52 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const normalizeValue = (value: any) => String(value || '').trim().toLowerCase();
   const parseBool = (value: any) => value === true || value === 1 || String(value || '').trim().toLowerCase() === 'true' || String(value || '').trim().toLowerCase() === 'yes';
   const getAppKey = (app: Application | any) => String(app?.appId || app?.id || '').trim();
+  const selectedAppRecord = useMemo(() => getAppRecord(selectedAppId), [applications, selectedAppId]);
+
+  useEffect(() => {
+    if (!selectedAppRecord) {
+      setSchemaDraft(null);
+      return;
+    }
+    setSchemaDraft(getResolvedAccountSchema(selectedAppRecord));
+  }, [selectedAppRecord, selectedAppRecord?.accountSchema]);
+
+  const updateSchemaMapping = (fieldKey: string, sourceColumn: string) => {
+    setSchemaDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        mappings: {
+          ...(prev.mappings || {}),
+          [fieldKey]: sourceColumn
+        }
+      };
+    });
+  };
+
+  const updateSchemaIgnoreColumns = (value: string) => {
+    setSchemaDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        ignoreColumns: value
+          .split(',')
+          .map(token => token.trim())
+          .filter(Boolean)
+      };
+    });
+  };
+
+  const saveSchemaConfiguration = () => {
+    if (!selectedAppRecord || !schemaDraft) return;
+    onUpdateApp({
+      ...selectedAppRecord,
+      accountSchema: {
+        ...schemaDraft,
+        schemaAppType: getResolvedAppType(selectedAppRecord)
+      }
+    });
+  };
 
   useEffect(() => {
     if (!showAddSod) return;
@@ -331,9 +658,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         try {
           const res: any = await getEntitlements(appKey, undefined, 500);
           const items = Array.isArray(res?.items) ? res.items : [];
-          const list = Array.from(new Set(items
+          const list = (Array.from(new Set(items
             .map((entry: any) => String(entry?.entitlement || '').trim())
-            .filter(Boolean)))
+            .filter(Boolean))) as string[])
             .sort((a, b) => a.localeCompare(b));
           merged[appKey] = list;
         } catch {
@@ -390,6 +717,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const selectedAppData = access.filter(a => a.appId === selectedAppId);
   const selectedEntitlements = entitlements.filter(e => e.appId === selectedAppId);
+  const selectedSchemaTemplate = selectedAppRecord
+    ? APP_TYPE_SCHEMA_TEMPLATES[getResolvedAppType(selectedAppRecord)]
+    : APP_TYPE_SCHEMA_TEMPLATES.Application;
 
   const selectedAppRiskByAccountId = useMemo(() => {
     const grouped: Record<string, Array<{ appId: string; entitlement: string }>> = {};
@@ -1126,7 +1456,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                           {selectedAppId === app.id && <Settings2 className="w-3.5 h-3.5 shrink-0 ml-2" />}
                         </div>
                         <div className={`text-[11px] mt-1.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                          Owner: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
+                          {app.appType || 'Application'}
+                        </div>
+                        <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                          {getOwnerLabels(app.appType).primary}: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
+                        </div>
+                        <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                          {getOwnerLabels(app.appType).secondary}: {users.find(u => u.id === app.ownerAdminId)?.name || 'Unknown'}
                         </div>
                       </button>
                     ))}
@@ -1142,6 +1478,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 <div className="flex items-start justify-between mb-6">
                   <div>
                     <h3 className="text-xl font-bold text-slate-800">{applications.find(a => a.id === selectedAppId)?.name}</h3>
+                    <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mt-1">{applications.find(a => a.id === selectedAppId)?.appType || 'Application'}</p>
+                    <p className="text-xs text-slate-500 mt-1">{applications.find(a => a.id === selectedAppId)?.description || 'No description provided.'}</p>
+                    {applications.find(a => a.id === selectedAppId)?.appType === 'Servers' && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Host: {(applications.find(a => a.id === selectedAppId) as any)?.serverHost || '-'} | Host Name: {(applications.find(a => a.id === selectedAppId) as any)?.serverHostName || '-'} | Env: {(applications.find(a => a.id === selectedAppId) as any)?.serverEnvironment || '-'}
+                      </p>
+                    )}
                     <p className="text-sm text-slate-500">Manage accounts, definitions, and SoD rules.</p>
                   </div>
                   <div className="flex gap-2">
@@ -1171,6 +1514,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                         <button onClick={() => downloadTemplate('APP_ACCESS')} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50"><Download className="w-3.5 h-3.5" /> Template</button>
                         <input type="file" ref={accountInputRef} className="hidden" onChange={(e) => handleFileUpload(e, 'APP_ACCESS', selectedAppId)} />
                         <button onClick={() => accountInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"><Upload className="w-3.5 h-3.5" /> Upload Accounts</button>
+                        <button onClick={() => setShowSchemaConfig(prev => !prev)} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50">
+                          <Settings2 className="w-3.5 h-3.5" /> {showSchemaConfig ? 'Hide Mapping' : 'Configure Mapping'}
+                        </button>
+                        {showSchemaConfig && (
+                          <button onClick={saveSchemaConfiguration} className="flex items-center gap-1.5 px-3 py-1.5 text-white rounded-lg text-xs font-bold hover:opacity-90" style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}>
+                            Save Mapping
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -1180,6 +1531,41 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       </div>
                     </div>
 
+                    {showSchemaConfig && schemaDraft && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+                        <div>
+                          <p className="text-xs font-black text-slate-700">Account Feed Mapping</p>
+                          <p className="text-[11px] text-slate-500">Map feed columns to canonical fields for this application. This override applies only to this app.</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {selectedSchemaTemplate.fields.map(field => (
+                            <div key={field.key}>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                                {field.label}{field.required ? ' *' : ''}
+                              </label>
+                              <input
+                                type="text"
+                                value={schemaDraft.mappings?.[field.key] || ''}
+                                onChange={(event) => updateSchemaMapping(field.key, event.target.value)}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                                placeholder={`Source column for ${field.label}`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ignore Columns</label>
+                          <input
+                            type="text"
+                            value={(schemaDraft.ignoreColumns || []).join(', ')}
+                            onChange={(event) => updateSchemaIgnoreColumns(event.target.value)}
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                            placeholder="Comma-separated source columns to ignore"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="bg-slate-50 rounded-xl border overflow-hidden max-h-[600px] overflow-y-auto shadow-inner">
                       <table className="w-full text-left text-[11px]">
                         <thead className="sticky top-0 bg-slate-100 z-10">
@@ -1187,6 +1573,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             <th className="px-4 py-3">Identity / Account</th>
                             <th className="px-4 py-3">Correlation</th>
                             <th className="px-4 py-3">Entitlement(s)</th>
+                            <th className="px-4 py-3">Status</th>
                             <th className="px-4 py-3">Risk Status</th>
                           </tr>
                         </thead>
@@ -1227,6 +1614,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     </div>
                                   </td>
                                   <td className="px-4 py-3">
+                                    <span className="text-[10px] font-bold text-slate-500">
+                                      {Array.from(new Set(group.entitlements.map(e => String((e as any).accountStatus || '').trim()).filter(Boolean))).join(', ') || '-'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
                                     {getRiskDisplay(group)}
                                   </td>
                                 </tr>
@@ -1262,6 +1654,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   </td>
                                   <td className="px-4 py-3">
                                     <code className={`px-1.5 py-0.5 rounded border ${hasSod ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPriv ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{acc.entitlement}</code>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className="text-[10px] font-bold text-slate-500">{String((acc as any).accountStatus || '').trim() || '-'}</span>
                                   </td>
                                   <td className="px-4 py-3">
                                     {getRiskDisplay(acc)}
@@ -1551,8 +1946,45 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="e.g. SAP Finance, AWS Prod" value={newApp.name} onChange={e => setNewApp({...newApp, name: e.target.value})} />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Business Owner</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Type</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.appType} onChange={e => setNewApp({...newApp, appType: e.target.value as NonNullable<Application['appType']>})}>
+                  {APPLICATION_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Description</label>
+                <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" rows={3} value={newApp.description} onChange={e => setNewApp({...newApp, description: e.target.value})} />
+              </div>
+              {newApp.appType === 'Servers' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Server Host</label>
+                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.serverHost} onChange={e => setNewApp({...newApp, serverHost: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Server Host Name</label>
+                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.serverHostName} onChange={e => setNewApp({...newApp, serverHostName: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Environment</label>
+                    <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.serverEnvironment} onChange={e => setNewApp({...newApp, serverEnvironment: e.target.value as 'UAT' | 'PROD' | ''})}>
+                      <option value="">Select Environment...</option>
+                      <option value="UAT">UAT</option>
+                      <option value="PROD">PROD</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(newApp.appType).primary}</label>
                 <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.ownerId} onChange={e => setNewApp({...newApp, ownerId: e.target.value})}>
+                  <option value="">Select Identity...</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(newApp.appType).secondary}</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.ownerAdminId} onChange={e => setNewApp({...newApp, ownerAdminId: e.target.value})}>
                   <option value="">Select Identity...</option>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
                 </select>

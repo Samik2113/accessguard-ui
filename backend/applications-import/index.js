@@ -7,7 +7,9 @@ const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
  * {
  *   appId: "SAP",
  *   name: "SAP ECC",
+ *   appType: "Application",
  *   ownerId: "MGR031",
+ *   ownerAdminId: "ADM100",
  *   description: "Finance ERP"
  * }
  */
@@ -18,11 +20,25 @@ const appSchema = {
   properties: {
     appId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1 },
+    appType: { type: "string", enum: ["Application", "Database", "Servers", "Shared Mailbox"] },
     ownerId: { type: "string" },
-    description: { type: "string" }
+    ownerAdminId: { type: "string" },
+    description: { type: "string" },
+    serverHost: { type: "string" },
+    serverHostName: { type: "string" },
+    serverEnvironment: { type: "string" },
+    accountSchema: { type: "object" }
   }
 };
 const validateApp = ajv.compile(appSchema);
+
+function normalizeAppType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "database") return "Database";
+  if (raw === "servers" || raw === "server") return "Servers";
+  if (raw === "shared mailbox" || raw === "shared_mailbox" || raw === "shared-mailbox") return "Shared Mailbox";
+  return "Application";
+}
 
 const normalizeKey = (value) => String(value || "").trim().toLowerCase();
 
@@ -137,8 +153,14 @@ module.exports = async function (context, req) {
         id: a.appId,                 // deterministic id
         appId: a.appId,              // PK value
         name: a.name,
+        appType: normalizeAppType(a.appType),
         ownerId: a.ownerId || null,
+        ownerAdminId: a.ownerAdminId || null,
         description: a.description || "",
+        serverHost: a.serverHost || null,
+        serverHostName: a.serverHostName || null,
+        serverEnvironment: a.serverEnvironment || null,
+        accountSchema: a.accountSchema || null,
         createdAt: a.createdAt || now,
         updatedAt: now,
         type: "application"

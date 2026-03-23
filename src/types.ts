@@ -53,6 +53,12 @@ export interface Application {
   id: string;
   name: string;
   ownerId: string; // Linked to User.id
+  ownerAdminId?: string; // Second-level owner/admin/team linked to User.id
+  appType?: 'Application' | 'Database' | 'Servers' | 'Shared Mailbox';
+  serverHost?: string;
+  serverHostName?: string;
+  serverEnvironment?: 'UAT' | 'PROD' | '';
+  accountSchema?: AppAccountSchemaConfig;
   description: string;
 }
 
@@ -64,6 +70,7 @@ export interface ApplicationAccess {
   appId: string;
   appName: string;
   entitlement: string;
+  accountStatus?: string;
   isSoDConflict: boolean;
   violatedPolicyNames?: string[];
   violatedPolicyIds?: string[];
@@ -165,5 +172,32 @@ export interface AppCustomization {
       subject: string;
       body: string;
     };
+  };
+}
+
+export interface AccountSchemaFieldDefinition {
+  key: string;
+  label: string;
+  required: boolean;
+  aliases?: string[];
+}
+
+export interface AppTypeSchemaTemplate {
+  appType: NonNullable<Application['appType']>;
+  fields: AccountSchemaFieldDefinition[];
+  defaultMappings: Record<string, string>;
+  statusRules: {
+    activeValues: string[];
+    inactiveValues: string[];
+  };
+}
+
+export interface AppAccountSchemaConfig {
+  schemaAppType: NonNullable<Application['appType']>;
+  mappings: Record<string, string>;
+  ignoreColumns: string[];
+  statusRules: {
+    activeValues: string[];
+    inactiveValues: string[];
   };
 }
