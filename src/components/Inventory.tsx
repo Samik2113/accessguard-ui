@@ -102,6 +102,32 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (app?.appType && APP_TYPE_SCHEMA_TEMPLATES[app.appType]) return app.appType;
     return 'Application';
   };
+  const getCorrelationFieldKey = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'loginName';
+    if (appType === 'Servers') return 'userId';
+    return 'employeeId';
+  };
+  const getCorrelationFieldLabel = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'Login Name';
+    if (appType === 'Servers') return 'Users ID';
+    return 'Employee ID';
+  };
+  const getEntitlementFieldKey = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'dbRole';
+    if (appType === 'Servers') return 'privilegeLevel';
+    return 'role';
+  };
+  const getEntitlementFieldLabel = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'DB Role';
+    if (appType === 'Servers') return 'Admin/root';
+    return 'Role';
+  };
+  const getCorrelationFieldGuidance = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Application') return 'Choose the feed column that best matches HR identity (prefer Employee ID).';
+    if (appType === 'Database') return 'Choose the login column used to correlate database accounts to identities.';
+    if (appType === 'Servers') return 'Choose the server user-id column used to correlate accounts to identities.';
+    return 'Choose the column used to correlate feed records with HR identities.';
+  };
   const getResolvedAccountSchema = (app?: Application | null) => {
     const appType = getResolvedAppType(app);
     const fallback = buildDefaultAccountSchema(appType);
@@ -383,6 +409,20 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (!pendingAccountUpload) return;
     const targetApp = getAppRecord(pendingAccountUpload.appId);
     if (!targetApp || !uploadSchemaDraft) return;
+    const appType = getResolvedAppType(targetApp);
+    const correlationFieldKey = getCorrelationFieldKey(appType);
+    const entitlementFieldKey = getEntitlementFieldKey(appType);
+    const selectedCorrelationColumn = String(uploadSchemaDraft.mappings?.[correlationFieldKey] || '').trim();
+    const selectedEntitlementColumn = String(uploadSchemaDraft.mappings?.[entitlementFieldKey] || '').trim();
+
+    if (!selectedCorrelationColumn) {
+      alert(`Please select a feed column for correlation (${getCorrelationFieldLabel(appType)}).`);
+      return;
+    }
+    if (!selectedEntitlementColumn) {
+      alert(`Please select a feed column for entitlement (${getEntitlementFieldLabel(appType)}).`);
+      return;
+    }
 
     const mapped = mapAccountUploadRows(
       pendingAccountUpload.headers,
@@ -2158,6 +2198,14 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       {showUploadMapper && pendingAccountUpload && uploadSchemaDraft && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl animate-in zoom-in-95">
+            {(() => {
+              const mapperAppType = selectedAppRecord ? getResolvedAppType(selectedAppRecord) : 'Application';
+              const correlationFieldKey = getCorrelationFieldKey(mapperAppType);
+              const entitlementFieldKey = getEntitlementFieldKey(mapperAppType);
+              const correlationFieldLabel = getCorrelationFieldLabel(mapperAppType);
+              const entitlementFieldLabel = getEntitlementFieldLabel(mapperAppType);
+              return (
+                <>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Map Feed Columns</h3>
@@ -2167,6 +2215,35 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             </div>
 
             <div className="mt-6 max-h-[65vh] overflow-y-auto space-y-6 pr-1">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-black text-blue-900 uppercase tracking-wider">Required Upload Selections</p>
+                <p className="text-[11px] text-blue-800">{getCorrelationFieldGuidance(mapperAppType)}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Correlation Column ({correlationFieldLabel}) *</label>
+                    <select
+                      className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs"
+                      value={uploadSchemaDraft.mappings?.[correlationFieldKey] || ''}
+                      onChange={(event) => updateUploadMapping(correlationFieldKey, event.target.value)}
+                    >
+                      <option value="">-- Select Correlation Column --</option>
+                      {pendingAccountUpload.headers.map(header => <option key={`correlation-${header}`} value={header}>{header}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Entitlement Column ({entitlementFieldLabel}) *</label>
+                    <select
+                      className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs"
+                      value={uploadSchemaDraft.mappings?.[entitlementFieldKey] || ''}
+                      onChange={(event) => updateUploadMapping(entitlementFieldKey, event.target.value)}
+                    >
+                      <option value="">-- Select Entitlement Column --</option>
+                      {pendingAccountUpload.headers.map(header => <option key={`entitlement-${header}`} value={header}>{header}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                 <p className="text-xs font-black text-slate-700 uppercase tracking-wider">Canonical Mapping</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -2250,6 +2327,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 Confirm Mapping And Upload
               </button>
             </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

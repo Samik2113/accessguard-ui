@@ -1133,16 +1133,35 @@ useEffect(() => {
         isSoDConflict: false
       }));
 
-      // Sync entitlements catalog from uploaded accounts
-      const uniqueEntsFromAccess = Array.from(new Set(newAccessList.map(a => a.entitlement)));
+      // Auto-sync entitlement catalog from uploaded accounts (no separate entitlement upload needed).
+      const entitlementMap = new Map<string, { entitlement: string; isPrivileged: boolean }>();
+      newAccessList.forEach(acc => {
+        const key = String(acc.entitlement || '').trim().toUpperCase();
+        if (!key) return;
+        const current = entitlementMap.get(key);
+        entitlementMap.set(key, {
+          entitlement: String(acc.entitlement || '').trim(),
+          isPrivileged: Boolean((acc as any).isPrivileged) || /admin|root/i.test(String(acc.entitlement || '')) || Boolean(current?.isPrivileged)
+        });
+      });
+
+      const entitlementPayload = Array.from(entitlementMap.values()).map(item => ({
+        entitlement: item.entitlement,
+        description: '',
+        isPrivileged: item.isPrivileged,
+        risk: 'LOW',
+        riskScore: '0'
+      }));
+
+      if (entitlementPayload.length > 0) {
+        await importEntitlements(appId!, entitlementPayload);
+      }
+
+      // Reload app entitlement catalog from backend to reflect persisted values.
+      const entRes: any = await getEntitlements(appId!, undefined, 500);
       setEntitlements(prev => {
         const otherAppEnts = prev.filter(e => e.appId !== appId);
-        const existingAppEnts = prev.filter(e => e.appId === appId);
-        const synchronizedEnts = uniqueEntsFromAccess.map(entName => {
-          const existing = existingAppEnts.find(e => e.entitlement === entName);
-          return existing || { appId: appId!, entitlement: entName, description: '', owner: '', isPrivileged: false, risk: 'LOW' as const, riskScore: '0' };
-        });
-        return [...otherAppEnts, ...synchronizedEnts];
+        return [...otherAppEnts, ...(entRes?.items || [])];
       });
 
       // Update review items in backend: mark revoked items as remediated if they no longer exist
