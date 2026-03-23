@@ -43,6 +43,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [appManagementTab, setAppManagementTab] = useState<'accounts' | 'definitions'>('accounts');
   const [showAddApp, setShowAddApp] = useState(false);
+  const [editingAppConfig, setEditingAppConfig] = useState<Application | null>(null);
   const [newApp, setNewApp] = useState({
     name: '',
     appType: 'Application' as NonNullable<Application['appType']>,
@@ -67,6 +68,15 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [copiedPassword, setCopiedPassword] = useState(false);
   const [showSchemaConfig, setShowSchemaConfig] = useState(false);
   const [schemaDraft, setSchemaDraft] = useState<Application['accountSchema'] | null>(null);
+  const [showUploadMapper, setShowUploadMapper] = useState(false);
+  const [uploadSchemaDraft, setUploadSchemaDraft] = useState<Application['accountSchema'] | null>(null);
+  const [saveUploadMappingForApp, setSaveUploadMappingForApp] = useState(true);
+  const [pendingAccountUpload, setPendingAccountUpload] = useState<{
+    appId: string;
+    headers: string[];
+    rows: any[];
+    fileName: string;
+  } | null>(null);
   
   // Editing state for Entitlements
   const [editingEnt, setEditingEnt] = useState<EntitlementDefinition | null>(null);
@@ -104,6 +114,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       },
       ignoreColumns: Array.isArray(current?.ignoreColumns)
         ? current.ignoreColumns.map(v => String(v || '').trim()).filter(Boolean)
+        : [],
+      customColumns: Array.isArray(current?.customColumns)
+        ? current.customColumns.map(v => String(v || '').trim()).filter(Boolean)
         : [],
       statusRules: {
         activeValues: Array.isArray(current?.statusRules?.activeValues) ? current!.statusRules!.activeValues : fallback.statusRules.activeValues,
@@ -162,12 +175,27 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     window.URL.revokeObjectURL(url);
   };
 
-  const mapAccountUploadRows = (headers: string[], rows: any[], app?: Application | null) => {
+  const mapAccountUploadRows = (
+    headers: string[],
+    rows: any[],
+    app?: Application | null,
+    schemaOverride?: Application['accountSchema'] | null
+  ) => {
     const appType = getResolvedAppType(app);
-    const schema = getResolvedAccountSchema(app);
+    const schema = schemaOverride ? {
+      ...getResolvedAccountSchema(app),
+      ...schemaOverride,
+      mappings: {
+        ...getResolvedAccountSchema(app).mappings,
+        ...(schemaOverride?.mappings || {})
+      },
+      ignoreColumns: Array.isArray(schemaOverride?.ignoreColumns) ? schemaOverride.ignoreColumns : getResolvedAccountSchema(app).ignoreColumns,
+      customColumns: Array.isArray(schemaOverride?.customColumns) ? schemaOverride.customColumns : getResolvedAccountSchema(app).customColumns
+    } : getResolvedAccountSchema(app);
     const template = APP_TYPE_SCHEMA_TEMPLATES[appType];
     const headerLookup = new Map(headers.map(h => [normalizeHeader(h), h]));
     const ignoreSet = new Set(schema.ignoreColumns.map(col => normalizeHeader(col)));
+    const customColumns = (schema.customColumns || []).filter(col => headerLookup.has(normalizeHeader(col)));
 
     const resolveHeader = (fieldKey: string, aliases: string[] = []) => {
       const configured = String(schema.mappings[fieldKey] || '').trim();
@@ -203,6 +231,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         if (ignoreSet.has(normalizeHeader(sourceHeader))) return '';
         return String(raw[sourceHeader] ?? '').trim();
       };
+      const customAttributes = customColumns.reduce((acc, col) => {
+        const sourceHeader = headerLookup.get(normalizeHeader(col)) || col;
+        const value = String(raw[sourceHeader] ?? '').trim();
+        if (value) acc[col] = value;
+        return acc;
+      }, {} as Record<string, string>);
 
       if (appType === 'Application') {
         const loginId = pick('loginId');
@@ -239,6 +273,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           employeeId,
           lastLoginDetails: lastLoginAt,
           accountOwnerName,
+          customAttributes,
           accountId: loginId
         });
         return;
@@ -275,6 +310,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           userType,
           createDate,
           userDetails,
+          customAttributes,
           accountId: loginName
         });
         return;
@@ -301,11 +337,85 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         entitlement: privilegeLevel,
         isPrivileged: /admin|root/i.test(privilegeLevel),
         accountStatus,
+        customAttributes,
         accountId: userId
       });
     });
 
     return { validRows, failedRows };
+  };
+
+  const buildUploadSchemaDraft = (app: Application, headers: string[]) => {
+    const schema = getResolvedAccountSchema(app);
+    const appType = getResolvedAppType(app);
+    const template = APP_TYPE_SCHEMA_TEMPLATES[appType];
+    const headerLookup = new Map(headers.map(h => [normalizeHeader(h), h]));
+    const mappings: Record<string, string> = { ...(schema.mappings || {}) };
+
+    template.fields.forEach(field => {
+      const current = String(mappings[field.key] || '').trim();
+      if (current && headerLookup.has(normalizeHeader(current))) {
+        mappings[field.key] = headerLookup.get(normalizeHeader(current)) || current;
+        return;
+      }
+      const candidates = [field.key, ...(field.aliases || []), template.defaultMappings[field.key] || '']
+        .map(value => String(value || '').trim())
+        .filter(Boolean);
+      const matched = candidates
+        .map(candidate => headerLookup.get(normalizeHeader(candidate)))
+        .find(Boolean);
+      mappings[field.key] = matched || '';
+    });
+
+    const mappedHeaders = new Set(Object.values(mappings).map(h => normalizeHeader(String(h || ''))).filter(Boolean));
+    const suggestedCustomColumns = headers
+      .filter(header => !mappedHeaders.has(normalizeHeader(header)) && !schema.ignoreColumns.map(v => normalizeHeader(v)).includes(normalizeHeader(header)));
+
+    return {
+      ...schema,
+      schemaAppType: appType,
+      mappings,
+      customColumns: Array.from(new Set([...(schema.customColumns || []), ...suggestedCustomColumns]))
+    };
+  };
+
+  const confirmUploadMapping = () => {
+    if (!pendingAccountUpload) return;
+    const targetApp = getAppRecord(pendingAccountUpload.appId);
+    if (!targetApp || !uploadSchemaDraft) return;
+
+    const mapped = mapAccountUploadRows(
+      pendingAccountUpload.headers,
+      pendingAccountUpload.rows,
+      targetApp,
+      uploadSchemaDraft
+    );
+
+    if (mapped.failedRows.length > 0) {
+      downloadImportErrorReport(mapped.failedRows);
+      alert(`Imported ${mapped.validRows.length} row(s). ${mapped.failedRows.length} row(s) failed validation. Error report downloaded.`);
+    }
+    if (mapped.validRows.length === 0) {
+      alert('No valid rows found in file. Please review the error report and try again.');
+      return;
+    }
+
+    onDataImport('APP_ACCESS', mapped.validRows, pendingAccountUpload.appId);
+    if (saveUploadMappingForApp) {
+      onUpdateApp({
+        ...targetApp,
+        accountSchema: {
+          ...targetApp.accountSchema,
+          ...uploadSchemaDraft,
+          schemaAppType: getResolvedAppType(targetApp)
+        }
+      });
+    }
+
+    setShowUploadMapper(false);
+    setPendingAccountUpload(null);
+    setUploadSchemaDraft(null);
+    setSaveUploadMappingForApp(true);
   };
 
   const downloadTemplate = (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD') => {
@@ -428,17 +538,16 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           alert('Select an application before uploading accounts.');
           return;
         }
-        const mapped = mapAccountUploadRows(headers, data, targetApp);
-        if (mapped.failedRows.length > 0) {
-          downloadImportErrorReport(mapped.failedRows);
-          alert(`Imported ${mapped.validRows.length} row(s). ${mapped.failedRows.length} row(s) failed validation. Error report downloaded.`);
-        }
-        if (mapped.validRows.length === 0) {
-          alert('No valid rows found in file. Please review the error report and try again.');
-          if (e.target) e.target.value = '';
-          return;
-        }
-        onDataImport(type, mapped.validRows, appId);
+        const draft = buildUploadSchemaDraft(targetApp, headers);
+        setUploadSchemaDraft(draft);
+        setPendingAccountUpload({
+          appId: String(appId || ''),
+          headers,
+          rows: data,
+          fileName: file.name
+        });
+        setSaveUploadMappingForApp(true);
+        setShowUploadMapper(true);
         if (e.target) e.target.value = '';
         return;
       }
@@ -518,6 +627,37 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       serverEnvironment: ''
     });
     setShowAddApp(false);
+  };
+
+  const handleSaveAppConfig = () => {
+    if (!editingAppConfig) return;
+
+    const nextName = String(editingAppConfig.name || '').trim();
+    if (!nextName || !editingAppConfig.ownerId || !editingAppConfig.ownerAdminId) {
+      window.alert('Please provide application name and both owner levels.');
+      return;
+    }
+
+    if (editingAppConfig.appType === 'Servers' && (!editingAppConfig.serverHost || !editingAppConfig.serverHostName || !editingAppConfig.serverEnvironment)) {
+      window.alert('For Servers type, Server Host, Server Host Name, and UAT/PROD are required.');
+      return;
+    }
+
+    const duplicateApp = applications.find(app =>
+      app.id !== editingAppConfig.id &&
+      String(app.name || '').trim().toLowerCase() === nextName.toLowerCase()
+    );
+    if (duplicateApp) {
+      window.alert('Application Name already exists. Please use a unique name.');
+      return;
+    }
+
+    onUpdateApp({
+      ...editingAppConfig,
+      name: nextName,
+      accountSchema: editingAppConfig.accountSchema || buildDefaultAccountSchema(editingAppConfig.appType)
+    });
+    setEditingAppConfig(null);
   };
 
   const normalizeEntOwnerForEdit = (ent: EntitlementDefinition) => {
@@ -624,6 +764,49 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     });
   };
 
+  const updateUploadMapping = (fieldKey: string, sourceColumn: string) => {
+    setUploadSchemaDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        mappings: {
+          ...(prev.mappings || {}),
+          [fieldKey]: sourceColumn
+        }
+      };
+    });
+  };
+
+  const toggleUploadIgnoreColumn = (column: string) => {
+    setUploadSchemaDraft(prev => {
+      if (!prev) return prev;
+      const normalized = normalizeHeader(column);
+      const existing = (prev.ignoreColumns || []).map(c => String(c || '').trim()).filter(Boolean);
+      const next = existing.some(c => normalizeHeader(c) === normalized)
+        ? existing.filter(c => normalizeHeader(c) !== normalized)
+        : [...existing, column];
+      return {
+        ...prev,
+        ignoreColumns: next
+      };
+    });
+  };
+
+  const toggleUploadCustomColumn = (column: string) => {
+    setUploadSchemaDraft(prev => {
+      if (!prev) return prev;
+      const normalized = normalizeHeader(column);
+      const existing = (prev.customColumns || []).map(c => String(c || '').trim()).filter(Boolean);
+      const next = existing.some(c => normalizeHeader(c) === normalized)
+        ? existing.filter(c => normalizeHeader(c) !== normalized)
+        : [...existing, column];
+      return {
+        ...prev,
+        customColumns: next
+      };
+    });
+  };
+
   const saveSchemaConfiguration = () => {
     if (!selectedAppRecord || !schemaDraft) return;
     onUpdateApp({
@@ -720,6 +903,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const selectedSchemaTemplate = selectedAppRecord
     ? APP_TYPE_SCHEMA_TEMPLATES[getResolvedAppType(selectedAppRecord)]
     : APP_TYPE_SCHEMA_TEMPLATES.Application;
+  const selectedAppCustomColumns = (selectedAppRecord?.accountSchema?.customColumns || [])
+    .map(col => String(col || '').trim())
+    .filter(Boolean);
 
   const selectedAppRiskByAccountId = useMemo(() => {
     const grouped: Record<string, Array<{ appId: string; entitlement: string }>> = {};
@@ -1488,6 +1674,23 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                     <p className="text-sm text-slate-500">Manage accounts, definitions, and SoD rules.</p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const app = applications.find(a => a.id === selectedAppId);
+                        if (!app) return;
+                        setEditingAppConfig({
+                          ...app,
+                          appType: app.appType || 'Application',
+                          description: app.description || '',
+                          serverHost: (app as any).serverHost || '',
+                          serverHostName: (app as any).serverHostName || '',
+                          serverEnvironment: (app as any).serverEnvironment || ''
+                        });
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-lg text-xs font-bold border border-transparent hover:border-blue-100 transition-all"
+                    >
+                      <Edit2 className="w-4 h-4" /> Edit Configuration
+                    </button>
                     <button 
                       onClick={() => setShowDeleteConfirm(selectedAppId)} 
                       className="flex items-center gap-2 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-xs font-bold border border-transparent hover:border-red-100 transition-all"
@@ -1574,6 +1777,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             <th className="px-4 py-3">Correlation</th>
                             <th className="px-4 py-3">Entitlement(s)</th>
                             <th className="px-4 py-3">Status</th>
+                            {selectedAppCustomColumns.map(col => (
+                              <th key={col} className="px-4 py-3">{col}</th>
+                            ))}
                             <th className="px-4 py-3">Risk Status</th>
                           </tr>
                         </thead>
@@ -1618,6 +1824,15 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                       {Array.from(new Set(group.entitlements.map(e => String((e as any).accountStatus || '').trim()).filter(Boolean))).join(', ') || '-'}
                                     </span>
                                   </td>
+                                  {selectedAppCustomColumns.map(col => (
+                                    <td key={`${group.userId}-${col}`} className="px-4 py-3">
+                                      <span className="text-[10px] font-bold text-slate-500">
+                                        {Array.from(new Set(group.entitlements
+                                          .map(e => String((e as any)?.customAttributes?.[col] || (e as any)?.[col] || '').trim())
+                                          .filter(Boolean))).join(', ') || '-'}
+                                      </span>
+                                    </td>
+                                  ))}
                                   <td className="px-4 py-3">
                                     {getRiskDisplay(group)}
                                   </td>
@@ -1658,6 +1873,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   <td className="px-4 py-3">
                                     <span className="text-[10px] font-bold text-slate-500">{String((acc as any).accountStatus || '').trim() || '-'}</span>
                                   </td>
+                                  {selectedAppCustomColumns.map(col => (
+                                    <td key={`${acc.id}-${col}`} className="px-4 py-3">
+                                      <span className="text-[10px] font-bold text-slate-500">{String((acc as any)?.customAttributes?.[col] || (acc as any)?.[col] || '').trim() || '-'}</span>
+                                    </td>
+                                  ))}
                                   <td className="px-4 py-3">
                                     {getRiskDisplay(acc)}
                                   </td>
@@ -1930,6 +2150,173 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUploadMapper && pendingAccountUpload && uploadSchemaDraft && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl animate-in zoom-in-95">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Map Feed Columns</h3>
+                <p className="text-sm text-slate-500 mt-1">File: {pendingAccountUpload.fileName} | App: {selectedAppRecord?.name || pendingAccountUpload.appId}</p>
+              </div>
+              <button onClick={() => { setShowUploadMapper(false); setPendingAccountUpload(null); setUploadSchemaDraft(null); setSaveUploadMappingForApp(true); }} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="mt-6 max-h-[65vh] overflow-y-auto space-y-6 pr-1">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-black text-slate-700 uppercase tracking-wider">Canonical Mapping</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                  {selectedSchemaTemplate.fields.map(field => (
+                    <div key={`upload-${field.key}`}>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{field.label}{field.required ? ' *' : ''}</label>
+                      <select
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        value={uploadSchemaDraft.mappings?.[field.key] || ''}
+                        onChange={(event) => updateUploadMapping(field.key, event.target.value)}
+                      >
+                        <option value="">-- Not mapped --</option>
+                        {pendingAccountUpload.headers.map(header => <option key={`${field.key}-${header}`} value={header}>{header}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="text-xs font-black text-slate-700 uppercase tracking-wider">Ignore Columns</p>
+                  <div className="mt-3 space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {pendingAccountUpload.headers.map(header => {
+                      const checked = (uploadSchemaDraft.ignoreColumns || []).some(col => normalizeHeader(col) === normalizeHeader(header));
+                      return (
+                        <label key={`ignore-${header}`} className="flex items-center gap-2 text-xs text-slate-600">
+                          <input type="checkbox" checked={checked} onChange={() => toggleUploadIgnoreColumn(header)} className="rounded text-blue-600" />
+                          <span>{header}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="text-xs font-black text-slate-700 uppercase tracking-wider">Show As Custom Columns</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Selected columns will be stored and shown for this app in the accounts grid.</p>
+                  <div className="mt-3 space-y-2 max-h-52 overflow-y-auto pr-1">
+                    {pendingAccountUpload.headers.map(header => {
+                      const isIgnored = (uploadSchemaDraft.ignoreColumns || []).some(col => normalizeHeader(col) === normalizeHeader(header));
+                      const checked = (uploadSchemaDraft.customColumns || []).some(col => normalizeHeader(col) === normalizeHeader(header));
+                      return (
+                        <label key={`custom-${header}`} className={`flex items-center gap-2 text-xs ${isIgnored ? 'text-slate-300' : 'text-slate-600'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isIgnored}
+                            onChange={() => toggleUploadCustomColumn(header)}
+                            className="rounded text-blue-600"
+                          />
+                          <span>{header}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <label className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+                  <input
+                    type="checkbox"
+                    checked={saveUploadMappingForApp}
+                    onChange={(event) => setSaveUploadMappingForApp(event.target.checked)}
+                    className="rounded text-blue-600"
+                  />
+                  Save this mapping as default for this application only
+                </label>
+                <p className="text-xs text-blue-700 mt-1">This will not change mappings for other applications or app types.</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => { setShowUploadMapper(false); setPendingAccountUpload(null); setUploadSchemaDraft(null); setSaveUploadMappingForApp(true); }} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={confirmUploadMapping}
+                className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
+              >
+                Confirm Mapping And Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingAppConfig && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-xl shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-xl font-bold mb-6 text-slate-900">Edit Application Configuration</h3>
+            <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Application Name</label>
+                <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.name || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Type</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.appType || 'Application'} onChange={e => setEditingAppConfig({ ...editingAppConfig, appType: e.target.value as NonNullable<Application['appType']> })}>
+                  {APPLICATION_TYPE_OPTIONS.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Description</label>
+                <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" rows={3} value={editingAppConfig.description || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, description: e.target.value })} />
+              </div>
+              {editingAppConfig.appType === 'Servers' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Server Host</label>
+                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.serverHost || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, serverHost: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Server Host Name</label>
+                    <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.serverHostName || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, serverHostName: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Environment</label>
+                    <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.serverEnvironment || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, serverEnvironment: e.target.value as 'UAT' | 'PROD' | '' })}>
+                      <option value="">Select Environment...</option>
+                      <option value="UAT">UAT</option>
+                      <option value="PROD">PROD</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(editingAppConfig.appType).primary}</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.ownerId || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, ownerId: e.target.value })}>
+                  <option value="">Select Identity...</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(editingAppConfig.appType).secondary}</label>
+                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.ownerAdminId || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, ownerAdminId: e.target.value })}>
+                  <option value="">Select Identity...</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setEditingAppConfig(null)} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={handleSaveAppConfig}
+                className="flex-1 px-6 py-3 text-white rounded-xl font-bold shadow-lg hover:opacity-90"
+                style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
+              >
+                Save Changes
+              </button>
             </div>
           </div>
         </div>

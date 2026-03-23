@@ -116,6 +116,7 @@ export const buildDefaultAccountSchema = (appType?: Application['appType']): App
     schemaAppType: resolvedType,
     mappings: { ...template.defaultMappings },
     ignoreColumns: [],
+    customColumns: [],
     statusRules: {
       activeValues: [...template.statusRules.activeValues],
       inactiveValues: [...template.statusRules.inactiveValues]

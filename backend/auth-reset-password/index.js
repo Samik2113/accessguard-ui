@@ -3,6 +3,8 @@ const Ajv = require("ajv");
 const crypto = require("crypto");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
+const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
+const BREAKGLASS_EMAIL = String(process.env.BREAKGLASS_EMAIL || "breakglass-admin@local").trim().toLowerCase();
 const schema = {
   type: "object",
   required: ["userId"],
@@ -43,7 +45,7 @@ function bad(status, error, req) {
 }
 
 function defaultRoleFor(userId) {
-  return String(userId || "").trim().toUpperCase() === "ADM001" ? "ADMIN" : "USER";
+  return String(userId || "").trim().toUpperCase() === BREAKGLASS_USER_ID ? "ADMIN" : "USER";
 }
 
 module.exports = async function (context, req) {
@@ -80,21 +82,33 @@ module.exports = async function (context, req) {
 
     if (!authUser) {
       if (!hrProfile) {
-        return bad(404, `No auth/hr profile found for userId=${targetUserId}. Import HR user first.`, req);
+        if (String(targetUserId).toUpperCase() !== BREAKGLASS_USER_ID) {
+          return bad(404, `No auth/hr profile found for userId=${targetUserId}. Import HR user first.`, req);
+        }
+        authUser = {
+          id: targetUserId,
+          userId: targetUserId,
+          email: BREAKGLASS_EMAIL,
+          role: "ADMIN",
+          status: "ACTIVE",
+          createdAt: new Date().toISOString(),
+          type: "user-auth"
+        };
+      } else {
+        const hrEmail = String(hrProfile.email || "").trim().toLowerCase();
+        if (!hrEmail) {
+          return bad(400, `HR profile for userId=${targetUserId} is missing email.`, req);
+        }
+        authUser = {
+          id: targetUserId,
+          userId: targetUserId,
+          email: hrEmail,
+          role: defaultRoleFor(targetUserId),
+          status: "ACTIVE",
+          createdAt: new Date().toISOString(),
+          type: "user-auth"
+        };
       }
-      const hrEmail = String(hrProfile.email || "").trim().toLowerCase();
-      if (!hrEmail) {
-        return bad(400, `HR profile for userId=${targetUserId} is missing email.`, req);
-      }
-      authUser = {
-        id: targetUserId,
-        userId: targetUserId,
-        email: hrEmail,
-        role: defaultRoleFor(targetUserId),
-        status: "ACTIVE",
-        createdAt: new Date().toISOString(),
-        type: "user-auth"
-      };
     }
 
     const temporaryPassword = generateTempPassword();

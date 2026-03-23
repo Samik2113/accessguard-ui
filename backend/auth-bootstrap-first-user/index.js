@@ -88,15 +88,15 @@ module.exports = async function (context, req) {
     await runStep(context, "hrContainerRead", () => hrC.read());
     await runStep(context, "auditContainerRead", () => logsC.read());
 
-    const existingAuth = await runStep(context, "existingAuthQuery", () =>
+    const existingAdmin = await runStep(context, "existingAdminQuery", () =>
       authC.items.query({
-        query: "SELECT TOP 1 c.id FROM c WHERE c.type=@type",
-        parameters: [{ name: "@type", value: "user-auth" }]
+        query: "SELECT TOP 1 c.id FROM c WHERE c.type=@type AND UPPER(c.role)=@role",
+        parameters: [{ name: "@type", value: "user-auth" }, { name: "@role", value: "ADMIN" }]
       }).fetchAll()
     );
 
-    if ((existingAuth.resources || []).length > 0) {
-      return bad(409, "First user is already provisioned. Use normal login.", req);
+    if ((existingAdmin.resources || []).length > 0) {
+      return bad(409, "An admin account already exists. Use normal login.", req);
     }
 
     const existingByEmail = await runStep(context, "existingByEmailQuery", () =>

@@ -2,6 +2,7 @@ const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
+const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
 
 const ALLOWED_ROLES = new Set(["ADMIN", "AUDITOR", "USER"]);
 const schema = {
@@ -116,6 +117,10 @@ module.exports = async function (context, req) {
         }
         const userId = String(item.userId).trim();
         const role = String(item.role).trim().toUpperCase();
+        if (String(userId).toUpperCase() === BREAKGLASS_USER_ID && role !== "ADMIN") {
+          errors.push({ index: i, userId, error: `Breakglass user '${BREAKGLASS_USER_ID}' role cannot be changed from ADMIN` });
+          continue;
+        }
         if (!ALLOWED_ROLES.has(role)) {
           errors.push({ index: i, userId, error: "role must be ADMIN, AUDITOR or USER" });
           continue;
@@ -145,6 +150,9 @@ module.exports = async function (context, req) {
 
     const userId = String(body.userId).trim();
     const role = String(body.role).trim().toUpperCase();
+    if (String(userId).toUpperCase() === BREAKGLASS_USER_ID && role !== "ADMIN") {
+      return bad(400, `Breakglass user '${BREAKGLASS_USER_ID}' role cannot be changed from ADMIN`, req);
+    }
     if (!ALLOWED_ROLES.has(role)) {
       return bad(400, "role must be ADMIN, AUDITOR or USER", req);
     }

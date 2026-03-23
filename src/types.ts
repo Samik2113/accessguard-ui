@@ -196,6 +196,7 @@ export interface AppAccountSchemaConfig {
   schemaAppType: NonNullable<Application['appType']>;
   mappings: Record<string, string>;
   ignoreColumns: string[];
+  customColumns?: string[];
   statusRules: {
     activeValues: string[];
     inactiveValues: string[];

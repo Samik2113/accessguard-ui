@@ -286,6 +286,9 @@ const App: React.FC = () => {
       ignoreColumns: Array.isArray(current?.ignoreColumns)
         ? current.ignoreColumns.map((value: any) => String(value || '').trim()).filter(Boolean)
         : [],
+      customColumns: Array.isArray(current?.customColumns)
+        ? current.customColumns.map((value: any) => String(value || '').trim()).filter(Boolean)
+        : [],
       statusRules: {
         activeValues: Array.isArray(current?.statusRules?.activeValues)
           ? current.statusRules.activeValues.map((value: any) => String(value || '').trim().toLowerCase()).filter(Boolean)
@@ -1603,6 +1606,14 @@ useEffect(() => {
 
   const updateApplication = async (app: Application) => {
     try {
+      const existing = applications.find((candidate: any) => {
+        const candidateId = String(candidate?.id ?? '').trim();
+        const candidateAppId = String(candidate?.appId ?? '').trim();
+        const targetId = String(app?.id ?? '').trim();
+        const targetAppId = String((app as any)?.appId ?? '').trim();
+        return candidateId === targetId || candidateAppId === targetId || (targetAppId && candidateId === targetAppId) || (targetAppId && candidateAppId === targetAppId);
+      });
+
       const payload = {
         ...app,
         appType: normalizeApplicationType(app.appType),
@@ -1616,7 +1627,27 @@ useEffect(() => {
       }
       const refreshed = await getApplications(100);
       setApplications((refreshed.items ?? []).map(normalizeApplicationRecord));
-      await addAuditLog('APP_UPDATE', `Updated application configuration for ${app.name} (${app.id})`);
+
+      const beforeAfterPairs: Array<[string, any, any]> = [
+        ['name', existing?.name, payload.name],
+        ['description', existing?.description, payload.description],
+        ['appType', existing?.appType, payload.appType],
+        ['ownerId', existing?.ownerId, payload.ownerId],
+        ['ownerAdminId', (existing as any)?.ownerAdminId, (payload as any)?.ownerAdminId],
+        ['serverHost', (existing as any)?.serverHost, (payload as any)?.serverHost],
+        ['serverHostName', (existing as any)?.serverHostName, (payload as any)?.serverHostName],
+        ['serverEnvironment', (existing as any)?.serverEnvironment, (payload as any)?.serverEnvironment]
+      ];
+
+      const changes = beforeAfterPairs
+        .filter(([, before, after]) => String(before ?? '').trim() !== String(after ?? '').trim())
+        .map(([field, before, after]) => `${field}: '${String(before ?? '').trim() || '-'}' -> '${String(after ?? '').trim() || '-'}'`);
+
+      const detail = changes.length > 0
+        ? `Updated application ${payload.name} (${payload.id}). ${changes.join('; ')}`
+        : `Updated application ${payload.name} (${payload.id}). No field-level changes detected.`;
+
+      await addAuditLog('APP_UPDATE', detail);
     } catch (err: any) {
       console.error('Update application error:', err);
       window.alert(err?.message || 'Failed to update application configuration.');

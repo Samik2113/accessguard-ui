@@ -3,6 +3,9 @@ const Ajv = require("ajv");
 const crypto = require("crypto");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
+const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
+const BREAKGLASS_NAME = String(process.env.BREAKGLASS_NAME || "Breakglass Admin").trim();
+const BREAKGLASS_EMAIL = String(process.env.BREAKGLASS_EMAIL || "breakglass-admin@local").trim().toLowerCase();
 const userSchema = {
   type: "object",
   required: ["userId", "name", "email"],
@@ -55,7 +58,7 @@ function normalizeRole(inputRole, userId) {
   const role = String(inputRole || "").trim().toUpperCase();
   if (role === "ADMIN" || role === "AUDITOR" || role === "USER") return role;
   if (role === "MANAGER") return "USER";
-  if (String(userId || "").trim().toUpperCase() === "ADM001") return "ADMIN";
+  if (isBreakglassUser(userId)) return "ADMIN";
   return "USER";
 }
 
@@ -73,6 +76,10 @@ function hashPassword(password, saltHex) {
   const salt = saltHex || crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(String(password), salt, 100000, 32, "sha256").toString("hex");
   return { salt, hash };
+}
+
+function isBreakglassUser(userId) {
+  return String(userId || "").trim().toUpperCase() === BREAKGLASS_USER_ID;
 }
 
 module.exports = async function (context, req) {
@@ -134,6 +141,10 @@ module.exports = async function (context, req) {
         throw new Error("Schema validation failed: " + ajv.errorsText(validateUser.errors));
       }
       const userId = String(u.userId).trim();
+      if (isBreakglassUser(userId)) {
+        // Breakglass identity is managed outside HR feed and cannot be overwritten by imports.
+        return true;
+      }
       const email = String(u.email || "").trim().toLowerCase();
 
       let existingHr = null;
@@ -240,7 +251,10 @@ module.exports = async function (context, req) {
       const existingDocs = existing.resources || [];
 
       // anything existing that is not in the current payload must be deleted
-      const candidates = existingDocs.filter(doc => !incomingIds.has(doc.id)); // id == userId as per upsert
+      const candidates = existingDocs.filter(doc => {
+        if (isBreakglassUser(doc.id)) return false;
+        return !incomingIds.has(doc.id);
+      }); // id == userId as per upsert
 
       // Build deletions (id + partition key userId)
       const deletables = candidates.map(doc => ({ id: doc.id, pk: doc.userId || doc.id }));
@@ -270,6 +284,73 @@ module.exports = async function (context, req) {
           attemptedDeletes: deletables.map(d => ({ id: d.id, pk: d.pk }))
         };
       }
+    }
+
+    // Ensure breakglass identity always exists and stays ADMIN.
+    let breakglassHr = null;
+    try {
+      const hrRead = await usersC.item(BREAKGLASS_USER_ID, BREAKGLASS_USER_ID).read();
+      breakglassHr = hrRead?.resource || null;
+    } catch (_) {
+    }
+
+    let breakglassAuth = null;
+    try {
+      const authRead = await authC.item(BREAKGLASS_USER_ID, BREAKGLASS_USER_ID).read();
+      breakglassAuth = authRead?.resource || null;
+    } catch (_) {
+    }
+
+    const breakglassEmail = String(breakglassHr?.email || breakglassAuth?.email || BREAKGLASS_EMAIL).trim().toLowerCase();
+    await usersC.items.upsert({
+      ...(breakglassHr || {}),
+      id: BREAKGLASS_USER_ID,
+      userId: BREAKGLASS_USER_ID,
+      name: String(breakglassHr?.name || BREAKGLASS_NAME),
+      email: breakglassEmail,
+      role: "ADMIN",
+      status: "ACTIVE",
+      createdAt: breakglassHr?.createdAt || now,
+      updatedAt: now,
+      type: "hr-user",
+      managedBy: "system-breakglass"
+    });
+
+    if (!breakglassAuth) {
+      const tempPassword = generateTempPassword();
+      const hashed = hashPassword(tempPassword);
+      await authC.items.upsert({
+        id: BREAKGLASS_USER_ID,
+        userId: BREAKGLASS_USER_ID,
+        email: breakglassEmail,
+        role: "ADMIN",
+        passwordHash: hashed.hash,
+        passwordSalt: hashed.salt,
+        passwordAlgo: "pbkdf2_sha256_100000",
+        mustChangePassword: true,
+        status: "ACTIVE",
+        createdAt: now,
+        updatedAt: now,
+        type: "user-auth"
+      });
+      issuedCredentials.push({
+        userId: BREAKGLASS_USER_ID,
+        name: String(breakglassHr?.name || BREAKGLASS_NAME),
+        email: breakglassEmail,
+        temporaryPassword: tempPassword,
+        mustChangePassword: true
+      });
+    } else {
+      await authC.items.upsert({
+        ...breakglassAuth,
+        id: BREAKGLASS_USER_ID,
+        userId: BREAKGLASS_USER_ID,
+        email: breakglassEmail,
+        role: "ADMIN",
+        status: "ACTIVE",
+        updatedAt: now,
+        type: "user-auth"
+      });
     }
 
     // audit log (actor can come from headers or default)
