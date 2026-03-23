@@ -41,6 +41,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const [activeSubTab, setActiveSubTab] = useState<'identities' | 'applications' | 'sod'>('identities');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [collapsedAppTypeGroups, setCollapsedAppTypeGroups] = useState<Record<string, boolean>>({});
   const [appManagementTab, setAppManagementTab] = useState<'accounts' | 'definitions'>('accounts');
   const [showAddApp, setShowAddApp] = useState(false);
   const [editingAppConfig, setEditingAppConfig] = useState<Application | null>(null);
@@ -940,9 +942,64 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const selectedAppData = access.filter(a => a.appId === selectedAppId);
   const selectedEntitlements = entitlements.filter(e => e.appId === selectedAppId);
+  const filteredApplications = useMemo(() => {
+    const query = String(appSearchQuery || '').trim().toLowerCase();
+    if (!query) return applications;
+    return applications.filter(app => {
+      const ownerName = users.find(u => u.id === app.ownerId)?.name || '';
+      const ownerAdminName = users.find(u => u.id === app.ownerAdminId)?.name || '';
+      const fields = [
+        String(app.name || ''),
+        String((app as any).id || (app as any).appId || ''),
+        String(app.appType || 'Application'),
+        String(ownerName),
+        String(ownerAdminName)
+      ]
+        .join(' ')
+        .toLowerCase();
+      return fields.includes(query);
+    });
+  }, [applications, users, appSearchQuery]);
+  const groupedFilteredApplications = useMemo(() => {
+    const grouped: Record<string, Application[]> = {};
+    filteredApplications.forEach(app => {
+      const appType = getResolvedAppType(app);
+      if (!grouped[appType]) grouped[appType] = [];
+      grouped[appType].push(app);
+    });
+
+    const orderedEntries: Array<[string, Application[]]> = [];
+    APPLICATION_TYPE_OPTIONS.forEach(appType => {
+      if (grouped[appType]?.length) {
+        orderedEntries.push([
+          appType,
+          [...grouped[appType]].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+        ]);
+        delete grouped[appType];
+      }
+    });
+
+    Object.entries(grouped)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([appType, apps]) => {
+        orderedEntries.push([appType, [...apps].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))]);
+      });
+
+    return orderedEntries;
+  }, [filteredApplications]);
   const selectedSchemaTemplate = selectedAppRecord
     ? APP_TYPE_SCHEMA_TEMPLATES[getResolvedAppType(selectedAppRecord)]
     : APP_TYPE_SCHEMA_TEMPLATES.Application;
+  const isAppTypeGroupCollapsed = (appType: string) => {
+    if (String(appSearchQuery || '').trim()) return false;
+    return collapsedAppTypeGroups[appType] === true;
+  };
+  const toggleAppTypeGroup = (appType: string) => {
+    setCollapsedAppTypeGroups(prev => ({
+      ...prev,
+      [appType]: !(prev[appType] === true)
+    }));
+  };
   const selectedAppCustomColumns = (selectedAppRecord?.accountSchema?.customColumns || [])
     .map(col => String(col || '').trim())
     .filter(Boolean);
@@ -1664,33 +1721,64 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             {/* Left Sidebar - Application List */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-4 space-y-2 max-h-[600px] overflow-y-auto">
+                <div className="sticky top-0 bg-white pb-2 z-10">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Search Applications</label>
+                  <input
+                    type="text"
+                    value={appSearchQuery}
+                    onChange={(e) => setAppSearchQuery(e.target.value)}
+                    placeholder="Search by name, id, type, owner"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
+                  />
+                </div>
                 {applications.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
                     <Database className="w-8 h-8 mb-2 opacity-20" />
                     <p className="text-sm font-medium">No applications yet.</p>
                     <p className="text-xs opacity-70">Click "Add Application" above to create one.</p>
                   </div>
+                ) : groupedFilteredApplications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-center">
+                    <FileText className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-sm font-medium">No matching applications.</p>
+                    <p className="text-xs opacity-70">Try a different search keyword.</p>
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    {applications.map(app => (
-                      <button key={app.id} onClick={() => {
-                        setSelectedAppId(app.id);
-                        onSelectApp?.(app.id);
-                      }} className={`w-full text-left p-3 rounded-lg border transition-all ${selectedAppId === app.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-slate-50 border-slate-200 hover:border-blue-300 hover:bg-white'}`}>
-                        <div className="font-bold flex justify-between items-center">
-                          <span className="truncate">{app.name}</span>
-                          {selectedAppId === app.id && <Settings2 className="w-3.5 h-3.5 shrink-0 ml-2" />}
-                        </div>
-                        <div className={`text-[11px] mt-1.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                          {app.appType || 'Application'}
-                        </div>
-                        <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                          {getOwnerLabels(app.appType).primary}: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
-                        </div>
-                        <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                          {getOwnerLabels(app.appType).secondary}: {users.find(u => u.id === app.ownerAdminId)?.name || 'Unknown'}
-                        </div>
-                      </button>
+                    {groupedFilteredApplications.map(([appType, apps]) => (
+                      <div key={`app-type-${appType}`} className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleAppTypeGroup(appType)}
+                          className="w-full flex items-center justify-between px-1 pt-1 pb-1 rounded hover:bg-slate-50"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isAppTypeGroupCollapsed(appType) ? '' : 'rotate-90'}`} />
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">{appType}</p>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400">{apps.length}</span>
+                        </button>
+                        {!isAppTypeGroupCollapsed(appType) && apps.map(app => (
+                          <button key={app.id} onClick={() => {
+                            setSelectedAppId(app.id);
+                            onSelectApp?.(app.id);
+                          }} className={`w-full text-left p-3 rounded-lg border transition-all ${selectedAppId === app.id ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-slate-50 border-slate-200 hover:border-blue-300 hover:bg-white'}`}>
+                            <div className="font-bold flex justify-between items-center">
+                              <span className="truncate">{app.name}</span>
+                              {selectedAppId === app.id && <Settings2 className="w-3.5 h-3.5 shrink-0 ml-2" />}
+                            </div>
+                            <div className={`text-[11px] mt-1.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {app.appType || 'Application'}
+                            </div>
+                            <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {getOwnerLabels(app.appType).primary}: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
+                            </div>
+                            <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
+                              {getOwnerLabels(app.appType).secondary}: {users.find(u => u.id === app.ownerAdminId)?.name || 'Unknown'}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )}
