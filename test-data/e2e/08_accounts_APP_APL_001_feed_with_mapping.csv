@@ -1,0 +1,12 @@
+Login_Name,Mail_Address,Emp_Code,Access_Role,Last_Login_TS,Acct_Status,Owner_Display,CostCenter,Location,Account_Owner_ID,IgnoreMe
+USR001,aarav.mehta@acme.com,USR001,FIN_USER,2026-03-20T10:30:00,Active,Aarav Mehta,CC1001,Mumbai,,x
+USR002,neha.iyer@acme.com,USR002,FIN_APPROVER,2026-03-21T09:05:00,Enabled,Neha Iyer,CC1002,Bangalore,,x
+USR003,rohan.das@acme.com,USR003,FIN_ADMIN,2026-03-21T18:10:00,A,Rohan Das,CC1003,Delhi,,x
+USR004,priya.nair@acme.com,,HR_VIEW,2026-03-22T11:20:00,1,Priya Nair,CC2001,Chennai,,x
+SVC_FIN_AP,svc.finap@acme.com,SVC_FIN_AP,FIN_APPROVER,2026-03-22T14:30:00,Active,Finance AP Service,CC1001,Mumbai,OWN001,x
+SVC_BATCH_PROC,svc.batch@acme.com,SVC_BATCH,FIN_USER,2026-03-21T22:00:00,Active,Batch Processor,CC1001,Bangalore,OWN007,x
+USR008,rina.paul@acme.com,USR008,FIN_USER,2026-03-15T14:00:00,Inactive,Rina Paul,CC1004,Hyderabad,OWN001,x
+EXT901,contractor.one@vendor.com,EXT901,FIN_VENDOR,2026-03-10T08:00:00,Disabled,Contractor One,CC9001,Remote,OWN001,x
+USR024,niharika.jain@acme.com,USR024,FIN_GL_POSTER,2026-03-23T07:55:00,True,Niharika Jain,CC1005,Pune,,x
+USR025,yash.mehta@acme.com,USR025,FIN_SUPPORT,2026-03-19T16:45:00,false,Yash Mehta,CC3001,Noida,,x
+APP_BOT_VENDOR,bot.vendor@acme.com,APP_BOT,FIN_VENDOR,2026-03-20T03:00:00,Active,Vendor Bot Account,CC9001,Noida,OWN001,x

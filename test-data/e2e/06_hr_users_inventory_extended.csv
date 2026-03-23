@@ -1,0 +1,43 @@
+userId,name,email,department,managerId,title,status
+ADM001,Platform Admin,admin@acme.com,IT,,CISO,Active
+MGR001,Samiksha Agarwal,samiksha.agarwal1@in.ey.com,Finance,ADM001,Finance Manager,Active
+MGR002,Rahul Verma,rahul.verma@acme.com,HR,ADM001,HR Manager,Active
+MGR003,Karan Patel,karan.patel@acme.com,Sales,ADM001,Sales Manager,Active
+MGR004,Nidhi Shah,nidhi.shah@acme.com,IT,ADM001,Infrastructure Manager,Active
+OWN001,Meera Nanda,meera.nanda@acme.com,Finance,ADM001,Application Owner,Active
+OWN002,Dev Khanna,dev.khanna@acme.com,HR,ADM001,Application Owner,Active
+OWN003,Isha Rao,isha.rao@acme.com,Sales,ADM001,Application Owner,Active
+OWN004,Arjun Malhotra,arjun.malhotra@acme.com,IT,ADM001,Database Owner,Active
+OWN005,Pooja Menon,pooja.menon@acme.com,IT,ADM001,Server Owner,Active
+OWN006,Ritesh Saha,ritesh.saha@acme.com,IT,ADM001,Mailbox Owner,Active
+OWN007,Anita Das,anita.das@acme.com,Finance,MGR001,App Admin,Active
+OWN008,Vivek Jain,vivek.jain@acme.com,HR,MGR002,App Admin,Active
+OWN009,Sonal Gupta,sonal.gupta@acme.com,Sales,MGR003,App Admin,Active
+OWN010,Aditya Roy,aditya.roy@acme.com,IT,MGR004,DB Admin,Active
+OWN011,Tarun Chopra,tarun.chopra@acme.com,IT,MGR004,Server Admin,Active
+OWN012,Neelam Joshi,neelam.joshi@acme.com,IT,MGR004,Mailbox Admin,Active
+USR001,Aarav Mehta,aarav.mehta@acme.com,Finance,MGR001,Analyst,Active
+USR002,Neha Iyer,neha.iyer@acme.com,Finance,MGR001,Senior Analyst,Active
+USR003,Rohan Das,rohan.das@acme.com,Finance,MGR001,Lead Analyst,Active
+USR004,Priya Nair,priya.nair@acme.com,HR,MGR002,HR Specialist,Active
+USR005,Vikram Singh,vikram.singh@acme.com,Sales,MGR003,Sales Ops,Active
+USR006,Sana Khan,sana.khan@acme.com,Sales,MGR003,Regional Manager,Active
+USR007,Mark Dsouza,mark.dsouza@acme.com,Finance,MGR001,Accounts Lead,Active
+USR008,Rina Paul,rina.paul@acme.com,Finance,MGR001,AP Analyst,Inactive
+USR009,Naveen Kumar,naveen.kumar@acme.com,HR,MGR002,HR Executive,Active
+USR010,Kriti Sharma,kriti.sharma@acme.com,IT,MGR004,DBA,Active
+USR011,Harsh Bedi,harsh.bedi@acme.com,IT,MGR004,System Engineer,Active
+USR012,Maya Sen,maya.sen@acme.com,IT,MGR004,Platform Engineer,Active
+USR013,Faisal Ali,faisal.ali@acme.com,Sales,MGR003,Sales Analyst,Active
+USR014,Gauri Rao,gauri.rao@acme.com,HR,MGR002,Payroll Analyst,Active
+USR015,Rohan Kapoor,rohan.kapoor@acme.com,Finance,MGR001,Treasury Analyst,Active
+USR016,Leena Mathew,leena.mathew@acme.com,IT,MGR004,Network Engineer,Active
+USR017,Prakash Nair,prakash.nair@acme.com,IT,MGR004,Unix Admin,Inactive
+USR018,Kavya Iqbal,kavya.iqbal@acme.com,IT,MGR004,Cloud Admin,Active
+USR019,Suresh Pillai,suresh.pillai@acme.com,Sales,MGR003,PreSales,Active
+USR020,Ritu Sharma,ritu.sharma@acme.com,HR,MGR002,HRBP,Active
+USR021,Aman Arora,aman.arora@acme.com,Finance,MGR001,Controller,Active
+USR022,Smita Bose,smita.bose@acme.com,IT,MGR004,Information Security,Active
+USR023,Ganesh Iyer,ganesh.iyer@acme.com,Sales,MGR003,Account Manager,Active
+USR024,Niharika Jain,niharika.jain@acme.com,Finance,MGR001,GL Analyst,Active
+USR025,Yash Mehta,yash.mehta@acme.com,IT,MGR004,Support Engineer,Active

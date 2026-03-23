@@ -1,0 +1,10 @@
+User_Identifier,User_Display,Privilege,Status_Text,Server_Host,OS_Family,Managed_By_Owner,Ignore_Column
+USR011,Harsh Bedi,root,Active,linux-jump-prod-01,Linux,,ignore
+USR012,Maya Sen,admin,Enabled,linux-jump-prod-01,Linux,,ignore
+SVC_BACKUP,Backup Service,root,Active,linux-jump-prod-01,Linux,OWN011,ignore
+USR016,Leena Mathew,power-user,A,linux-jump-prod-02,Linux,,ignore
+USR018,Kavya Iqbal,admin,1,linux-jump-prod-02,Linux,,ignore
+USR025,Yash Mehta,user,Inactive,linux-jump-prod-03,Linux,OWN011,ignore
+SVC_MONITORING,Monitoring Agent,power-user,Active,linux-jump-prod-04,Linux,OWN011,ignore
+USR017,Prakash Nair,user,disabled,linux-jump-prod-03,Linux,OWN011,ignore
+SVC_DEPLOY_BOT,Deployment Bot,root,Active,linux-jump-prod-02,Linux,OWN011,ignore

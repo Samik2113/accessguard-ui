@@ -1,0 +1,39 @@
+appId,name,appType,ownerId,ownerAdminId,description
+APP_APL_001,Finance Access Hub,Application,OWN001,OWN007,Finance user access management portal
+APP_APL_002,Invoice Workflow,Application,OWN001,OWN007,Invoice processing and approval app
+APP_APL_003,Treasury Console,Application,OWN001,OWN007,Treasury positions and settlements
+APP_APL_004,Vendor Control Center,Application,OWN001,OWN007,Vendor onboarding and lifecycle
+APP_APL_005,Expense Insight,Application,OWN001,OWN007,Expense reporting and policy checks
+APP_APL_006,Budget Navigator,Application,OWN001,OWN007,Budget planning and monitoring
+APP_APL_007,Employee Journey,Application,OWN002,OWN008,HR employee journey platform
+APP_APL_008,Leave Control,Application,OWN002,OWN008,Leave and attendance management
+APP_APL_009,Payroll Reconcile,Application,OWN002,OWN008,Payroll reconciliation workspace
+APP_APL_010,Sales Orbit,Application,OWN003,OWN009,Sales pipeline and forecasting
+APP_APL_011,Deal Room,Application,OWN003,OWN009,Opportunity collaboration workspace
+APP_APL_012,Customer Pulse,Application,OWN003,OWN009,Customer interaction analytics
+APP_DB_001,FIN_ORACLE_PROD,Database,OWN004,OWN010,Finance oracle production database
+APP_DB_002,FIN_ORACLE_UAT,Database,OWN004,OWN010,Finance oracle UAT database
+APP_DB_003,HR_POSTGRES_PROD,Database,OWN004,OWN010,HR postgres production database
+APP_DB_004,HR_POSTGRES_UAT,Database,OWN004,OWN010,HR postgres UAT database
+APP_DB_005,CRM_SQL_PROD,Database,OWN004,OWN010,CRM SQL production database
+APP_DB_006,CRM_SQL_UAT,Database,OWN004,OWN010,CRM SQL UAT database
+APP_DB_007,ANALYTICS_MART,Database,OWN004,OWN010,Enterprise analytics mart
+APP_DB_008,RISK_LEDGER_DB,Database,OWN004,OWN010,Risk and controls ledger
+APP_DB_009,IDENTITY_DB,Database,OWN004,OWN010,Identity and auth metadata database
+APP_DB_010,ARCHIVE_DB,Database,OWN004,OWN010,Long term compliance archive database
+APP_SRV_001,LINUX_JUMPBOX_PROD,Servers,OWN005,OWN011,Production Linux jumpbox server
+APP_SRV_002,LINUX_JUMPBOX_UAT,Servers,OWN005,OWN011,UAT Linux jumpbox server
+APP_SRV_003,WINDOWS_FIN_APP01,Servers,OWN005,OWN011,Finance windows app server 01
+APP_SRV_004,WINDOWS_FIN_APP02,Servers,OWN005,OWN011,Finance windows app server 02
+APP_SRV_005,UNIX_BATCH_NODE01,Servers,OWN005,OWN011,Unix batch processing node 01
+APP_SRV_006,UNIX_BATCH_NODE02,Servers,OWN005,OWN011,Unix batch processing node 02
+APP_SRV_007,K8S_CONTROL_PLANE,Servers,OWN005,OWN011,Kubernetes control plane host
+APP_SRV_008,K8S_WORKER_EAST,Servers,OWN005,OWN011,Kubernetes worker east region
+APP_SRV_009,K8S_WORKER_WEST,Servers,OWN005,OWN011,Kubernetes worker west region
+APP_SRV_010,FILE_TRANSFER_HOST,Servers,OWN005,OWN011,SFTP and batch transfer host
+APP_MAIL_001,Finance Shared Mailbox AP,Shared Mailbox,OWN006,OWN012,Shared mailbox for accounts payable
+APP_MAIL_002,Finance Shared Mailbox AR,Shared Mailbox,OWN006,OWN012,Shared mailbox for accounts receivable
+APP_MAIL_003,HR Shared Mailbox Payroll,Shared Mailbox,OWN006,OWN012,Shared payroll communications mailbox
+APP_MAIL_004,Sales Shared Mailbox Ops,Shared Mailbox,OWN006,OWN012,Sales operations shared mailbox
+APP_MAIL_005,IT Shared Mailbox Support,Shared Mailbox,OWN006,OWN012,IT support shared mailbox
+APP_MAIL_006,Risk Shared Mailbox Alerts,Shared Mailbox,OWN006,OWN012,Risk alerts and escalations mailbox

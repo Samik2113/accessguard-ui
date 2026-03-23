@@ -1,0 +1,8 @@
+entitlement,description,owner,isPrivileged
+FIN_USER,Standard finance user access,OWN001,false
+FIN_APPROVER,Finance approval rights,OWN007,true
+FIN_ADMIN,Finance administrative rights,OWN007,true
+HR_VIEW,Read only HR cross reference,OWN002,false
+FIN_VENDOR,Vendor management processing,OWN001,true
+FIN_GL_POSTER,General ledger posting rights,OWN001,true
+FIN_SUPPORT,Finance support operations,OWN007,false
