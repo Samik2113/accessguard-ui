@@ -1,17 +1,20 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy } from '../types';
+import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy, ApplicationAccess, CertificationType, OrphanReviewerMode } from '../types';
 import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
 import { useReviewCycleDetail } from '../features/reviews/queries';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
   applications: Application[];
+  access: ApplicationAccess[];
   onLaunch: (
     appId: string,
     dueDate?: string,
-    certificationType?: 'MANAGER' | 'APPLICATION_OWNER',
-    riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'
+    certificationType?: CertificationType,
+    riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY',
+    orphanReviewerMode?: OrphanReviewerMode,
+    customOrphanReviewerId?: string
   ) => void;
   reviewItems: ReviewItem[];
   users: User[];
@@ -23,7 +26,7 @@ interface DashboardProps {
   onCancelCampaign?: (cycleId: string, reason: string) => Promise<void> | void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [launchDueDate, setLaunchDueDate] = useState<string>(() => {
@@ -31,9 +34,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     d.setDate(d.getDate() + 14);
     return d.toISOString().split('T')[0];
   });
-  const [launchCertificationType, setLaunchCertificationType] = useState<'MANAGER' | 'APPLICATION_OWNER'>('MANAGER');
+  const [launchSelectedAppType, setLaunchSelectedAppType] = useState<'ALL' | NonNullable<Application['appType']>>('ALL');
+  const [launchCertificationType, setLaunchCertificationType] = useState<CertificationType>('MANAGER');
   const [launchSelectedAppName, setLaunchSelectedAppName] = useState('');
   const [launchRiskScope, setLaunchRiskScope] = useState<'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'>('ALL_ACCESS');
+  const [launchOrphanReviewerMode, setLaunchOrphanReviewerMode] = useState<OrphanReviewerMode>('APPLICATION_OWNER');
+  const [launchCustomOrphanReviewerId, setLaunchCustomOrphanReviewerId] = useState('');
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
@@ -60,6 +66,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const [sendingNotificationMode, setSendingNotificationMode] = useState<null | 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'>(null);
   const [selectedRemediationRecipientId, setSelectedRemediationRecipientId] = useState('');
   const [cancellingCampaignId, setCancellingCampaignId] = useState<string | null>(null);
+  const [viewingAccountItemId, setViewingAccountItemId] = useState<string | null>(null);
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   const cycleDetailQuery = useReviewCycleDetail({ cycleId: selectedCampaignId || '', top: 500 });
 
@@ -85,6 +92,14 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   const launchApplicationsSorted = useMemo(() => {
     return [...applications].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   }, [applications]);
+
+  const launchApplicationTypeOptions = useMemo(() => {
+    return ['Application', 'Database', 'Servers', 'Shared Mailbox'] as Array<NonNullable<Application['appType']>>;
+  }, []);
+
+  const launchApplicationsFiltered = useMemo(() => {
+    return launchApplicationsSorted.filter((app) => launchSelectedAppType === 'ALL' || (app.appType || 'Application') === launchSelectedAppType);
+  }, [launchApplicationsSorted, launchSelectedAppType]);
 
   const viewingItems = useMemo(() => {
     if (!selectedCampaignId) return [];
@@ -130,6 +145,26 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
   }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter, campaignRiskFilter, campaignRiskFactorFilter]);
 
   const selectedCampaign = cycles.find(c => c.id === selectedCampaignId);
+  const viewingAccountItem = useMemo(() => {
+    if (!viewingAccountItemId) return null;
+    return filteredViewingItems.find((item) => item.id === viewingAccountItemId) || viewingItems.find((item) => item.id === viewingAccountItemId) || null;
+  }, [filteredViewingItems, viewingItems, viewingAccountItemId]);
+  const viewingAccountEntries = useMemo(() => {
+    if (!viewingAccountItem) return [] as ApplicationAccess[];
+    const targetAppIds = new Set([
+      String(viewingAccountItem.appId || '').trim(),
+      String(selectedCampaign?.appId || '').trim()
+    ].filter(Boolean));
+    return access.filter((entry) => {
+      const entryAppId = String(entry.appId || '').trim();
+      if (targetAppIds.size > 0 && !targetAppIds.has(entryAppId)) return false;
+      return String(entry.userId || '').trim() === String(viewingAccountItem.appUserId || '').trim();
+    });
+  }, [access, viewingAccountItem, selectedCampaign]);
+  const viewingAccountApp = useMemo(() => {
+    const targetAppIds = [String(viewingAccountItem?.appId || '').trim(), String(selectedCampaign?.appId || '').trim()].filter(Boolean);
+    return applications.find((app) => targetAppIds.includes(String((app as any).appId || app.id || '').trim()));
+  }, [applications, viewingAccountItem, selectedCampaign]);
   const pendingConfirmationReviewerIds = useMemo(() => {
     if (!selectedCampaign) return [] as string[];
     const confirmed = new Set((selectedCampaign.confirmedManagers || []).map(id => String(id)));
@@ -319,6 +354,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
     }
   };
 
+  const getAccountDetailPairs = (entry: Record<string, any>) => {
+    return Object.entries(entry || {})
+      .filter(([key, value]) => !['id', '_rid', '_self', '_etag', '_attachments', '_ts', 'type'].includes(key) && value !== undefined && value !== null && String(value).trim() !== '')
+      .sort(([a], [b]) => a.localeCompare(b));
+  };
+
   const CampaignTable = ({ cycleList, title, icon: Icon }: { cycleList: ReviewCycle[], title: string, icon: any }) => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
       <div className="px-8 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
@@ -419,9 +460,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
         {isAdmin && (
           <button
             onClick={() => {
+              setLaunchSelectedAppType('ALL');
               setLaunchSelectedAppName('');
               setLaunchRiskScope('ALL_ACCESS');
               setLaunchCertificationType('MANAGER');
+              setLaunchOrphanReviewerMode('APPLICATION_OWNER');
+              setLaunchCustomOrphanReviewerId('');
               setShowLaunchModal(true);
             }}
             className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
@@ -750,6 +794,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                             <td className="px-6 py-4">
                                 <div className="font-bold">{item.userName}</div>
                                 <div className="text-[10px] text-slate-400 font-mono">ID: {item.appUserId}</div>
+                                <button onClick={() => setViewingAccountItemId(item.id)} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase text-blue-600 hover:text-blue-700">
+                                  <Eye className="w-3 h-3" /> View Account
+                                </button>
                             </td>
                             <td className="px-6 py-4">
                                 <div className="font-mono text-xs flex items-center gap-2">
@@ -1035,8 +1082,22 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
 
       {showLaunchModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95">
             <h3 className="text-xl font-bold mb-6">Launch New Campaign</h3>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application Type</label>
+              <select
+                value={launchSelectedAppType}
+                onChange={e => {
+                  setLaunchSelectedAppType(e.target.value as 'ALL' | NonNullable<Application['appType']>);
+                  setLaunchSelectedAppName('');
+                }}
+                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+              >
+                <option value="ALL">All Types</option>
+                {launchApplicationTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application</label>
               <input
@@ -1047,7 +1108,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
               />
               <datalist id="launch-applications-list">
-                {launchApplicationsSorted.map(app => {
+                {launchApplicationsFiltered.map(app => {
                   const appId = String((app as any).appId || app.id || '');
                   const appName = String(app.name || '').trim();
                   return (
@@ -1055,7 +1116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   );
                 })}
               </datalist>
-              <p className="mt-1 text-[11px] text-slate-500">Type to search and pick by application name.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Type to search and pick by application name within the selected type.</p>
             </div>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Review Completion Due Date</label>
@@ -1065,11 +1126,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Certification Type</label>
               <select
                 value={launchCertificationType}
-                onChange={e => setLaunchCertificationType(e.target.value as 'MANAGER' | 'APPLICATION_OWNER')}
+                onChange={e => setLaunchCertificationType(e.target.value as CertificationType)}
                 className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
               >
                 <option value="MANAGER">Manager Certification</option>
                 <option value="APPLICATION_OWNER">Application Owner Certification</option>
+                <option value="APPLICATION_ADMIN">Application Admin Certification</option>
               </select>
             </div>
             <div className="mb-4">
@@ -1085,6 +1147,32 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                 <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
               </select>
             </div>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Orphan Account Reviewer</label>
+              <select
+                value={launchOrphanReviewerMode}
+                onChange={e => setLaunchOrphanReviewerMode(e.target.value as OrphanReviewerMode)}
+                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+              >
+                <option value="APPLICATION_OWNER">Route to Application Owner</option>
+                <option value="APPLICATION_ADMIN">Route to Application Admin</option>
+                <option value="CUSTOM">Route to Specific Reviewer</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">Use this when HR correlation is missing and the account is treated as orphaned.</p>
+            </div>
+            {launchOrphanReviewerMode === 'CUSTOM' && (
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Specific Orphan Reviewer</label>
+                <select
+                  value={launchCustomOrphanReviewerId}
+                  onChange={e => setLaunchCustomOrphanReviewerId(e.target.value)}
+                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
+                >
+                  <option value="">Select reviewer...</option>
+                  {users.map(user => <option key={user.id} value={user.id}>{user.name} ({user.id})</option>)}
+                </select>
+              </div>
+            )}
             <button
               onClick={() => {
                 const selectedName = String(launchSelectedAppName || '').trim();
@@ -1092,7 +1180,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   alert('Select an application to launch campaign.');
                   return;
                 }
-                const matchedApps = launchApplicationsSorted.filter(app => String(app.name || '').trim().toLowerCase() === selectedName.toLowerCase());
+                if (launchOrphanReviewerMode === 'CUSTOM' && !String(launchCustomOrphanReviewerId || '').trim()) {
+                  alert('Select a specific orphan reviewer.');
+                  return;
+                }
+                const matchedApps = launchApplicationsFiltered.filter(app => String(app.name || '').trim().toLowerCase() === selectedName.toLowerCase());
                 if (matchedApps.length > 1) {
                   alert('Multiple applications exist with this name. Please make application names unique before launching.');
                   return;
@@ -1103,7 +1195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
                   alert('Selected application is invalid. Please choose from the dropdown list.');
                   return;
                 }
-                onLaunch(selectedId, launchDueDate, launchCertificationType, launchRiskScope);
+                onLaunch(selectedId, launchDueDate, launchCertificationType, launchRiskScope, launchOrphanReviewerMode, launchCustomOrphanReviewerId);
                 setShowLaunchModal(false);
               }}
               className="w-full py-3 rounded-xl font-bold text-white hover:opacity-90 transition-all inline-flex items-center justify-center gap-2"
@@ -1112,6 +1204,69 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, onLaunch, r
               <Play className="w-4 h-4 fill-current" /> Launch Campaign
             </button>
             <button onClick={() => setShowLaunchModal(false)} className="w-full mt-6 py-3 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {viewingAccountItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl p-8 animate-in zoom-in-95">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Account Details</h3>
+                <p className="text-sm text-slate-500 mt-1">{viewingAccountItem.userName} · {viewingAccountItem.appUserId}</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-2">{viewingAccountApp?.name || viewingAccountItem.appName}</p>
+              </div>
+              <button onClick={() => setViewingAccountItemId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reviewer</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{users.find((user) => user.id === viewingAccountItem.managerId)?.name || viewingAccountItem.managerId}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entitlement</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{viewingAccountItem.entitlement}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Flags</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {viewingAccountItem.isSoDConflict && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">SoD Conflict</span>}
+                  {viewingAccountItem.isPrivileged && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">Privileged</span>}
+                  {viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
+                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                </div>
+              </div>
+            </div>
+
+            {viewingAccountEntries.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                No matching account record was found in the loaded inventory. The campaign row details are still shown above.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {viewingAccountEntries.map((entry, index) => (
+                  <div key={`${entry.appId}-${entry.userId}-${entry.entitlement}-${index}`} className="rounded-2xl border border-slate-200 overflow-hidden">
+                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">{entry.userName || viewingAccountItem.userName}</p>
+                        <p className="text-[11px] font-mono text-slate-500">{entry.userId || viewingAccountItem.appUserId}</p>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-500">{entry.entitlement}</div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+                      {getAccountDetailPairs(entry as Record<string, any>).map(([key, value]) => (
+                        <div key={key} className="px-5 py-4 border-b border-slate-100 md:border-r even:md:border-r-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{key}</p>
+                          <p className="mt-1 text-sm text-slate-800 break-words">{Array.isArray(value) ? value.join(', ') : String(value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

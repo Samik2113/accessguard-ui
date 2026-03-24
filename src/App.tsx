@@ -7,7 +7,7 @@ import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
-import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization } from './types';
+import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
 import { getApplications } from "./services/api";
@@ -271,6 +271,15 @@ const App: React.FC = () => {
     if (raw === 'shared mailbox' || raw === 'shared_mailbox' || raw === 'shared-mailbox') return 'Shared Mailbox';
     return 'Application';
   };
+  const parseDelimitedValues = (value: any): string[] => {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+    }
+    return String(value || '')
+      .split(/[;,\n]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  };
   const normalizeAccountSchema = (app: any) => {
     const appType = normalizeApplicationType(app?.appType);
     const template = APP_TYPE_SCHEMA_TEMPLATES[appType] || APP_TYPE_SCHEMA_TEMPLATES.Application;
@@ -304,6 +313,11 @@ const App: React.FC = () => {
     appType: normalizeApplicationType(app?.appType),
     ownerId: String(app?.ownerId ?? '').trim(),
     ownerAdminId: String(app?.ownerAdminId ?? '').trim(),
+    ownerAdminIds: Array.from(new Set([
+      ...parseDelimitedValues(app?.ownerAdminIds),
+      ...parseDelimitedValues(app?.ownerAdminId)
+    ])),
+    ownerAdminTeams: Array.from(new Set(parseDelimitedValues(app?.ownerAdminTeams))),
     description: String(app?.description ?? ''),
     serverHost: String(app?.serverHost ?? '').trim(),
     serverHostName: String(app?.serverHostName ?? '').trim(),
@@ -318,14 +332,24 @@ const App: React.FC = () => {
     cancelReason: typeof cycle?.cancelReason === 'string' ? cycle.cancelReason : undefined,
     pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
     confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
-    certificationType: cycle?.certificationType === 'APPLICATION_OWNER' ? 'APPLICATION_OWNER' : 'MANAGER',
+    certificationType: cycle?.certificationType === 'APPLICATION_OWNER'
+      ? 'APPLICATION_OWNER'
+      : cycle?.certificationType === 'APPLICATION_ADMIN'
+        ? 'APPLICATION_ADMIN'
+        : 'MANAGER',
     riskScope: cycle?.riskScope === 'SOD_ONLY'
       ? 'SOD_ONLY'
       : cycle?.riskScope === 'PRIVILEGED_ONLY'
         ? 'PRIVILEGED_ONLY'
         : cycle?.riskScope === 'ORPHAN_ONLY'
           ? 'ORPHAN_ONLY'
-          : 'ALL_ACCESS'
+          : 'ALL_ACCESS',
+    orphanReviewerMode: cycle?.orphanReviewerMode === 'APPLICATION_ADMIN'
+      ? 'APPLICATION_ADMIN'
+      : cycle?.orphanReviewerMode === 'CUSTOM'
+        ? 'CUSTOM'
+        : 'APPLICATION_OWNER',
+    orphanReviewerId: String(cycle?.orphanReviewerId ?? '').trim() || undefined
   });
 
   const normalizeReviewItems = (items: any[]): ReviewItem[] =>
@@ -1291,8 +1315,10 @@ useEffect(() => {
   const handleLaunchReview = async (
     appId: string,
     dueDateStr?: string,
-    certificationType: 'MANAGER' | 'APPLICATION_OWNER' = 'MANAGER',
-    riskScope: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY' = 'ALL_ACCESS'
+    certificationType: CertificationType = 'MANAGER',
+    riskScope: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY' = 'ALL_ACCESS',
+    orphanReviewerMode: OrphanReviewerMode = 'APPLICATION_OWNER',
+    customOrphanReviewerId?: string
   ) => {
     if (currentUser.role !== UserRole.ADMIN) {
       alert('Only Admin can launch certifications.');
@@ -1341,7 +1367,9 @@ useEffect(() => {
           name: targetApp.name,
           dueDate: dueDate.toISOString(),
           certificationType,
-          riskScope
+          riskScope,
+          orphanReviewerMode,
+          customOrphanReviewerId: customOrphanReviewerId ? customOrphanReviewerId.trim() : undefined
         },
         {
           id: currentUser.id,
@@ -1606,6 +1634,9 @@ useEffect(() => {
       const payload = {
         ...app,
         appType: normalizeApplicationType(app.appType),
+        ownerAdminIds: Array.from(new Set(parseDelimitedValues(app.ownerAdminIds).concat(parseDelimitedValues(app.ownerAdminId)))),
+        ownerAdminTeams: Array.from(new Set(parseDelimitedValues(app.ownerAdminTeams))),
+        ownerAdminId: String(app.ownerAdminId || parseDelimitedValues(app.ownerAdminIds)[0] || '').trim(),
         accountSchema: app.accountSchema || buildDefaultAccountSchema(normalizeApplicationType(app.appType))
       };
       const res = await importApplications([payload]);
@@ -1636,6 +1667,9 @@ useEffect(() => {
       const payload = {
         ...app,
         appType: normalizeApplicationType(app.appType),
+        ownerAdminIds: Array.from(new Set(parseDelimitedValues(app.ownerAdminIds).concat(parseDelimitedValues(app.ownerAdminId)))),
+        ownerAdminTeams: Array.from(new Set(parseDelimitedValues(app.ownerAdminTeams))),
+        ownerAdminId: String(app.ownerAdminId || parseDelimitedValues(app.ownerAdminIds)[0] || '').trim(),
         accountSchema: app.accountSchema || buildDefaultAccountSchema(normalizeApplicationType(app.appType))
       };
       const res = await importApplications([payload]);
@@ -1653,6 +1687,8 @@ useEffect(() => {
         ['appType', existing?.appType, payload.appType],
         ['ownerId', existing?.ownerId, payload.ownerId],
         ['ownerAdminId', (existing as any)?.ownerAdminId, (payload as any)?.ownerAdminId],
+        ['ownerAdminIds', (existing as any)?.ownerAdminIds, (payload as any)?.ownerAdminIds],
+        ['ownerAdminTeams', (existing as any)?.ownerAdminTeams, (payload as any)?.ownerAdminTeams],
         ['serverHost', (existing as any)?.serverHost, (payload as any)?.serverHost],
         ['serverHostName', (existing as any)?.serverHostName, (payload as any)?.serverHostName],
         ['serverEnvironment', (existing as any)?.serverEnvironment, (payload as any)?.serverEnvironment]
@@ -1980,7 +2016,7 @@ useEffect(() => {
       customization={customization}
       onSaveCustomization={handleSaveCustomization}
     >
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} access={access} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} />}
       {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} entitlements={entitlements} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory

@@ -41,3 +41,10 @@ USR022,Smita Bose,smita.bose@acme.com,IT,MGR004,Information Security,Active
 USR023,Ganesh Iyer,ganesh.iyer@acme.com,Sales,MGR003,Account Manager,Active
 USR024,Niharika Jain,niharika.jain@acme.com,Finance,MGR001,GL Analyst,Active
 USR025,Yash Mehta,yash.mehta@acme.com,IT,MGR004,Support Engineer,Active
+MGR005,Jayank Sharma,jayank.sharma@in.ey.com,Finance,ADM001,Manager,Active
+MGR006,Miich Vets,miich.vets@in.ey.com,Finance,ADM001,Manager,Active
+PQR5,Akanksha Parihar,pqrs@in.ey.com,Finance,MGR005,Analyst,Active
+abcd,Abhishek Pratap,abcd@in.ey.com,Finance,MGR005,Analyst,Active
+XYZA,Dhritismita Pathak,xyza@in.ey.com,Finance,MGR005,Specialist,Active
+LMNQ,Staveta Parashar,lmnq@in.ey.com,Finance,MGR005,Analyst,Active
+MySh,Mayank Sharma,mysh@in.ey.com,Finance,MGR006,Lead,Active

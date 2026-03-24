@@ -10,6 +10,8 @@ const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
  *   appType: "Application",
  *   ownerId: "MGR031",
  *   ownerAdminId: "ADM100",
+ *   ownerAdminIds: ["ADM100", "ADM101"],
+ *   ownerAdminTeams: ["App Admin", "Db Admin"],
  *   description: "Finance ERP"
  * }
  */
@@ -23,6 +25,8 @@ const appSchema = {
     appType: { type: "string", enum: ["Application", "Database", "Servers", "Shared Mailbox"] },
     ownerId: { type: "string" },
     ownerAdminId: { type: "string" },
+    ownerAdminIds: { type: "array", items: { type: "string" } },
+    ownerAdminTeams: { type: "array", items: { type: "string" } },
     description: { type: "string" },
     serverHost: { type: "string" },
     serverHostName: { type: "string" },
@@ -41,6 +45,13 @@ function normalizeAppType(value) {
 }
 
 const normalizeKey = (value) => String(value || "").trim().toLowerCase();
+const normalizeList = (value) => {
+  if (Array.isArray(value)) return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  return String(value || "")
+    .split(/[;,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
 
 async function runBatches(items, batchSize, fn) {
   let ok = 0, fail = 0, errors = [];
@@ -155,7 +166,12 @@ module.exports = async function (context, req) {
         name: a.name,
         appType: normalizeAppType(a.appType),
         ownerId: a.ownerId || null,
-        ownerAdminId: a.ownerAdminId || null,
+        ownerAdminId: a.ownerAdminId || normalizeList(a.ownerAdminIds)[0] || null,
+        ownerAdminIds: Array.from(new Set([
+          ...normalizeList(a.ownerAdminIds),
+          ...normalizeList(a.ownerAdminId)
+        ])),
+        ownerAdminTeams: Array.from(new Set(normalizeList(a.ownerAdminTeams))),
         description: a.description || "",
         serverHost: a.serverHost || null,
         serverHostName: a.serverHostName || null,

@@ -39,6 +39,34 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     return { primary: 'Application Owner', secondary: 'Application Admin / Team' };
   };
 
+  const parseDelimitedValues = (value: any): string[] => {
+    if (Array.isArray(value)) return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+    return String(value || '')
+      .split(/[;,\n]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  };
+
+  const getAdminReviewerIds = (app?: Partial<Application> | null) => {
+    return Array.from(new Set([
+      ...parseDelimitedValues(app?.ownerAdminIds),
+      ...parseDelimitedValues(app?.ownerAdminId)
+    ]));
+  };
+
+  const getAdminTeamLabels = (app?: Partial<Application> | null) => {
+    return Array.from(new Set(parseDelimitedValues(app?.ownerAdminTeams)));
+  };
+
+  const getAdminDisplayText = (app?: Partial<Application> | null) => {
+    const reviewerNames = getAdminReviewerIds(app)
+      .map((id) => users.find((user) => user.id === id)?.name || id)
+      .filter(Boolean);
+    const teamNames = getAdminTeamLabels(app);
+    const combined = [...reviewerNames, ...teamNames];
+    return combined.length > 0 ? combined.join(', ') : 'Unknown';
+  };
+
   const [activeSubTab, setActiveSubTab] = useState<'identities' | 'applications' | 'sod'>('identities');
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [appSearchQuery, setAppSearchQuery] = useState('');
@@ -51,6 +79,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     appType: 'Application' as NonNullable<Application['appType']>,
     ownerId: '',
     ownerAdminId: '',
+    ownerAdminIds: [] as string[],
+    ownerAdminTeamsText: '',
     description: '',
     serverHost: '',
     serverHostName: '',
@@ -467,9 +497,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (type === 'HR') headers = HR_TEMPLATE_HEADERS;
 	else if (type === 'APPLICATIONS') {
   // Minimal columns your import expects
-  headers = ['appId', 'name', 'appType', 'ownerId', 'ownerAdminId', 'description'];
+  headers = ['appId', 'name', 'appType', 'ownerId', 'ownerAdminId', 'ownerAdminIds', 'ownerAdminTeams', 'description'];
   // (Optional) pre-fill existing apps to let admins "export" and re-import
-  rows = applications.map(a => [a.id ?? (a as any).appId, a.name, a.appType ?? 'Application', a.ownerId ?? '', a.ownerAdminId ?? '', a.description ?? '']);
+  rows = applications.map(a => [
+    a.id ?? (a as any).appId,
+    a.name,
+    a.appType ?? 'Application',
+    a.ownerId ?? '',
+    a.ownerAdminId ?? '',
+    getAdminReviewerIds(a).join('; '),
+    getAdminTeamLabels(a).join('; '),
+    a.description ?? ''
+  ]);
 }
     else if (type === 'APP_ACCESS') {
       const app = getAppRecord(selectedAppId);
@@ -635,7 +674,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   };
 
   const handleAddApp = () => {
-    if (!newApp.name || !newApp.ownerId || !newApp.ownerAdminId) {
+    const ownerAdminIds = Array.from(new Set(parseDelimitedValues(newApp.ownerAdminIds).concat(parseDelimitedValues(newApp.ownerAdminId))));
+    const ownerAdminTeams = Array.from(new Set(parseDelimitedValues(newApp.ownerAdminTeamsText)));
+    if (!newApp.name || !newApp.ownerId || ownerAdminIds.length === 0) {
       window.alert("Please fill in Application Name and select both owner levels.");
       return;
     }
@@ -654,6 +695,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       ...newApp,
       name: String(newApp.name || '').trim(),
       appType: newApp.appType,
+      ownerAdminId: ownerAdminIds[0] || '',
+      ownerAdminIds,
+      ownerAdminTeams,
       accountSchema: buildDefaultAccountSchema(newApp.appType),
       id: appId,
       appId
@@ -663,6 +707,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       appType: 'Application',
       ownerId: '',
       ownerAdminId: '',
+      ownerAdminIds: [],
+      ownerAdminTeamsText: '',
       description: '',
       serverHost: '',
       serverHostName: '',
@@ -675,7 +721,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (!editingAppConfig) return;
 
     const nextName = String(editingAppConfig.name || '').trim();
-    if (!nextName || !editingAppConfig.ownerId || !editingAppConfig.ownerAdminId) {
+    const ownerAdminIds = getAdminReviewerIds(editingAppConfig);
+    if (!nextName || !editingAppConfig.ownerId || ownerAdminIds.length === 0) {
       window.alert('Please provide application name and both owner levels.');
       return;
     }
@@ -697,6 +744,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     onUpdateApp({
       ...editingAppConfig,
       name: nextName,
+      ownerAdminId: ownerAdminIds[0] || '',
+      ownerAdminIds,
+      ownerAdminTeams: getAdminTeamLabels(editingAppConfig),
       accountSchema: editingAppConfig.accountSchema || buildDefaultAccountSchema(editingAppConfig.appType)
     });
     setEditingAppConfig(null);
@@ -947,7 +997,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (!query) return applications;
     return applications.filter(app => {
       const ownerName = users.find(u => u.id === app.ownerId)?.name || '';
-      const ownerAdminName = users.find(u => u.id === app.ownerAdminId)?.name || '';
+      const ownerAdminName = getAdminDisplayText(app);
       const fields = [
         String(app.name || ''),
         String((app as any).id || (app as any).appId || ''),
@@ -1774,7 +1824,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                               {getOwnerLabels(app.appType).primary}: {users.find(u => u.id === app.ownerId)?.name || 'Unknown'}
                             </div>
                             <div className={`text-[11px] mt-0.5 ${selectedAppId === app.id ? 'text-blue-100' : 'text-slate-500'}`}>
-                              {getOwnerLabels(app.appType).secondary}: {users.find(u => u.id === app.ownerAdminId)?.name || 'Unknown'}
+                              {getOwnerLabels(app.appType).secondary}: {getAdminDisplayText(app)}
                             </div>
                           </button>
                         ))}
@@ -2470,10 +2520,25 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(editingAppConfig.appType).secondary}</label>
-                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.ownerAdminId || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, ownerAdminId: e.target.value })}>
-                  <option value="">Select Identity...</option>
+                <select
+                  multiple
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none min-h-[140px]"
+                  value={getAdminReviewerIds(editingAppConfig)}
+                  onChange={e => {
+                    const ownerAdminIds = Array.from(e.currentTarget.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((option: HTMLOptionElement) => option.value);
+                    setEditingAppConfig({ ...editingAppConfig, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' });
+                  }}
+                >
                   {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
                 </select>
+                <p className="mt-1 text-[11px] text-slate-500">Hold Ctrl to select multiple reviewer identities.</p>
+                <input
+                  type="text"
+                  className="mt-3 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  value={getAdminTeamLabels(editingAppConfig).join(', ')}
+                  onChange={e => setEditingAppConfig({ ...editingAppConfig, ownerAdminTeams: parseDelimitedValues(e.target.value) })}
+                  placeholder="Optional teams, e.g. App Admin, DB Admin"
+                />
               </div>
             </div>
             <div className="flex gap-3 mt-8">
@@ -2539,10 +2604,25 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(newApp.appType).secondary}</label>
-                <select className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={newApp.ownerAdminId} onChange={e => setNewApp({...newApp, ownerAdminId: e.target.value})}>
-                  <option value="">Select Identity...</option>
+                <select
+                  multiple
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none min-h-[140px]"
+                  value={newApp.ownerAdminIds}
+                  onChange={e => {
+                    const ownerAdminIds = Array.from(e.currentTarget.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((option: HTMLOptionElement) => option.value);
+                    setNewApp({ ...newApp, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' });
+                  }}
+                >
                   {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
                 </select>
+                <p className="mt-1 text-[11px] text-slate-500">Hold Ctrl to select multiple reviewer identities.</p>
+                <input
+                  type="text"
+                  className="mt-3 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  value={newApp.ownerAdminTeamsText}
+                  onChange={e => setNewApp({...newApp, ownerAdminTeamsText: e.target.value})}
+                  placeholder="Optional teams, e.g. App Admin, DB Admin"
+                />
               </div>
             </div>
             <div className="flex gap-3 mt-8">

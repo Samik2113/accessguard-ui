@@ -49,11 +49,16 @@ export interface SoDPolicy {
   riskLevel: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
+export type CertificationType = 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN';
+export type OrphanReviewerMode = 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'CUSTOM';
+
 export interface Application {
   id: string;
   name: string;
   ownerId: string; // Linked to User.id
   ownerAdminId?: string; // Second-level owner/admin/team linked to User.id
+  ownerAdminIds?: string[];
+  ownerAdminTeams?: string[];
   appType?: 'Application' | 'Database' | 'Servers' | 'Shared Mailbox';
   serverHost?: string;
   serverHostName?: string;
@@ -95,14 +100,17 @@ export interface ReviewCycle {
   pendingItems: number;
   pendingRemediationItems?: number;
   confirmedManagers: string[]; // List of manager IDs who submitted
-  certificationType?: 'MANAGER' | 'APPLICATION_OWNER';
+  certificationType?: CertificationType;
   riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
+  orphanReviewerMode?: OrphanReviewerMode;
+  orphanReviewerId?: string;
 }
 
 export interface ReviewItem {
   id: string;
   reviewCycleId: string;
   accessId: string;
+  appId?: string;
   appUserId: string; 
   managerId: string; 
   status: ActionStatus;

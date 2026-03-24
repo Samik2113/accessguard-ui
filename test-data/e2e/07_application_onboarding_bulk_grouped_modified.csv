@@ -1,0 +1,4 @@
+appId,name,appType,ownerId,ownerAdminId,description
+APP_APL_001,Finance Access Hub,Application,OWN001,OWN007,Finance user access management portal
+APP_DB_001,FIN_ORACLE_PROD,Database,OWN004,OWN010,Finance oracle production database
+APP_SRV_001,LINUX_JUMPBOX_PROD,Servers,OWN005,OWN011,Production Linux jumpbox server

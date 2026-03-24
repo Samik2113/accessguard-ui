@@ -15,8 +15,10 @@ const schema = {
     appId: { type: "string", minLength: 1 },
     dueDate: { type: "string" },
     name: { type: "string" },
-    certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER"] },
+    certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER", "APPLICATION_ADMIN"] },
     riskScope: { type: "string", enum: ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"] },
+    orphanReviewerMode: { type: "string", enum: ["APPLICATION_OWNER", "APPLICATION_ADMIN", "CUSTOM"] },
+    customOrphanReviewerId: { type: "string" },
     launchIfExists: { type: "boolean" }
   },
   additionalProperties: true
@@ -25,6 +27,13 @@ const validate = ajv.compile(schema);
 
 // Normalizes values for stable comparisons (e.g., SoD entitlement matching)
 const SAFE = (s) => String(s || "").trim().replace(/\s+/g, "_").replace(/[^\w\-]/g, "").toUpperCase();
+const LIST = (value) => {
+  if (Array.isArray(value)) return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  return String(value || "")
+    .split(/[;,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
 
 module.exports = async function (context, req) {
   try {
@@ -61,15 +70,28 @@ module.exports = async function (context, req) {
     const nowIso = now.toISOString();
     const appId = body.appId.trim();
     const appIdSafe = SAFE(appId);
-    const requestedCertificationType = String(body.certificationType || "MANAGER").trim().toUpperCase() === "APPLICATION_OWNER"
-      ? "APPLICATION_OWNER"
+    const requestedCertificationTypeRaw = String(body.certificationType || "MANAGER").trim().toUpperCase();
+    const requestedCertificationType = ["MANAGER", "APPLICATION_OWNER", "APPLICATION_ADMIN"].includes(requestedCertificationTypeRaw)
+      ? requestedCertificationTypeRaw
       : "MANAGER";
     const riskScopeRaw = String(body.riskScope || "ALL_ACCESS").trim().toUpperCase();
     const riskScope = ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"].includes(riskScopeRaw)
       ? riskScopeRaw
       : "ALL_ACCESS";
+    const orphanReviewerModeRaw = String(body.orphanReviewerMode || "APPLICATION_OWNER").trim().toUpperCase();
+    const orphanReviewerMode = ["APPLICATION_OWNER", "APPLICATION_ADMIN", "CUSTOM"].includes(orphanReviewerModeRaw)
+      ? orphanReviewerModeRaw
+      : "APPLICATION_OWNER";
+    const customOrphanReviewerId = String(body.customOrphanReviewerId || "").trim();
+    if (orphanReviewerMode === "CUSTOM" && !customOrphanReviewerId) {
+      return bad(400, "customOrphanReviewerId is required when orphanReviewerMode=CUSTOM", req);
+    }
     const certificationType = requestedCertificationType;
-    const reviewerLabel = certificationType === "APPLICATION_OWNER" ? "Application Owner" : "Manager";
+    const reviewerLabel = certificationType === "APPLICATION_OWNER"
+      ? "Application Owner"
+      : certificationType === "APPLICATION_ADMIN"
+        ? "Application Admin"
+        : "Manager";
     const riskScopeLabel = riskScope === "SOD_ONLY"
       ? "SoD Conflicts"
       : riskScope === "PRIVILEGED_ONLY"
@@ -110,30 +132,7 @@ module.exports = async function (context, req) {
       return targetAppId;
     }
 
-    // Resolve fallback reviewer when HR manager is missing; prefers actual app owner in HR
-    async function resolveAppOwnerManagerId(targetAppId, targetAppIdSafe) {
-      const appMeta = await readAppByIdOrAppId(targetAppId);
-
-      const candidates = [];
-      const directOwner = appMeta?.ownerUserId || appMeta?.ownerId || null;
-      const directEmail = appMeta?.ownerEmail || null;
-      const directName = appMeta?.ownerName || appMeta?.ownerDisplayName || null;
-
-      if (directOwner) candidates.push({ userId: String(directOwner).trim() });
-      if (directEmail) candidates.push({ email: String(directEmail).trim().toLowerCase() });
-      if (directName) candidates.push({ name: String(directName).trim() });
-
-      if (Array.isArray(appMeta?.owners)) {
-        for (const owner of appMeta.owners) {
-          if (!owner) continue;
-          if (owner.userId) candidates.push({ userId: String(owner.userId).trim() });
-          if (owner.email) candidates.push({ email: String(owner.email).trim().toLowerCase() });
-          if (owner.name) candidates.push({ name: String(owner.name).trim() });
-        }
-      }
-
-      if (candidates.length === 0) return `OWNER_${targetAppIdSafe}`;
-
+    async function resolveCandidateToHrId(candidates) {
       for (const candidate of candidates) {
         if (!candidate.userId) continue;
         try {
@@ -173,7 +172,65 @@ module.exports = async function (context, req) {
         }
       }
 
-      return `OWNER_${targetAppIdSafe}`;
+      return "";
+    }
+
+    const collectOwnerCandidates = (appMeta) => {
+      const candidates = [];
+      const directOwner = appMeta?.ownerUserId || appMeta?.ownerId || null;
+      const directEmail = appMeta?.ownerEmail || null;
+      const directName = appMeta?.ownerName || appMeta?.ownerDisplayName || null;
+
+      if (directOwner) candidates.push({ userId: String(directOwner).trim() });
+      if (directEmail) candidates.push({ email: String(directEmail).trim().toLowerCase() });
+      if (directName) candidates.push({ name: String(directName).trim() });
+
+      if (Array.isArray(appMeta?.owners)) {
+        for (const owner of appMeta.owners) {
+          if (!owner) continue;
+          if (owner.userId) candidates.push({ userId: String(owner.userId).trim() });
+          if (owner.email) candidates.push({ email: String(owner.email).trim().toLowerCase() });
+          if (owner.name) candidates.push({ name: String(owner.name).trim() });
+        }
+      }
+
+      return candidates;
+    };
+
+    const collectAdminCandidates = (appMeta) => {
+      const candidates = [];
+      LIST(appMeta?.ownerAdminIds).forEach((userId) => candidates.push({ userId }));
+      LIST(appMeta?.ownerAdminId).forEach((userId) => candidates.push({ userId }));
+
+      if (Array.isArray(appMeta?.admins)) {
+        for (const admin of appMeta.admins) {
+          if (!admin) continue;
+          if (admin.userId) candidates.push({ userId: String(admin.userId).trim() });
+          if (admin.email) candidates.push({ email: String(admin.email).trim().toLowerCase() });
+          if (admin.name) candidates.push({ name: String(admin.name).trim() });
+        }
+      }
+
+      return candidates;
+    };
+
+    // Resolve fallback reviewer when HR manager is missing; prefers actual app owner in HR
+    async function resolveAppOwnerManagerId(targetAppId, targetAppIdSafe) {
+      const appMeta = await readAppByIdOrAppId(targetAppId);
+      const candidates = collectOwnerCandidates(appMeta);
+      if (candidates.length === 0) return `OWNER_${targetAppIdSafe}`;
+      const resolved = await resolveCandidateToHrId(candidates);
+      return resolved || `OWNER_${targetAppIdSafe}`;
+    }
+
+    async function resolveAppAdminManagerId(targetAppId, targetAppIdSafe) {
+      const appMeta = await readAppByIdOrAppId(targetAppId);
+      const candidates = collectAdminCandidates(appMeta);
+      if (candidates.length === 0) {
+        return resolveAppOwnerManagerId(targetAppId, targetAppIdSafe);
+      }
+      const resolved = await resolveCandidateToHrId(candidates);
+      return resolved || resolveAppOwnerManagerId(targetAppId, targetAppIdSafe);
     }
 
     // Block duplicate non-completed cycles unless caller explicitly overrides
@@ -364,6 +421,8 @@ module.exports = async function (context, req) {
       confirmedManagers: [],
       certificationType,
       riskScope,
+      orphanReviewerMode,
+      orphanReviewerId: orphanReviewerMode === "CUSTOM" ? customOrphanReviewerId : null,
       type: "review-cycle"
     });
 
@@ -380,9 +439,18 @@ module.exports = async function (context, req) {
           const hr = launchEntry.hr;
 
           let managerId;
-          // Reviewer assignment strategy depends on certification type
-          if (certificationType === "APPLICATION_OWNER") {
+          if (launchEntry.isOrphan) {
+            if (orphanReviewerMode === "CUSTOM") {
+              managerId = customOrphanReviewerId;
+            } else if (orphanReviewerMode === "APPLICATION_ADMIN") {
+              managerId = await resolveAppAdminManagerId(account.appId, appIdSafe);
+            } else {
+              managerId = await resolveAppOwnerManagerId(account.appId, appIdSafe);
+            }
+          } else if (certificationType === "APPLICATION_OWNER") {
             managerId = await resolveAppOwnerManagerId(account.appId, appIdSafe);
+          } else if (certificationType === "APPLICATION_ADMIN") {
+            managerId = await resolveAppAdminManagerId(account.appId, appIdSafe);
           } else {
             // Manager priority: HR manager -> app owner mapped to HR -> OWNER fallback token
             if (hr && hr.managerId && String(hr.managerId).trim().length > 0) {
@@ -528,6 +596,8 @@ module.exports = async function (context, req) {
       appName: appNameResolved,
       certificationType,
       riskScope,
+      orphanReviewerMode,
+      orphanReviewerId: orphanReviewerMode === "CUSTOM" ? customOrphanReviewerId : undefined,
       itemsCreated: created,
       pending: created,
       status: "ACTIVE",

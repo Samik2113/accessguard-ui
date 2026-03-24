@@ -189,7 +189,16 @@ export const getManagerItems      = (managerId: string, status?: string) =>
   getReviewItems({ managerId, status });
 
 // -------------------- UAR flows (Write) --------------------
-export const launchReview = async (payload: { appId: string; name?: string; dueDate?: string; certificationType?: 'MANAGER' | 'APPLICATION_OWNER'; riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'; launchIfExists?: boolean }, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
+export const launchReview = async (payload: {
+  appId: string;
+  name?: string;
+  dueDate?: string;
+  certificationType?: 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN';
+  riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
+  orphanReviewerMode?: 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'CUSTOM';
+  customOrphanReviewerId?: string;
+  launchIfExists?: boolean;
+}, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
   console.debug('[API] launchReview payload:', payload);
   try {
     const result = await postJson("/api/reviews-launch", payload, {}, {
