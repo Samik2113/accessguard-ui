@@ -355,9 +355,91 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
   };
 
   const getAccountDetailPairs = (entry: Record<string, any>) => {
+    const hiddenKeys = new Set([
+      'id',
+      '_rid',
+      '_self',
+      '_etag',
+      '_attachments',
+      '_ts',
+      'type',
+      'appId',
+      'appName',
+      'userId',
+      'userName',
+      'managerId',
+      'entitlement',
+      'isOrphan',
+      'isPrivileged',
+      'isSoDConflict',
+      'violatedPolicyIds',
+      'violatedPolicyNames',
+      'reviewCycleId',
+      'status',
+      'comment',
+      'actionedAt',
+      'remediatedAt',
+      'reassignedBy',
+      'reassignedAt',
+      'reassignmentCount'
+    ]);
+
+    const formatAccountDetailLabel = (key: string): string => {
+      const explicitLabels: Record<string, string> = {
+        appId: 'App ID',
+        userId: 'User ID',
+        userName: 'User Name',
+        appUserId: 'App User ID',
+        correlatedUserId: 'Correlated User ID',
+        isOrphan: 'Is Orphan',
+        isPrivileged: 'Is Privileged',
+        isSoDConflict: 'SoD Conflict',
+        violatedPolicyIds: 'SoD Policy IDs',
+        violatedPolicyNames: 'SoD Policies',
+        createdAt: 'Created At',
+        updatedAt: 'Updated At',
+        accountStatus: 'Account Status'
+      };
+      if (explicitLabels[key]) return explicitLabels[key];
+
+      return key
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => {
+          const upper = part.toUpperCase();
+          if (upper === 'ID' || upper === 'SOD' || upper === 'HR') return upper;
+          return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+        })
+        .join(' ');
+    };
+
+    const formatAccountDetailValue = (value: any): string => {
+      if (value === undefined || value === null) return '';
+      if (Array.isArray(value)) {
+        return value
+          .map((item) => formatAccountDetailValue(item))
+          .filter(Boolean)
+          .join(', ');
+      }
+      if (typeof value === 'object') {
+        return Object.entries(value)
+          .map(([nestedKey, nestedValue]) => {
+            const formatted = formatAccountDetailValue(nestedValue);
+            return formatted ? `${formatAccountDetailLabel(nestedKey)}: ${formatted}` : '';
+          })
+          .filter(Boolean)
+          .join(' | ');
+      }
+      if (typeof value === 'boolean') return value ? 'true' : 'false';
+      return String(value).trim();
+    };
+
     return Object.entries(entry || {})
-      .filter(([key, value]) => !['id', '_rid', '_self', '_etag', '_attachments', '_ts', 'type'].includes(key) && value !== undefined && value !== null && String(value).trim() !== '')
-      .sort(([a], [b]) => a.localeCompare(b));
+      .filter(([key, value]) => !hiddenKeys.has(key) && formatAccountDetailValue(value) !== '')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [formatAccountDetailLabel(key), formatAccountDetailValue(value)] as [string, string]);
   };
 
   const CampaignTable = ({ cycleList, title, icon: Icon }: { cycleList: ReviewCycle[], title: string, icon: any }) => (
@@ -1259,7 +1341,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                       {getAccountDetailPairs(entry as Record<string, any>).map(([key, value]) => (
                         <div key={key} className="px-5 py-4 border-b border-slate-100 md:border-r even:md:border-r-0">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{key}</p>
-                          <p className="mt-1 text-sm text-slate-800 break-words">{Array.isArray(value) ? value.join(', ') : String(value)}</p>
+                          <p className="mt-1 text-sm text-slate-800 break-words">{value}</p>
                         </div>
                       ))}
                     </div>
