@@ -2043,6 +2043,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   <td className="px-4 py-3">
                                     <div className="font-bold text-slate-800 flex items-center gap-2">
                                       {group.userName}
+                                      {group.entitlements.some((entry) => hasActiveAccountForTerminatedIdentity(entry)) && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 text-[8px] font-black uppercase">
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Terminated
+                                        </span>
+                                      )}
                                       {hasPrivileged && (
                                         <span title="Privileged Account">
                                           <ShieldCheck className="w-3 h-3 text-indigo-500 fill-current" />
@@ -2057,9 +2062,16 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                         <UserMinus className="w-3 h-3" /> Orphan
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold">
-                                        <UserCheck className="w-3 h-3" /> Correlated
-                                      </span>
+                                      <div className="flex flex-wrap gap-1">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold">
+                                          <UserCheck className="w-3 h-3" /> Correlated
+                                        </span>
+                                        {group.entitlements.some((entry) => hasActiveAccountForTerminatedIdentity(entry)) && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 font-bold">
+                                            <AlertTriangle className="w-3 h-3" /> Terminated
+                                          </span>
+                                        )}
+                                      </div>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
@@ -2098,6 +2110,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   <td className="px-4 py-3">
                                     <div className="font-bold text-slate-800 flex items-center gap-2">
                                       {acc.userName}
+                                      {hasActiveAccountForTerminatedIdentity(acc) && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 text-[8px] font-black uppercase">
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Terminated
+                                        </span>
+                                      )}
                                       {isPriv && (
                                         <span title="Privileged Account">
                                           <ShieldCheck className="w-3 h-3 text-indigo-500 fill-current" />
@@ -2112,9 +2129,16 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                         <UserMinus className="w-3 h-3" /> Orphan
                                       </span>
                                     ) : (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold">
-                                        <UserCheck className="w-3 h-3" /> Correlated
-                                      </span>
+                                      <div className="flex flex-wrap gap-1">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 font-bold">
+                                          <UserCheck className="w-3 h-3" /> Correlated
+                                        </span>
+                                        {hasActiveAccountForTerminatedIdentity(acc) && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 font-bold">
+                                            <AlertTriangle className="w-3 h-3" /> Terminated
+                                          </span>
+                                        )}
+                                      </div>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">

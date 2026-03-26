@@ -127,6 +127,8 @@ export interface ReviewItem {
   isSoDConflict: boolean;
   violatedPolicyNames?: string[];
   violatedPolicyIds?: string[];
+  hrStatus?: string;
+  isTerminated?: boolean;
   isOrphan: boolean;
   isPrivileged: boolean;
   reassignedAt?: string;

@@ -34,6 +34,22 @@ const LIST = (value) => {
     .map((entry) => entry.trim())
     .filter(Boolean);
 };
+const normalizeHrStatus = (raw) => {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  const lowered = value.toLowerCase();
+  if (lowered.includes("active") || lowered.includes("onroll") || lowered.includes("enabled") || lowered.includes("current")) return "ACTIVE";
+  if (lowered.includes("terminat") || lowered.includes("inactive") || lowered.includes("separat") || lowered.includes("offboard") || lowered.includes("exit") || lowered.includes("left") || lowered.includes("former") || lowered.includes("disable")) return "TERMINATED";
+  return value.toUpperCase();
+};
+const normalizeAccountStatus = (raw) => {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  const lowered = value.toLowerCase();
+  if (["active", "enable", "enabled", "1", "true", "a"].includes(lowered)) return "ACTIVE";
+  if (["inactive", "disable", "disabled", "0", "false", "i"].includes(lowered)) return "INACTIVE";
+  return value.toUpperCase();
+};
 
 module.exports = async function (context, req) {
   try {
@@ -274,14 +290,14 @@ module.exports = async function (context, req) {
 
     // Load all accounts under this app (campaign scope)
     const { resources: accounts } = await accountsC.items.query({
-      query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.isOrphan, c.correlatedUserId, c.appId, c.isPrivileged FROM c WHERE c.appId=@a",
+      query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.accountStatus, c.isOrphan, c.correlatedUserId, c.correlation, c.appId, c.isPrivileged FROM c WHERE c.appId=@a",
       parameters: [{ name: "@a", value: appId }]
     }).fetchAll();
 
     if (accounts.length === 0) return bad(400, `No accounts found for appId=${appId}`, req);
 
     // Build lightweight HR cache for manager resolution and orphan detection
-    const uniqueUserIds = Array.from(new Set(accounts.map(account => account.userId).filter(Boolean)));
+    const uniqueUserIds = Array.from(new Set(accounts.map(account => String(account?.correlation?.hrUserId || account?.correlatedUserId || account?.userId || "").trim()).filter(Boolean)));
     const hrCache = new Map();
     const BATCH = 50;
     for (let i = 0; i < uniqueUserIds.length; i += BATCH) {
@@ -338,7 +354,7 @@ module.exports = async function (context, req) {
     let allAccountsForRisk = accounts;
     try {
       const { resources: allAccounts } = await accountsC.items.query({
-        query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.isOrphan, c.correlatedUserId, c.appId FROM c"
+        query: "SELECT c.userId, c.userName, c.email, c.entitlement, c.accountStatus, c.isOrphan, c.correlatedUserId, c.correlation, c.appId FROM c"
       }).fetchAll();
       if (Array.isArray(allAccounts) && allAccounts.length > 0) {
         allAccountsForRisk = allAccounts;
@@ -377,7 +393,8 @@ module.exports = async function (context, req) {
 
     const accountsForLaunch = [];
     for (const account of accounts) {
-      const hr = account.userId ? hrCache.get(account.userId) : null;
+      const hrUserId = String(account?.correlation?.hrUserId || account?.correlatedUserId || account?.userId || "").trim();
+      const hr = hrUserId ? hrCache.get(hrUserId) : null;
       const conflictIds = conflictsFor(account, account.appId, account.entitlement);
       const conflictNames = conflictIds.map(id => {
         const hit = policies.find(policy => (policy.id || policy.policyId) === id);
@@ -385,6 +402,8 @@ module.exports = async function (context, req) {
       });
       const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
       const isOrphan = !hr || parseBool(account.isOrphan);
+      const hrStatus = normalizeHrStatus(hr?.status || hr?.employmentStatus || account?.correlation?.status);
+      const isTerminated = hrStatus === "TERMINATED" && normalizeAccountStatus(account.accountStatus) === "ACTIVE";
 
       const includeByScope =
         riskScope === "ALL_ACCESS" ||
@@ -393,7 +412,7 @@ module.exports = async function (context, req) {
         (riskScope === "ORPHAN_ONLY" && isOrphan);
 
       if (!includeByScope) continue;
-      accountsForLaunch.push({ account, hr, conflictIds, conflictNames, isPrivileged, isOrphan });
+      accountsForLaunch.push({ account, hr, hrStatus, isTerminated, conflictIds, conflictNames, isPrivileged, isOrphan });
     }
 
     if (accountsForLaunch.length === 0) {
@@ -466,6 +485,8 @@ module.exports = async function (context, req) {
           const conflictIds = launchEntry.conflictIds;
           const conflictNames = launchEntry.conflictNames;
           const isPrivileged = launchEntry.isPrivileged;
+          const hrStatus = launchEntry.hrStatus || "";
+          const isTerminated = launchEntry.isTerminated === true;
 
           // Item payload is shaped for manager-portal rendering and action lifecycle tracking
           const item = {
@@ -478,6 +499,8 @@ module.exports = async function (context, req) {
             userName: account.userName || null,
             entitlement: account.entitlement,
             status: "PENDING",
+            hrStatus,
+            isTerminated,
             isOrphan: launchEntry.isOrphan,
             isPrivileged,
             isSoDConflict: conflictIds.length > 0,

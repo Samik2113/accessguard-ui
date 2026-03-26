@@ -53,6 +53,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
   const [campaignRemediationFilter, setCampaignRemediationFilter] = useState('ALL');
   const [campaignRiskFilter, setCampaignRiskFilter] = useState('ALL');
   const [campaignRiskFactorFilter, setCampaignRiskFactorFilter] = useState('ALL');
+
+  const isTerminatedRisk = (entry: { isTerminated?: boolean; hrStatus?: string }) => {
+    return entry.isTerminated === true || String(entry.hrStatus || '').trim().toUpperCase() === 'TERMINATED';
+  };
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
   const [reassignModal, setReassignModal] = useState<{ itemId: string; fromManagerId: string; appUserId: string } | null>(null);
@@ -121,7 +125,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
 
   const getRiskLevel = (item: ReviewItem) => {
     if (item.isSoDConflict) return 'CRITICAL';
-    if (item.isOrphan) return 'HIGH';
+    if (item.isOrphan || isTerminatedRisk(item)) return 'HIGH';
     if (item.isPrivileged) return 'MEDIUM';
     return 'LOW';
   };
@@ -135,11 +139,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       const matchesRem = campaignRemediationFilter === 'ALL' || remStatus === campaignRemediationFilter;
       const level = getRiskLevel(i);
       const matchesRisk = campaignRiskFilter === 'ALL' || level === campaignRiskFilter;
-      const hasAnyRiskFactor = i.isSoDConflict || i.isPrivileged || i.isOrphan;
+      const hasAnyRiskFactor = i.isSoDConflict || i.isPrivileged || i.isOrphan || isTerminatedRisk(i);
       const matchesRiskFactor = campaignRiskFactorFilter === 'ALL' ||
         (campaignRiskFactorFilter === 'SOD' && i.isSoDConflict) ||
         (campaignRiskFactorFilter === 'PRIVILEGED' && i.isPrivileged) ||
         (campaignRiskFactorFilter === 'ORPHAN' && i.isOrphan) ||
+        (campaignRiskFactorFilter === 'TERMINATED' && isTerminatedRisk(i)) ||
         (campaignRiskFactorFilter === 'NONE' && !hasAnyRiskFactor);
       return matchesUser && matchesEnt && matchesStatus && matchesRem && matchesRisk && matchesRiskFactor;
     });
@@ -296,6 +301,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
         const risks = [
           i.isSoDConflict ? `SoD Conflict (${(i.violatedPolicyNames || []).join(';')})` : '',
           i.isOrphan ? 'Orphan Account' : '',
+          isTerminatedRisk(i) ? 'Terminated Identity With Active Account' : '',
           i.isPrivileged ? 'Privileged Access' : ''
         ].filter(Boolean).join('; ');
         return [
@@ -405,6 +411,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
         isOrphan: 'Is Orphan',
         isPrivileged: 'Is Privileged',
         isSoDConflict: 'SoD Conflict',
+        isTerminated: 'Terminated Identity Risk',
+        hrStatus: 'HR Status',
         violatedPolicyIds: 'SoD Policy IDs',
         violatedPolicyNames: 'SoD Policies',
         createdAt: 'Created At',
@@ -914,6 +922,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                       <option value="PRIVILEGED">Privileged</option>
                       <option value="SOD">SoD Conflict</option>
                       <option value="ORPHAN">Orphan</option>
+                      <option value="TERMINATED">Terminated Identity</option>
                       <option value="NONE">None</option>
                     </select>
                   </div>
@@ -1054,7 +1063,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                                     )}
                                     {item.isPrivileged && <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-indigo-100 uppercase w-fit flex items-center gap-1"><ShieldCheck className="w-2.5 h-2.5" /> Privileged</span>}
                                     {item.isOrphan && <span className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Orphan</span>}
-                                    {!item.isSoDConflict && !item.isPrivileged && !item.isOrphan && (
+                                    {isTerminatedRisk(item) && <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Terminated</span>}
+                                    {!item.isSoDConflict && !item.isPrivileged && !item.isOrphan && !isTerminatedRisk(item) && (
                                       <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[8px] font-black border border-slate-200 uppercase w-fit">Low Risk</span>
                                     )}
                                 </div>
@@ -1459,7 +1469,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                   {viewingAccountItem.isSoDConflict && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">SoD Conflict</span>}
                   {viewingAccountItem.isPrivileged && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">Privileged</span>}
                   {viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
-                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                  {isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Terminated Identity</span>}
+                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
                 </div>
               </div>
             </div>

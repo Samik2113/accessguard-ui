@@ -39,7 +39,7 @@ module.exports = async function (context, req) {
 
     if (!cycle) return bad(404, "CYCLE_NOT_FOUND", "Review cycle not found", req);
 
-    let query = "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.managerId, c.appUserId, c.userName, c.entitlement, c.status, c.comment, c.actionedAt, c.remediatedAt, c.isSoDConflict, c.violatedPolicyIds, c.violatedPolicyNames, c.isOrphan, c.isPrivileged, c.reassignedAt, c.reassignedBy, c.reassignmentComment, c.reassignmentCount, c._etag, c._ts FROM c WHERE c.reviewCycleId=@id";
+    let query = "SELECT c.id, c.reviewCycleId, c.appId, c.appName, c.managerId, c.appUserId, c.userName, c.entitlement, c.status, c.comment, c.actionedAt, c.remediatedAt, c.isSoDConflict, c.violatedPolicyIds, c.violatedPolicyNames, c.hrStatus, c.isTerminated, c.isOrphan, c.isPrivileged, c.reassignedAt, c.reassignedBy, c.reassignmentComment, c.reassignmentCount, c._etag, c._ts FROM c WHERE c.reviewCycleId=@id";
     const params = [{ name: "@id", value: cycle.id || cycle.cycleId }];
 
     if (managerId) {
