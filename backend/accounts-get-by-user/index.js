@@ -46,7 +46,7 @@ module.exports = async function (context, req) {
     const params = [{ name: "@uid", value: userId }];
 
     let queryText =
-      "SELECT c.id, c.appId, c.userId, c.userName, c.entitlement, c.name, c.email, c.accountStatus, c.customAttributes, c.isOrphan, c.correlation, c.sod, c.isPrivileged, c.createdAt, c.updatedAt, c._etag, c._ts " +
+      "SELECT c.id, c.appId, c.userId, c.userName, c.entitlement, c.name, c.email, c.accountStatus, c.employeeId, c.lastLoginDetails, c.userType, c.createDate, c.accountOwnerName, c.userDetails, c.displayName, c.accountId, c.customAttributes, c.isOrphan, c.correlation, c.sod, c.isPrivileged, c.createdAt, c.updatedAt, c._etag, c._ts " +
       "FROM c WHERE c.type = 'account' AND (c.userId = @uid OR (IS_DEFINED(c.correlation.hrUserId) AND c.correlation.hrUserId = @uid))";
 
     if (search) {
