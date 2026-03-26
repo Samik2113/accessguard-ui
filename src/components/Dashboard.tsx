@@ -378,12 +378,14 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       'reviewCycleId',
       'status',
       'comment',
+      'createdAt',
       'actionedAt',
       'remediatedAt',
       'reassignedBy',
       'reassignedAt',
       'reassignmentCount',
       'appUserId',
+      'updatedAt',
       'correlation',
       'sod',
       'customAttributes'
@@ -447,6 +449,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       }
       if (typeof value === 'boolean') return value ? 'true' : 'false';
       return String(value).trim();
+    };
+
+    const normalizeDetailToken = (value: string): string => {
+      return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[_\s-]+/g, '');
     };
 
     const schemaAppType = app?.accountSchema?.schemaAppType || app?.appType || 'Application';
@@ -514,6 +523,19 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       return formatAccountDetailValue(match);
     };
 
+    const mappedColumns = new Set(
+      Object.values(mappings)
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    );
+    const configuredStorageKeys = new Set(
+      template.fields.flatMap((field) => {
+        const configuredColumn = String(mappings[field.key] || '').trim();
+        const storageKey = storageKeyByField[field.key] || field.key;
+        return [field.key, storageKey, configuredColumn].filter(Boolean);
+      })
+    );
+
     const configuredPairs = template.fields
       .filter((field) => !configuredFieldKeysToHide.has(field.key))
       .map((field) => {
@@ -530,8 +552,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       ? app!.accountSchema!.customColumns!.map((value) => String(value || '').trim()).filter(Boolean)
       : [];
 
+    const usedNormalizedLabels = new Set(configuredPairs.map(([label]) => normalizeDetailToken(label)));
+
     const customPairs = customColumns
       .map((column) => {
+        if (mappedColumns.has(column) || usedNormalizedLabels.has(normalizeDetailToken(column))) return null;
         const value = formatAccountDetailValue(customAttributes[column] ?? normalizedEntry[column]);
         return value ? [column, value] as [string, string] : null;
       })
@@ -539,11 +564,17 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       .sort(([a], [b]) => a.localeCompare(b));
 
     const usedLabels = new Set([...configuredPairs, ...customPairs].map(([label]) => label));
+    const usedNormalizedFallbackLabels = new Set([...configuredPairs, ...customPairs].map(([label]) => normalizeDetailToken(label)));
 
     const fallbackPairs = Object.entries(normalizedEntry)
-      .filter(([key, value]) => !hiddenKeys.has(key) && formatAccountDetailValue(value) !== '')
+      .filter(([key, value]) => {
+        if (hiddenKeys.has(key)) return false;
+        if (configuredStorageKeys.has(key)) return false;
+        if (mappedColumns.has(key)) return false;
+        return formatAccountDetailValue(value) !== '';
+      })
       .map(([key, value]) => [formatAccountDetailLabel(key), formatAccountDetailValue(value)] as [string, string])
-      .filter(([label]) => !usedLabels.has(label))
+      .filter(([label]) => !usedLabels.has(label) && !usedNormalizedFallbackLabels.has(normalizeDetailToken(label)))
       .sort(([a], [b]) => {
         const priorityA = fallbackLabelPriority[a] ?? 999;
         const priorityB = fallbackLabelPriority[b] ?? 999;
