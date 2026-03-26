@@ -191,6 +191,59 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     };
   };
 
+  const resolveAccountColumnValue = (account: any, column: string, app?: Application | null) => {
+    const targetColumn = String(column || '').trim();
+    if (!targetColumn) return '';
+
+    const directCandidates = [
+      account?.customAttributes?.[targetColumn],
+      account?.[targetColumn]
+    ];
+
+    const directMatch = directCandidates
+      .map((value) => String(value ?? '').trim())
+      .find(Boolean);
+    if (directMatch) return directMatch;
+
+    const schema = getResolvedAccountSchema(app);
+    const mappedFieldKey = Object.entries(schema.mappings || {}).find(([, mappedColumn]) => {
+      return normalizeHeader(String(mappedColumn || '')) === normalizeHeader(targetColumn);
+    })?.[0];
+
+    if (!mappedFieldKey) return '';
+
+    const storageKeyByField: Record<string, string> = {
+      loginId: 'userId',
+      loginName: 'userId',
+      ids: 'userId',
+      email: 'email',
+      employeeId: 'employeeId',
+      role: 'entitlement',
+      dbRole: 'entitlement',
+      privilegeLevel: 'entitlement',
+      mailboxAccess: 'entitlement',
+      folderAccess: 'entitlement',
+      accountStatus: 'accountStatus',
+      lastLoginAt: 'lastLoginDetails',
+      createDate: 'createDate',
+      userType: 'userType',
+      accountOwnerName: 'userName',
+      userDetails: 'userName',
+      userName: 'userName',
+      displayName: 'userName'
+    };
+
+    const storageKey = storageKeyByField[mappedFieldKey] || mappedFieldKey;
+    return [
+      account?.[storageKey],
+      account?.[mappedFieldKey],
+      account?.customAttributes?.[storageKey],
+      account?.customAttributes?.[mappedFieldKey]
+    ]
+      .map((value) => String(value ?? '').trim())
+      .find(Boolean) || '';
+  };
+
   const normalizeAccountStatus = (raw: any, app?: Application | null) => {
     const value = String(raw || '').trim();
     if (!value) return '';
@@ -2124,7 +2177,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <td key={`${group.userId}-${col}`} className="px-4 py-3">
                                       <span className="text-[10px] font-bold text-slate-500">
                                         {Array.from(new Set(group.entitlements
-                                          .map(e => String((e as any)?.customAttributes?.[col] || (e as any)?.[col] || '').trim())
+                                          .map(e => resolveAccountColumnValue(e, col, selectedAppRecord))
                                           .filter(Boolean))).join(', ') || '-'}
                                       </span>
                                     </td>
@@ -2171,7 +2224,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                   </td>
                                   {selectedAppCustomColumns.map(col => (
                                     <td key={`${acc.id}-${col}`} className="px-4 py-3">
-                                      <span className="text-[10px] font-bold text-slate-500">{String((acc as any)?.customAttributes?.[col] || (acc as any)?.[col] || '').trim() || '-'}</span>
+                                      <span className="text-[10px] font-bold text-slate-500">{resolveAccountColumnValue(acc, col, selectedAppRecord) || '-'}</span>
                                     </td>
                                   ))}
                                   <td className="px-4 py-3">
