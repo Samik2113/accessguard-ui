@@ -22,7 +22,7 @@ const appSchema = {
   properties: {
     appId: { type: "string", minLength: 1 },
     name: { type: "string", minLength: 1 },
-    appType: { type: "string", enum: ["Application", "Database", "Servers", "Shared Mailbox"] },
+    appType: { type: "string", enum: ["Application", "Database", "Servers", "Shared Mailbox", "Shared Folder"] },
     ownerId: { type: "string" },
     ownerAdminId: { type: "string" },
     ownerAdminIds: { type: "array", items: { type: "string" } },
@@ -41,6 +41,7 @@ function normalizeAppType(value) {
   if (raw === "database") return "Database";
   if (raw === "servers" || raw === "server") return "Servers";
   if (raw === "shared mailbox" || raw === "shared_mailbox" || raw === "shared-mailbox") return "Shared Mailbox";
+  if (raw === "shared folder" || raw === "shared_folder" || raw === "shared-folder") return "Shared Folder";
   return "Application";
 }
 

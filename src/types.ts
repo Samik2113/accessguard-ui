@@ -59,7 +59,7 @@ export interface Application {
   ownerAdminId?: string; // Second-level owner/admin/team linked to User.id
   ownerAdminIds?: string[];
   ownerAdminTeams?: string[];
-  appType?: 'Application' | 'Database' | 'Servers' | 'Shared Mailbox';
+  appType?: 'Application' | 'Database' | 'Servers' | 'Shared Mailbox' | 'Shared Folder';
   serverHost?: string;
   serverHostName?: string;
   serverEnvironment?: 'UAT' | 'PROD' | '';

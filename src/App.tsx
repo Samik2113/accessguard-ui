@@ -269,6 +269,7 @@ const App: React.FC = () => {
     if (raw === 'database') return 'Database';
     if (raw === 'server' || raw === 'servers') return 'Servers';
     if (raw === 'shared mailbox' || raw === 'shared_mailbox' || raw === 'shared-mailbox') return 'Shared Mailbox';
+    if (raw === 'shared folder' || raw === 'shared_folder' || raw === 'shared-folder') return 'Shared Folder';
     return 'Application';
   };
   const parseDelimitedValues = (value: any): string[] => {

@@ -100,8 +100,37 @@ export const APP_TYPE_SCHEMA_TEMPLATES: Record<NonNullable<Application['appType'
   },
   'Shared Mailbox': {
     appType: 'Shared Mailbox',
-    fields: [],
-    defaultMappings: {},
+    fields: [
+      { key: 'ids', label: 'Ids', required: true, aliases: ['ids', 'id', 'user id', 'userid', 'user_id', 'employee id', 'employeeid', 'login id', 'loginid'] },
+      { key: 'displayName', label: 'Display Name', required: true, aliases: ['display name', 'displayname', 'name', 'user name', 'username'] },
+      { key: 'email', label: 'Email Id', required: true, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
+      { key: 'mailboxAccess', label: 'Mailbox Access', required: true, aliases: ['mailbox access', 'mailboxaccess', 'access', 'role', 'entitlement', 'permission'] }
+    ],
+    defaultMappings: {
+      ids: 'Ids',
+      displayName: 'Display Name',
+      email: 'Email Id',
+      mailboxAccess: 'Mailbox Access'
+    },
+    statusRules: {
+      activeValues: ACCOUNT_STATUS_ACTIVE_VALUES,
+      inactiveValues: ACCOUNT_STATUS_INACTIVE_VALUES
+    }
+  },
+  'Shared Folder': {
+    appType: 'Shared Folder',
+    fields: [
+      { key: 'ids', label: 'Ids', required: true, aliases: ['ids', 'id', 'user id', 'userid', 'user_id', 'employee id', 'employeeid', 'login id', 'loginid'] },
+      { key: 'displayName', label: 'Display Name', required: true, aliases: ['display name', 'displayname', 'name', 'user name', 'username'] },
+      { key: 'email', label: 'Email Id', required: true, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
+      { key: 'folderAccess', label: 'Folder Access', required: true, aliases: ['folder access', 'folderaccess', 'access', 'role', 'entitlement', 'permission'] }
+    ],
+    defaultMappings: {
+      ids: 'Ids',
+      displayName: 'Display Name',
+      email: 'Email Id',
+      folderAccess: 'Folder Access'
+    },
     statusRules: {
       activeValues: ACCOUNT_STATUS_ACTIVE_VALUES,
       inactiveValues: ACCOUNT_STATUS_INACTIVE_VALUES

@@ -30,12 +30,13 @@ interface InventoryProps {
 }
 
 const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onUpdateApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
-  const APPLICATION_TYPE_OPTIONS: Array<NonNullable<Application['appType']>> = ['Application', 'Database', 'Servers', 'Shared Mailbox'];
+  const APPLICATION_TYPE_OPTIONS: Array<NonNullable<Application['appType']>> = ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'];
 
   const getOwnerLabels = (appType?: Application['appType']) => {
     if (appType === 'Database') return { primary: 'Database Owner', secondary: 'Database Admin' };
     if (appType === 'Servers') return { primary: 'Server Owner', secondary: 'Server Admin / Team' };
     if (appType === 'Shared Mailbox') return { primary: 'Mailbox Owner', secondary: 'Mailbox Admin / Team' };
+    if (appType === 'Shared Folder') return { primary: 'Folder Owner', secondary: 'Folder Admin / Team' };
     return { primary: 'Application Owner', secondary: 'Application Admin / Team' };
   };
 
@@ -137,27 +138,34 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const getCorrelationFieldKey = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'loginName';
     if (appType === 'Servers') return 'userId';
+    if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'ids';
     return 'employeeId';
   };
   const getCorrelationFieldLabel = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'Login Name';
     if (appType === 'Servers') return 'Users ID';
+    if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'Ids';
     return 'Employee ID';
   };
   const getEntitlementFieldKey = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'dbRole';
     if (appType === 'Servers') return 'privilegeLevel';
+    if (appType === 'Shared Mailbox') return 'mailboxAccess';
+    if (appType === 'Shared Folder') return 'folderAccess';
     return 'role';
   };
   const getEntitlementFieldLabel = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'DB Role';
     if (appType === 'Servers') return 'Admin/root';
+    if (appType === 'Shared Mailbox') return 'Mailbox Access';
+    if (appType === 'Shared Folder') return 'Folder Access';
     return 'Role';
   };
   const getCorrelationFieldGuidance = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Application') return 'Choose the feed column that best matches HR identity (prefer Employee ID).';
     if (appType === 'Database') return 'Choose the login column used to correlate database accounts to identities.';
     if (appType === 'Servers') return 'Choose the server user-id column used to correlate accounts to identities.';
+    if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'Choose the Ids column that best correlates the shared resource access record to an HR identity.';
     return 'Choose the column used to correlate feed records with HR identities.';
   };
   const getResolvedAccountSchema = (app?: Application | null) => {
@@ -374,6 +382,76 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         return;
       }
 
+      if (appType === 'Shared Mailbox') {
+        const ids = pick('ids');
+        let displayName = pick('displayName');
+        let email = pick('email');
+        const mailboxAccess = pick('mailboxAccess');
+        const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
+
+        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
+        if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
+        if (!email && hr?.email) email = String(hr.email || '').trim();
+
+        if (!ids) reasons.push('Missing required field: Ids');
+        if (!displayName) reasons.push('Missing required field: Display Name');
+        if (!email) reasons.push('Missing required field: Email Id (including HR fallback)');
+        if (!mailboxAccess) reasons.push('Missing required field: Mailbox Access');
+
+        if (reasons.length > 0) {
+          failedRows.push({ row: rowNum, reasons, raw });
+          return;
+        }
+
+        validRows.push({
+          appId: String((app as any)?.id || (app as any)?.appId || '').trim(),
+          userId: ids,
+          userName: displayName,
+          email,
+          entitlement: mailboxAccess,
+          accountStatus,
+          displayName,
+          customAttributes,
+          accountId: ids
+        });
+        return;
+      }
+
+      if (appType === 'Shared Folder') {
+        const ids = pick('ids');
+        let displayName = pick('displayName');
+        let email = pick('email');
+        const folderAccess = pick('folderAccess');
+        const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
+
+        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
+        if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
+        if (!email && hr?.email) email = String(hr.email || '').trim();
+
+        if (!ids) reasons.push('Missing required field: Ids');
+        if (!displayName) reasons.push('Missing required field: Display Name');
+        if (!email) reasons.push('Missing required field: Email Id (including HR fallback)');
+        if (!folderAccess) reasons.push('Missing required field: Folder Access');
+
+        if (reasons.length > 0) {
+          failedRows.push({ row: rowNum, reasons, raw });
+          return;
+        }
+
+        validRows.push({
+          appId: String((app as any)?.id || (app as any)?.appId || '').trim(),
+          userId: ids,
+          userName: displayName,
+          email,
+          entitlement: folderAccess,
+          accountStatus,
+          displayName,
+          customAttributes,
+          accountId: ids
+        });
+        return;
+      }
+
       const userId = pick('userId');
       const userName = pick('userName');
       const privilegeLevel = pick('privilegeLevel');
@@ -490,9 +568,35 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     setSaveUploadMappingForApp(true);
   };
 
-  const downloadTemplate = (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD') => {
+  const escapeCsvCell = (value: unknown) => {
+    const text = String(value ?? '');
+    if (!/[",\n]/.test(text)) return text;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+
+  const getAppAccessSampleRows = (appType?: Application['appType']) => {
+    if (appType === 'Shared Mailbox') {
+      return [
+        ['E12345', 'Jane Doe', 'jane.doe@company.com', 'Full Access'],
+        ['E67890', 'John Smith', 'john.smith@company.com', 'Send As']
+      ];
+    }
+    if (appType === 'Shared Folder') {
+      return [
+        ['E12345', 'Jane Doe', 'jane.doe@company.com', 'Read'],
+        ['E67890', 'John Smith', 'john.smith@company.com', 'Modify']
+      ];
+    }
+    return [];
+  };
+
+  const downloadTemplate = (
+    type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD',
+    variant: 'template' | 'sample' = 'template'
+  ) => {
     let headers: string[] = [];
     let rows: any[] = [];
+    let fileName = `${type.toLowerCase()}_${selectedAppId || 'global'}_data.csv`;
 
     if (type === 'HR') headers = HR_TEMPLATE_HEADERS;
 	else if (type === 'APPLICATIONS') {
@@ -513,6 +617,15 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     else if (type === 'APP_ACCESS') {
       const app = getAppRecord(selectedAppId);
       headers = getTemplateHeadersForAppType(app?.appType);
+      if (variant === 'sample') {
+        rows = getAppAccessSampleRows(app?.appType);
+        const appTypeSlug = String(app?.appType || 'application')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '');
+        fileName = `${appTypeSlug || 'application'}_sample.csv`;
+      }
     }
     else if (type === 'APP_ENT') {
       headers = ENTITLEMENT_TEMPLATE_HEADERS;
@@ -528,15 +641,15 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     }
 
     const content = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map(row => row.map(escapeCsvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([content], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${type.toLowerCase()}_${selectedAppId || 'global'}_data.csv`;
+    a.download = fileName;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -1893,6 +2006,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                     <div className="flex items-center justify-between">
                       <div className="flex gap-2">
                         <button onClick={() => downloadTemplate('APP_ACCESS')} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50"><Download className="w-3.5 h-3.5" /> Template</button>
+                        {(selectedAppRecord?.appType === 'Shared Mailbox' || selectedAppRecord?.appType === 'Shared Folder') && (
+                          <button onClick={() => downloadTemplate('APP_ACCESS', 'sample')} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50">
+                            <FileSpreadsheet className="w-3.5 h-3.5" /> Sample CSV
+                          </button>
+                        )}
                         <input type="file" ref={accountInputRef} className="hidden" onChange={(e) => handleFileUpload(e, 'APP_ACCESS', selectedAppId)} />
                         <button onClick={() => accountInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800"><Upload className="w-3.5 h-3.5" /> Upload Accounts</button>
                         <button onClick={() => setShowSchemaConfig(prev => !prev)} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold hover:bg-slate-50">

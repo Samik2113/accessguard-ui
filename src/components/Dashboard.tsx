@@ -94,7 +94,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
   }, [applications]);
 
   const launchApplicationTypeOptions = useMemo(() => {
-    return ['Application', 'Database', 'Servers', 'Shared Mailbox'] as Array<NonNullable<Application['appType']>>;
+    return ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'] as Array<NonNullable<Application['appType']>>;
   }, []);
 
   const launchApplicationsFiltered = useMemo(() => {
