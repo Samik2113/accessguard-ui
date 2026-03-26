@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy, ApplicationAccess, CertificationType, OrphanReviewerMode } from '../types';
 import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
 import { useReviewCycleDetail } from '../features/reviews/queries';
+import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -354,7 +355,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
     }
   };
 
-  const getAccountDetailPairs = (entry: Record<string, any>) => {
+  const getAccountDetailPairs = (entry: Record<string, any>, app?: Application | null) => {
     const hiddenKeys = new Set([
       'id',
       '_rid',
@@ -381,8 +382,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       'remediatedAt',
       'reassignedBy',
       'reassignedAt',
-      'reassignmentCount'
+      'reassignmentCount',
+      'appUserId',
+      'correlation',
+      'sod',
+      'customAttributes'
     ]);
+    const normalizedEntry = { ...(entry || {}) } as Record<string, any>;
+    const customAttributes = (normalizedEntry.customAttributes && typeof normalizedEntry.customAttributes === 'object')
+      ? normalizedEntry.customAttributes as Record<string, any>
+      : {};
 
     const formatAccountDetailLabel = (key: string): string => {
       const explicitLabels: Record<string, string> = {
@@ -398,7 +407,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
         violatedPolicyNames: 'SoD Policies',
         createdAt: 'Created At',
         updatedAt: 'Updated At',
-        accountStatus: 'Account Status'
+        accountStatus: 'Account Status',
+        lastLoginDetails: 'Last Login Details',
+        createDate: 'Create Date',
+        userType: 'User Type',
+        displayName: 'Display Name'
       };
       if (explicitLabels[key]) return explicitLabels[key];
 
@@ -436,10 +449,108 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       return String(value).trim();
     };
 
-    return Object.entries(entry || {})
+    const schemaAppType = app?.accountSchema?.schemaAppType || app?.appType || 'Application';
+    const template = APP_TYPE_SCHEMA_TEMPLATES[schemaAppType] || APP_TYPE_SCHEMA_TEMPLATES.Application;
+    const mappings = app?.accountSchema?.mappings || {};
+    const configuredFieldKeysToHide = new Set([
+      'loginId',
+      'role',
+      'accountOwnerName',
+      'loginName',
+      'dbRole',
+      'userDetails',
+      'userId',
+      'userName',
+      'privilegeLevel',
+      'ids',
+      'displayName',
+      'mailboxAccess',
+      'folderAccess'
+    ]);
+    const storageKeyByField: Record<string, string> = {
+      email: 'email',
+      employeeId: 'employeeId',
+      lastLoginAt: 'lastLoginDetails',
+      accountStatus: 'accountStatus',
+      userType: 'userType',
+      createDate: 'createDate',
+      displayName: 'displayName'
+    };
+    const fieldPriority: Record<string, number> = {
+      email: 10,
+      employeeId: 20,
+      userType: 30,
+      accountStatus: 40,
+      lastLoginAt: 50,
+      createDate: 60
+    };
+    const fallbackLabelPriority: Record<string, number> = {
+      'Email': 10,
+      'E-mail ID': 10,
+      'Email Id': 10,
+      'Employee ID': 20,
+      'User Type': 30,
+      'Account Status': 40,
+      'Last Login Details': 50,
+      'Create Date': 60,
+      'Created At': 70,
+      'Updated At': 80
+    };
+
+    const resolveConfiguredFieldValue = (fieldKey: string) => {
+      const configuredColumn = String(mappings[fieldKey] || '').trim();
+      const storageKey = storageKeyByField[fieldKey] || fieldKey;
+
+      const candidates = [
+        normalizedEntry[storageKey],
+        normalizedEntry[fieldKey],
+        configuredColumn ? normalizedEntry[configuredColumn] : undefined,
+        configuredColumn ? customAttributes[configuredColumn] : undefined,
+        customAttributes[storageKey],
+        customAttributes[fieldKey]
+      ];
+
+      const match = candidates.find((value) => formatAccountDetailValue(value) !== '');
+      return formatAccountDetailValue(match);
+    };
+
+    const configuredPairs = template.fields
+      .filter((field) => !configuredFieldKeysToHide.has(field.key))
+      .map((field) => {
+        const configuredLabel = String(mappings[field.key] || '').trim();
+        const label = configuredLabel || field.label;
+        const value = resolveConfiguredFieldValue(field.key);
+        return value ? ({ label, value, priority: fieldPriority[field.key] ?? 999, sortKey: label.toLowerCase() }) : null;
+      })
+      .filter((pair): pair is { label: string; value: string; priority: number; sortKey: string } => Boolean(pair))
+      .sort((a, b) => a.priority - b.priority || a.sortKey.localeCompare(b.sortKey))
+      .map((pair) => [pair.label, pair.value] as [string, string]);
+
+    const customColumns = Array.isArray(app?.accountSchema?.customColumns)
+      ? app!.accountSchema!.customColumns!.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+
+    const customPairs = customColumns
+      .map((column) => {
+        const value = formatAccountDetailValue(customAttributes[column] ?? normalizedEntry[column]);
+        return value ? [column, value] as [string, string] : null;
+      })
+      .filter((pair): pair is [string, string] => Boolean(pair))
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    const usedLabels = new Set([...configuredPairs, ...customPairs].map(([label]) => label));
+
+    const fallbackPairs = Object.entries(normalizedEntry)
       .filter(([key, value]) => !hiddenKeys.has(key) && formatAccountDetailValue(value) !== '')
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => [formatAccountDetailLabel(key), formatAccountDetailValue(value)] as [string, string]);
+      .map(([key, value]) => [formatAccountDetailLabel(key), formatAccountDetailValue(value)] as [string, string])
+      .filter(([label]) => !usedLabels.has(label))
+      .sort(([a], [b]) => {
+        const priorityA = fallbackLabelPriority[a] ?? 999;
+        const priorityB = fallbackLabelPriority[b] ?? 999;
+        return priorityA - priorityB || a.localeCompare(b);
+      });
+
+    return [...configuredPairs, ...customPairs, ...fallbackPairs];
   };
 
   const CampaignTable = ({ cycleList, title, icon: Icon }: { cycleList: ReviewCycle[], title: string, icon: any }) => (
@@ -1338,7 +1449,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                       <div className="text-xs font-semibold text-slate-500">{entry.entitlement}</div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-                      {getAccountDetailPairs(entry as Record<string, any>).map(([key, value]) => (
+                      {getAccountDetailPairs(entry as Record<string, any>, viewingAccountApp).map(([key, value]) => (
                         <div key={key} className="px-5 py-4 border-b border-slate-100 md:border-r even:md:border-r-0">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{key}</p>
                           <p className="mt-1 text-sm text-slate-800 break-words">{value}</p>
