@@ -751,20 +751,9 @@ useEffect(() => {
     setUsersLoading(true);
     setUsersError(null);
     try {
-      // Basic page 1. You can implement paging later with continuationToken.
-      const res = await getHrUsers({ top: 200 });
+      const items = await loadAllHrUsers();
       if (!alive) return;
-
-      if (!res?.ok && res?.status) {
-        // Friendly message from Step 4’s hardened helper
-        setUsersError(res.message || "Failed to load HR users.");
-        setUsers([]);
-        return;
-      }
-
-      setUsers(res.items || []);
-      // If you want to keep the token for “Load more…” later:
-      // setUsersNext(res.continuationToken || undefined);
+      setUsers(items);
     } catch (e: any) {
       if (!alive) return;
       setUsersError(e?.message || "Failed to load HR users.");
@@ -892,16 +881,49 @@ useEffect(() => {
   return () => { alive = false; };
 }, [isAuthenticated]);
 
+  const normalizeHrStatus = (raw: any): string => {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    const lowered = value.toLowerCase();
+    if (lowered.includes('active') || lowered.includes('onroll') || lowered.includes('enabled') || lowered.includes('current')) return 'ACTIVE';
+    if (lowered.includes('terminat') || lowered.includes('inactive') || lowered.includes('separat') || lowered.includes('offboard') || lowered.includes('exit') || lowered.includes('left') || lowered.includes('former') || lowered.includes('disable')) return 'TERMINATED';
+    return value.toUpperCase();
+  };
+
+  const loadAllHrUsers = async (): Promise<User[]> => {
+    const items: User[] = [];
+    let continuationToken: string | undefined = undefined;
+
+    do {
+      const res = await getHrUsers({ top: 200, ct: continuationToken });
+      if (!res?.ok && res?.status) {
+        throw new Error(res.message || 'Failed to load HR users.');
+      }
+
+      const chunk = Array.isArray(res?.items) ? res.items : [];
+      items.push(...chunk.map((user: any) => ({
+        ...user,
+        status: normalizeHrStatus(user?.status || user?.employmentStatus)
+      })));
+      continuationToken = res?.continuationToken || undefined;
+    } while (continuationToken);
+
+    return items;
+  };
+
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
     const accEmails = [acc.email, acc.userEmail, acc.accountEmail].filter(Boolean).map((s: string) => s.toLowerCase());
     let match: User | undefined;
     if (accEmails.length > 0) {
       match = identityList.find(u => u.email && accEmails.includes(u.email.toLowerCase()));
+      const hrStatus = normalizeHrStatus(match?.status);
       if (match) {
         return {
           correlatedUserId: match.id,
           isOrphan: false,
+          hrStatus,
+          isTerminated: hrStatus === 'TERMINATED',
           email: match.email,
           userName: match.name || acc.userName || acc.name || ''
         };
@@ -912,10 +934,13 @@ useEffect(() => {
     const possibleIds = [acc.userId, acc.accountId, acc.employeeId, acc.account_id, acc.id].filter(Boolean);
     if (possibleIds.length > 0) {
       match = identityList.find(u => possibleIds.includes(u.id));
+      const hrStatus = normalizeHrStatus(match?.status);
       if (match) {
         return {
           correlatedUserId: match.id,
           isOrphan: false,
+          hrStatus,
+          isTerminated: hrStatus === 'TERMINATED',
           email: acc.email || match.email,
           userName: match.name || acc.userName || acc.name || ''
         };
@@ -926,6 +951,8 @@ useEffect(() => {
     return {
       correlatedUserId: undefined,
       isOrphan: true,
+      hrStatus: '',
+      isTerminated: false,
       email: acc.email || undefined,
       userName: acc.userName || acc.name || ''
     };
@@ -1087,8 +1114,8 @@ useEffect(() => {
         URL.revokeObjectURL(url);
         alert(`Generated ${importResult.credentials.length} temporary passwords. CSV downloaded for secure sharing.`);
       }
-      const res = await getHrUsers({ top: 200 }); // refresh
-      setUsers(res.items ?? []);
+      const items = await loadAllHrUsers();
+      setUsers(items);
       setAccess(prev => recalculateSoD(prev, sodPolicies));
       return;
     } else if (type === 'APPLICATIONS') {
@@ -1614,13 +1641,8 @@ useEffect(() => {
     setUsersLoading(true);
     setUsersError(null);
     try {
-      const res = await getHrUsers({ top: 200 });
-      if (!res?.ok && res?.status) {
-        setUsersError(res.message || "Failed to refresh HR users.");
-        setUsers([]);
-        return;
-      }
-      setUsers(res.items || []);
+      const items = await loadAllHrUsers();
+      setUsers(items);
     } catch (e: any) {
       setUsersError(e?.message || "Failed to refresh HR users.");
       setUsers([]);

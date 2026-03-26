@@ -27,6 +27,8 @@ export interface User {
   email: string;
   department: string;
   managerId: string;
+  title?: string;
+  status?: string;
 }
 
 export interface EntitlementDefinition {
@@ -80,6 +82,8 @@ export interface ApplicationAccess {
   violatedPolicyNames?: string[];
   violatedPolicyIds?: string[];
   correlatedUserId?: string;
+  hrStatus?: string;
+  isTerminated?: boolean;
   isOrphan: boolean;
 }
 

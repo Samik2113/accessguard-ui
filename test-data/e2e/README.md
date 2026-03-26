@@ -22,3 +22,5 @@ Expected test outcomes:
   - `ORP001` / `orphan.ops@acme.com` has `FIN_PAYMENT_RELEASE` + `CRM_ROLE_ADMIN`.
 
 Tip: open each `.csv` in Excel and save as `.xlsx` if needed for your test execution artifacts.
+
+For terminated-user high-risk validation, use the extended pack in `06_hr_users_inventory_extended.csv` and the mapped account feeds `08_accounts_APP_APL_001_feed_with_mapping.csv`, `09_accounts_APP_DB_001_feed_with_mapping.csv`, and `10_accounts_APP_SRV_001_feed_with_mapping.csv`.

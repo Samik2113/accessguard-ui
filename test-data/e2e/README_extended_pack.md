@@ -106,7 +106,7 @@ Only these special account types require explicit `Account_Owner_ID`, `Managed_B
 |--|--|--|--|--|
 | SVC_FIN_AP | Service Account | Active | OWN001 | System automation, needs owner assignment |
 | SVC_BATCH_PROC | Service Account | Active | OWN007 | Batch automation, needs owner assignment |
-| USR008 | Disabled User | Inactive | OWN001 | Disabled account needs owner tracking |
+| USR008 | Terminated User | Active | OWN001 | Terminated HR identity retained active finance access for high-risk testing |
 | EXT901 | External/Contractor | Disabled | OWN001 | Third-party contractor needs owner |
 | APP_BOT_VENDOR | Bot/Automation | Active | OWN001 | Automated process, needs owner assignment |
 
@@ -115,7 +115,7 @@ Only these special account types require explicit `Account_Owner_ID`, `Managed_B
 | Account ID | Type | Status | Owner Mapped To | Reason |
 |--|--|--|--|--|
 | SVC_ETL_EXEC | Service Account | Active | OWN010 | ETL automation service |
-| USR017 | Disabled User | Inactive | OWN010 | Inactive user needs ownership tracking |
+| USR017 | Terminated User | Active | OWN010 | Terminated HR identity retained active database access for high-risk testing |
 | DBA_CONTRACTOR | External/Contractor | Active | OWN010 | Third-party contractor DBA |
 | SVC_AUDIT_AUTO | Service Account | Active | OWN010 | Compliance automation service |
 | BKP_MAINT_ACCT | Service Account | Active | OWN010 | Backup service account |
@@ -125,7 +125,7 @@ Only these special account types require explicit `Account_Owner_ID`, `Managed_B
 | Account ID | Type | Status | Owner Mapped To | Reason |
 |--|--|--|--|--|
 | SVC_BACKUP | Service Account | Active | OWN011 | Server backup service |
-| USR025 | Disabled User | Inactive | OWN011 | Inactive user needs tracking |
+| USR025 | Terminated User | Active | OWN011 | Terminated HR identity retained active server access for high-risk testing |
 | USR017 | Disabled User | Disabled | OWN011 | Disabled user needs tracking |
 | SVC_MONITORING | Service Account | Active | OWN011 | Monitoring/alerting service |
 | SVC_DEPLOY_BOT | Bot/Automation | Active | OWN011 | CI/CD automation bot |
@@ -143,11 +143,12 @@ When uploading accounts, the app should:
 - Search quickly narrows app list across name and type keywords.
 - Upload mapping modal requires explicit correlation and entitlement column selections.
 - `Acct_Status`, `State`, `Status_Text` normalize to `ACTIVE` or `INACTIVE` where applicable.
+- Terminated HR identities with still-active accounts are highlighted as `HIGH RISK` in HR Inventory.
 - Custom columns render in the accounts table for each app (including owner mapping columns).
 - Ignored columns do not appear in mapped account payloads.
 - **Owner mapping**:
   - Normal users (USR001, USR002, etc.) own themselves; empty owner ID in feed
-  - Disabled users (USR008, USR017, USR025) show explicit owner ID
+  - Terminated users (USR008, USR017, USR025) show explicit owner ID and remain active in their app feed to validate terminated-user high risk
   - Service accounts (SVC_*) show explicit owner ID
   - Bot/external accounts show explicit owner ID
   - Owner mapping columns are visible in accounts table when selected as custom columns
