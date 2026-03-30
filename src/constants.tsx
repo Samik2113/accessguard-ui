@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Shield, FileCheck, BarChart3, History, Layers, UserCheck } from 'lucide-react';
-import { AppAccountSchemaConfig, AppTypeSchemaTemplate, Application, UserRole } from './types';
+import { AppAccountSchemaConfig, AppTypeSchemaTemplate, Application, HrFeedSchemaConfig, HrSchemaFieldDefinition, UserRole } from './types';
 
 export const NAV_ITEMS = [
   { id: 'my-team-access', label: 'My Team Access', icon: <UserCheck className="w-5 h-5" />, panel: 'workspace', roles: [UserRole.ADMIN, UserRole.AUDITOR, UserRole.USER] },
@@ -13,15 +13,71 @@ export const NAV_ITEMS = [
 ];
 
 
-export const HR_TEMPLATE_HEADERS = [
-  'userId',      // ← make this explicit
-  'name',
-  'email',
-  'department',
-  'managerId',
-  'title',
-  'status'
+export const HR_STATUS_ACTIVE_VALUES = ['active', 'enabled', 'enable', 'yes', 'true', '1', 'onroll', 'current'];
+export const HR_STATUS_INACTIVE_VALUES = ['inactive', 'terminated', 'disable', 'disabled', 'no', 'false', '0', 'offboarded', 'separated'];
+
+export const HR_SCHEMA_FIELDS: HrSchemaFieldDefinition[] = [
+  { key: 'userId', label: 'User ID', required: true, aliases: ['userid', 'user id', 'account id', 'accountid', 'login id', 'loginid', 'worker id'] },
+  { key: 'name', label: 'Display Name', required: true, aliases: ['name', 'display name', 'displayname', 'full name', 'fullname'] },
+  { key: 'givenName', label: 'Given Name', required: false, aliases: ['given name', 'givenname', 'first name', 'firstname'] },
+  { key: 'surname', label: 'Surname', required: false, aliases: ['surname', 'last name', 'lastname', 'family name', 'familyname'] },
+  { key: 'description', label: 'Description', required: false, aliases: ['description', 'desc'] },
+  { key: 'email', label: 'Email ID', required: true, aliases: ['email', 'email id', 'emailid', 'mail', 'mail id'] },
+  { key: 'enabled', label: 'Enabled', required: false, aliases: ['enabled', 'is enabled', 'isenabled', 'active flag'] },
+  { key: 'employeeId', label: 'Employee ID', required: false, aliases: ['employee id', 'employeeid', 'emp id', 'empid', 'person id', 'personid'] },
+  { key: 'status', label: 'Employee Status', required: false, aliases: ['status', 'employee status', 'employeestatus', 'employment status', 'employmentstatus'] },
+  { key: 'department', label: 'Department', required: false, aliases: ['department', 'dept'] },
+  { key: 'city', label: 'City', required: false, aliases: ['city', 'location'] },
+  { key: 'managerId', label: 'Manager Details', required: false, aliases: ['manager', 'manager id', 'managerid', 'manager details', 'managerdetails'] },
+  { key: 'title', label: 'Title', required: false, aliases: ['title', 'job title', 'jobtitle', 'designation'] },
+  { key: 'creationDate', label: 'Creation Date', required: false, aliases: ['creation date', 'creationdate', 'created date', 'createddate', 'created at', 'createdat'] },
+  { key: 'lastLogonDate', label: 'Last Logon Date', required: false, aliases: ['last logon date', 'lastlogondate', 'last login', 'last login date', 'lastlogindate'] }
 ];
+
+export const DEFAULT_HR_FEED_SCHEMA: HrFeedSchemaConfig = {
+  mappings: {
+    userId: 'userId',
+    name: 'name',
+    givenName: 'givenName',
+    surname: 'surname',
+    description: 'description',
+    email: 'email',
+    enabled: 'enabled',
+    employeeId: 'employeeId',
+    status: 'status',
+    department: 'department',
+    city: 'city',
+    managerId: 'managerId',
+    title: 'title',
+    creationDate: 'creationDate',
+    lastLogonDate: 'lastLogonDate'
+  },
+  ignoreColumns: [],
+  customColumns: [],
+  statusRules: {
+    activeValues: HR_STATUS_ACTIVE_VALUES,
+    inactiveValues: HR_STATUS_INACTIVE_VALUES
+  }
+};
+
+export const buildDefaultHrFeedSchema = (): HrFeedSchemaConfig => ({
+  mappings: { ...DEFAULT_HR_FEED_SCHEMA.mappings },
+  ignoreColumns: [],
+  customColumns: [],
+  statusRules: {
+    activeValues: [...DEFAULT_HR_FEED_SCHEMA.statusRules.activeValues],
+    inactiveValues: [...DEFAULT_HR_FEED_SCHEMA.statusRules.inactiveValues]
+  }
+});
+
+export const getTemplateHeadersForHrSchema = (schema?: HrFeedSchemaConfig) => {
+  const resolved = schema || DEFAULT_HR_FEED_SCHEMA;
+  const canonicalHeaders = HR_SCHEMA_FIELDS.map((field) => String(resolved.mappings[field.key] || field.key).trim()).filter(Boolean);
+  const customHeaders = (resolved.customColumns || []).map((value) => String(value || '').trim()).filter(Boolean);
+  return Array.from(new Set([...canonicalHeaders, ...customHeaders]));
+};
+
+export const HR_TEMPLATE_HEADERS = getTemplateHeadersForHrSchema(DEFAULT_HR_FEED_SCHEMA);
 
 export const APP_ACCESS_TEMPLATE_HEADERS = ['id', 'userId', 'userName', 'email', 'entitlement'];
 export const ENTITLEMENT_TEMPLATE_HEADERS = ['entitlement', 'description', 'owner', 'isPrivileged'];

@@ -153,6 +153,7 @@ export interface AppCustomization {
   loginSubtitle: string;
   supportEmail: string;
   idleTimeoutMinutes: number;
+  hrFeedSchema?: HrFeedSchemaConfig;
   emailTemplates: {
     reviewAssignment: {
       subject: string;
@@ -186,6 +187,23 @@ export interface AppCustomization {
       subject: string;
       body: string;
     };
+  };
+}
+
+export interface HrSchemaFieldDefinition {
+  key: string;
+  label: string;
+  required: boolean;
+  aliases?: string[];
+}
+
+export interface HrFeedSchemaConfig {
+  mappings: Record<string, string>;
+  ignoreColumns: string[];
+  customColumns?: string[];
+  statusRules: {
+    activeValues: string[];
+    inactiveValues: string[];
   };
 }
 

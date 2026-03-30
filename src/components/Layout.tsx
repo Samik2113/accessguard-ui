@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { NAV_ITEMS } from '../constants';
+import { HR_SCHEMA_FIELDS, NAV_ITEMS } from '../constants';
 import { AppCustomization, UserRole } from '../types';
 import { ShieldCheck, User as UserIcon, LogOut, ChevronDown, Settings, X } from 'lucide-react';
 
@@ -259,6 +259,111 @@ const Layout: React.FC<LayoutProps> = ({
                 onChange={(event) => setDraftCustomization(prev => ({ ...prev, supportEmail: event.target.value }))}
                 className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
               />
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 space-y-4">
+              <div>
+                <h4 className="text-sm font-bold text-slate-700">HR Feed Schema</h4>
+                <p className="mt-1 text-[11px] text-slate-500">Configure client-specific HR column names. These mappings are used when you upload HR identities from Inventory.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {HR_SCHEMA_FIELDS.map((field) => (
+                  <div key={field.key}>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{field.label}{field.required ? ' *' : ''}</label>
+                    <input
+                      type="text"
+                      value={draftCustomization.hrFeedSchema?.mappings?.[field.key] || ''}
+                      onChange={(event) => setDraftCustomization((prev) => ({
+                        ...prev,
+                        hrFeedSchema: {
+                          ...prev.hrFeedSchema!,
+                          mappings: {
+                            ...prev.hrFeedSchema!.mappings,
+                            [field.key]: event.target.value
+                          }
+                        }
+                      }))}
+                      className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                      placeholder={field.label}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Extra Columns To Preserve</label>
+                  <textarea
+                    value={(draftCustomization.hrFeedSchema?.customColumns || []).join(', ')}
+                    onChange={(event) => setDraftCustomization((prev) => ({
+                      ...prev,
+                      hrFeedSchema: {
+                        ...prev.hrFeedSchema!,
+                        customColumns: event.target.value.split(',').map((value) => value.trim()).filter(Boolean)
+                      }
+                    }))}
+                    rows={3}
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                    placeholder="City, Manager details, Last logon date"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Ignore Columns</label>
+                  <textarea
+                    value={(draftCustomization.hrFeedSchema?.ignoreColumns || []).join(', ')}
+                    onChange={(event) => setDraftCustomization((prev) => ({
+                      ...prev,
+                      hrFeedSchema: {
+                        ...prev.hrFeedSchema!,
+                        ignoreColumns: event.target.value.split(',').map((value) => value.trim()).filter(Boolean)
+                      }
+                    }))}
+                    rows={3}
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                    placeholder="Description"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Active Status Values</label>
+                  <textarea
+                    value={(draftCustomization.hrFeedSchema?.statusRules?.activeValues || []).join(', ')}
+                    onChange={(event) => setDraftCustomization((prev) => ({
+                      ...prev,
+                      hrFeedSchema: {
+                        ...prev.hrFeedSchema!,
+                        statusRules: {
+                          ...prev.hrFeedSchema!.statusRules,
+                          activeValues: event.target.value.split(',').map((value) => value.trim()).filter(Boolean)
+                        }
+                      }
+                    }))}
+                    rows={3}
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Inactive Status Values</label>
+                  <textarea
+                    value={(draftCustomization.hrFeedSchema?.statusRules?.inactiveValues || []).join(', ')}
+                    onChange={(event) => setDraftCustomization((prev) => ({
+                      ...prev,
+                      hrFeedSchema: {
+                        ...prev.hrFeedSchema!,
+                        statusRules: {
+                          ...prev.hrFeedSchema!.statusRules,
+                          inactiveValues: event.target.value.split(',').map((value) => value.trim()).filter(Boolean)
+                        }
+                      }
+                    }))}
+                    rows={3}
+                    className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t border-slate-200">

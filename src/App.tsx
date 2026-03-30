@@ -44,7 +44,7 @@ import {
 } from "./services/api";
 import { useReviewCycles } from './features/reviews/queries';
 import { useAccountsByApp } from './features/accounts/queries';
-import { APP_TYPE_SCHEMA_TEMPLATES, buildDefaultAccountSchema } from './constants';
+import { APP_TYPE_SCHEMA_TEMPLATES, buildDefaultAccountSchema, buildDefaultHrFeedSchema } from './constants';
 
 const SESSION_STORAGE_KEY = 'accessguard.session.v1';
 const CUSTOMIZATION_STORAGE_KEY = 'accessguard.customization.v1';
@@ -93,8 +93,15 @@ const DEFAULT_CUSTOMIZATION: AppCustomization = {
   loginSubtitle: 'Sign in with emailId and password.',
   supportEmail: '',
   idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES,
+  hrFeedSchema: buildDefaultHrFeedSchema(),
   emailTemplates: DEFAULT_EMAIL_TEMPLATES
 };
+
+function normalizeStringArray(input: unknown, fallback: string[]) {
+  if (!Array.isArray(input)) return [...fallback];
+  const values = input.map((value) => String(value || '').trim()).filter(Boolean);
+  return values.length > 0 ? values : [...fallback];
+}
 
 type PersistedSession = {
   user: { name: string; id: string; role: UserRole };
@@ -169,6 +176,7 @@ function normalizeTemplate(input: unknown, fallback: { subject: string; body: st
 }
 
 function normalizeCustomization(input?: Partial<AppCustomization> | null): AppCustomization {
+  const fallbackHrFeedSchema = buildDefaultHrFeedSchema();
   return {
     platformName: String(input?.platformName || DEFAULT_CUSTOMIZATION.platformName),
     primaryColor: normalizeHexColor(input?.primaryColor, DEFAULT_CUSTOMIZATION.primaryColor),
@@ -176,6 +184,21 @@ function normalizeCustomization(input?: Partial<AppCustomization> | null): AppCu
     loginSubtitle: String(input?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
     supportEmail: String(input?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
     idleTimeoutMinutes: normalizeIdleTimeoutMinutes(input?.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes),
+    hrFeedSchema: {
+      mappings: Object.fromEntries(
+        Object.entries(fallbackHrFeedSchema.mappings).map(([key, value]) => [key, String(input?.hrFeedSchema?.mappings?.[key] || value).trim() || value])
+      ),
+      ignoreColumns: Array.isArray(input?.hrFeedSchema?.ignoreColumns)
+        ? input!.hrFeedSchema!.ignoreColumns.map((value: any) => String(value || '').trim()).filter(Boolean)
+        : [],
+      customColumns: Array.isArray(input?.hrFeedSchema?.customColumns)
+        ? input!.hrFeedSchema!.customColumns!.map((value: any) => String(value || '').trim()).filter(Boolean)
+        : [],
+      statusRules: {
+        activeValues: normalizeStringArray(input?.hrFeedSchema?.statusRules?.activeValues, fallbackHrFeedSchema.statusRules.activeValues),
+        inactiveValues: normalizeStringArray(input?.hrFeedSchema?.statusRules?.inactiveValues, fallbackHrFeedSchema.statusRules.inactiveValues)
+      }
+    },
     emailTemplates: {
       reviewAssignment: normalizeTemplate(input?.emailTemplates?.reviewAssignment, DEFAULT_EMAIL_TEMPLATES.reviewAssignment),
       reviewReminder: normalizeTemplate(input?.emailTemplates?.reviewReminder, DEFAULT_EMAIL_TEMPLATES.reviewReminder),
@@ -903,7 +926,7 @@ useEffect(() => {
       const chunk = Array.isArray(res?.items) ? res.items : [];
       items.push(...chunk.map((user: any) => ({
         ...user,
-        status: normalizeHrStatus(user?.status || user?.employmentStatus)
+        status: normalizeHrStatus(user?.status || user?.employeeStatus || user?.employmentStatus || user?.enabled)
       })));
       continuationToken = res?.continuationToken || undefined;
     } while (continuationToken);
@@ -933,7 +956,12 @@ useEffect(() => {
     // If email didn't match, try various id fields (employee id, account id, etc.)
     const possibleIds = [acc.userId, acc.accountId, acc.employeeId, acc.account_id, acc.id].filter(Boolean);
     if (possibleIds.length > 0) {
-      match = identityList.find(u => possibleIds.includes(u.id));
+      match = identityList.find(u => {
+        const userCandidates = [u.id, (u as any).employeeId, (u as any).accountId, (u as any).userId]
+          .filter(Boolean)
+          .map((value: any) => String(value).trim());
+        return possibleIds.some((candidate: any) => userCandidates.includes(String(candidate).trim()));
+      });
       const hrStatus = normalizeHrStatus(match?.status);
       if (match) {
         return {
@@ -1076,25 +1104,27 @@ useEffect(() => {
 ) => {
   try {
     if (type === 'HR') {
-		
- // 🔁 Normalize CSV rows to the expected DTO
       const normalized = data.map((r: any) => {
-        const userId = r.userId || r.id;  // map 'id' -> 'userId' if needed
+        const userId = String(r.userId || r.accountId || r.employeeId || r.id || '').trim();
+        const name = String(r.name || [r.givenName, r.surname].filter(Boolean).join(' ') || '').trim();
+        const email = String(r.email || '').trim().toLowerCase();
+        const enabled = String(r.enabled ?? '').trim().toLowerCase();
+        const derivedStatus = r.status || r.employeeStatus || (enabled === 'false' || enabled === '0' || enabled === 'no' ? 'Inactive' : enabled === 'true' || enabled === '1' || enabled === 'yes' ? 'Active' : '');
         return {
-          id: userId,                     // keep id and userId aligned
+          ...r,
+          id: userId,
           userId,
-          name: r.name ?? '',
-          email: r.email ?? '',
+          name,
+          email,
           managerId: r.managerId ?? '',
           department: r.department ?? '',
-          title: r.title ?? '',           // optional
-          status: r.status ?? 'Active',   // default
+          title: r.title ?? '',
+          status: derivedStatus || 'Active',
           type: 'hr-user'
         };
-	  });
-	  
-	  
-    const importResult: any = await importHrUsers(normalized, { replaceAll: true, debug: true, resetPasswords: false, returnCredentials: true });            // POST to /api/hr/import
+      });
+
+      const importResult: any = await importHrUsers(normalized, { replaceAll: true, debug: true, resetPasswords: false, returnCredentials: true });
       if (Array.isArray(importResult?.credentials) && importResult.credentials.length > 0) {
         const headers = ['userId', 'name', 'email', 'temporaryPassword', 'mustChangePassword'];
         const rows = importResult.credentials.map((cred: any) => [
@@ -2048,6 +2078,7 @@ useEffect(() => {
     applications={applications}
     entitlements={entitlements}
     sodPolicies={sodPolicies}
+    customization={customization}
     onSetUserRole={handleSetUserRole}
     onBulkSetUserRole={handleBulkSetUserRole}
     onResetUserPassword={handleResetUserPassword}

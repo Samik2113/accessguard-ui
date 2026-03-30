@@ -17,6 +17,23 @@ const schema = {
     loginSubtitle: { type: "string" },
     supportEmail: { type: "string" },
     idleTimeoutMinutes: { type: "number" },
+    hrFeedSchema: {
+      type: "object",
+      properties: {
+        mappings: { type: "object", additionalProperties: { type: "string" } },
+        ignoreColumns: { type: "array", items: { type: "string" } },
+        customColumns: { type: "array", items: { type: "string" } },
+        statusRules: {
+          type: "object",
+          properties: {
+            activeValues: { type: "array", items: { type: "string" } },
+            inactiveValues: { type: "array", items: { type: "string" } }
+          },
+          additionalProperties: true
+        }
+      },
+      additionalProperties: true
+    },
     emailTemplates: {
       type: "object",
       properties: {

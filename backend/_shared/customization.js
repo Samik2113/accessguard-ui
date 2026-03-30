@@ -1,5 +1,30 @@
 const SETTINGS_ID = "APP_CUSTOMIZATION_GLOBAL";
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 8 * 60;
+const DEFAULT_HR_FEED_SCHEMA = {
+  mappings: {
+    userId: "userId",
+    name: "name",
+    givenName: "givenName",
+    surname: "surname",
+    description: "description",
+    email: "email",
+    enabled: "enabled",
+    employeeId: "employeeId",
+    status: "status",
+    department: "department",
+    city: "city",
+    managerId: "managerId",
+    title: "title",
+    creationDate: "creationDate",
+    lastLogonDate: "lastLogonDate"
+  },
+  ignoreColumns: [],
+  customColumns: [],
+  statusRules: {
+    activeValues: ["active", "enabled", "enable", "yes", "true", "1", "onroll", "current"],
+    inactiveValues: ["inactive", "terminated", "disable", "disabled", "no", "false", "0", "offboarded", "separated"]
+  }
+};
 
 const DEFAULT_EMAIL_TEMPLATES = {
   reviewAssignment: {
@@ -121,8 +146,31 @@ const DEFAULT_CUSTOMIZATION = {
   loginSubtitle: "Sign in with emailId and password.",
   supportEmail: "",
   idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES,
+  hrFeedSchema: DEFAULT_HR_FEED_SCHEMA,
   emailTemplates: DEFAULT_EMAIL_TEMPLATES
 };
+
+function normalizeStringArray(input, fallback) {
+  if (!Array.isArray(input)) return [...fallback];
+  const values = input.map((value) => String(value || "").trim()).filter(Boolean);
+  return values.length > 0 ? values : [...fallback];
+}
+
+function normalizeHrFeedSchema(input) {
+  const mappings = {};
+  Object.entries(DEFAULT_HR_FEED_SCHEMA.mappings).forEach(([key, fallback]) => {
+    mappings[key] = String(input?.mappings?.[key] || fallback).trim() || fallback;
+  });
+  return {
+    mappings,
+    ignoreColumns: Array.isArray(input?.ignoreColumns) ? input.ignoreColumns.map((value) => String(value || "").trim()).filter(Boolean) : [],
+    customColumns: Array.isArray(input?.customColumns) ? input.customColumns.map((value) => String(value || "").trim()).filter(Boolean) : [],
+    statusRules: {
+      activeValues: normalizeStringArray(input?.statusRules?.activeValues, DEFAULT_HR_FEED_SCHEMA.statusRules.activeValues),
+      inactiveValues: normalizeStringArray(input?.statusRules?.inactiveValues, DEFAULT_HR_FEED_SCHEMA.statusRules.inactiveValues)
+    }
+  };
+}
 
 function normalizeHexColor(input, fallback) {
   const value = String(input || "").trim();
@@ -166,6 +214,7 @@ function normalizeCustomization(input) {
     loginSubtitle: String(input?.loginSubtitle || DEFAULT_CUSTOMIZATION.loginSubtitle),
     supportEmail: String(input?.supportEmail || DEFAULT_CUSTOMIZATION.supportEmail),
     idleTimeoutMinutes: normalizeIdleTimeoutMinutes(input?.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes),
+    hrFeedSchema: normalizeHrFeedSchema(input?.hrFeedSchema),
     emailTemplates: normalizeEmailTemplates(input?.emailTemplates)
   };
 }
@@ -195,6 +244,7 @@ module.exports = {
   DEFAULT_IDLE_TIMEOUT_MINUTES,
   DEFAULT_EMAIL_TEMPLATES,
   DEFAULT_CUSTOMIZATION,
+  DEFAULT_HR_FEED_SCHEMA,
   normalizeCustomization,
   readAppCustomization
 };

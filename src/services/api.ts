@@ -226,6 +226,15 @@ export const saveAppCustomization = (payload: {
     loginSubtitle: string;
     supportEmail: string;
     idleTimeoutMinutes: number;
+    hrFeedSchema?: {
+      mappings: Record<string, string>;
+      ignoreColumns: string[];
+      customColumns?: string[];
+      statusRules: {
+        activeValues: string[];
+        inactiveValues: string[];
+      };
+    };
     emailTemplates: {
       reviewAssignment: { subject: string; body: string };
       reviewReminder: { subject: string; body: string };

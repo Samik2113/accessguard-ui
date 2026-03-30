@@ -1,11 +1,14 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getEntitlements, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
-import { ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
+import { AppCustomization, ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import {
   APP_TYPE_SCHEMA_TEMPLATES,
   buildDefaultAccountSchema,
+  buildDefaultHrFeedSchema,
   getTemplateHeadersForAppType,
+  getTemplateHeadersForHrSchema,
+  HR_SCHEMA_FIELDS,
   HR_TEMPLATE_HEADERS,
   ENTITLEMENT_TEMPLATE_HEADERS,
   SOD_POLICY_TEMPLATE_HEADERS
@@ -17,6 +20,7 @@ interface InventoryProps {
   applications: Application[];
   entitlements: EntitlementDefinition[];
   sodPolicies: SoDPolicy[];
+  customization: AppCustomization;
   onDataImport: (type: 'HR' | 'APPLICATIONS' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD', data: any[], appId?: string) => void;
   onAddApp: (app: Application) => void;
   onUpdateApp: (app: Application) => void;
@@ -29,7 +33,7 @@ interface InventoryProps {
   onSelectApp?: (appId: string) => void;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, onDataImport, onAddApp, onUpdateApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
+const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, customization, onDataImport, onAddApp, onUpdateApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
   const APPLICATION_TYPE_OPTIONS: Array<NonNullable<Application['appType']>> = ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'];
 
   const getOwnerLabels = (appType?: Application['appType']) => {
@@ -188,6 +192,123 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         inactiveValues: Array.isArray(current?.statusRules?.inactiveValues) ? current!.statusRules!.inactiveValues : fallback.statusRules.inactiveValues
       }
     };
+  };
+
+  const getResolvedHrFeedSchema = () => {
+    const fallback = buildDefaultHrFeedSchema();
+    const current = customization?.hrFeedSchema;
+    return {
+      mappings: {
+        ...fallback.mappings,
+        ...(current?.mappings || {})
+      },
+      ignoreColumns: Array.isArray(current?.ignoreColumns)
+        ? current.ignoreColumns.map((value) => String(value || '').trim()).filter(Boolean)
+        : [],
+      customColumns: Array.isArray(current?.customColumns)
+        ? current.customColumns.map((value) => String(value || '').trim()).filter(Boolean)
+        : [],
+      statusRules: {
+        activeValues: Array.isArray(current?.statusRules?.activeValues) ? current!.statusRules!.activeValues : fallback.statusRules.activeValues,
+        inactiveValues: Array.isArray(current?.statusRules?.inactiveValues) ? current!.statusRules!.inactiveValues : fallback.statusRules.inactiveValues
+      }
+    };
+  };
+
+  const normalizeHrStatusWithSchema = (raw: any, enabledRaw: any, schema = getResolvedHrFeedSchema()) => {
+    const value = String(raw || '').trim();
+    const enabled = String(enabledRaw ?? '').trim().toLowerCase();
+    if (!value && enabled) {
+      if (['true', '1', 'yes'].includes(enabled)) return 'Active';
+      if (['false', '0', 'no'].includes(enabled)) return 'Inactive';
+    }
+    const lowered = value.toLowerCase();
+    if (schema.statusRules.activeValues.map(v => v.toLowerCase()).includes(lowered)) return 'Active';
+    if (schema.statusRules.inactiveValues.map(v => v.toLowerCase()).includes(lowered)) return 'Inactive';
+    return value || 'Active';
+  };
+
+  const mapHrUploadRows = (headers: string[], rows: any[]) => {
+    const schema = getResolvedHrFeedSchema();
+    const headerLookup = new Map(headers.map((header) => [normalizeHeader(header), header]));
+    const ignoreSet = new Set(schema.ignoreColumns.map((column) => normalizeHeader(column)));
+    const customColumns = (schema.customColumns || []).filter((column) => headerLookup.has(normalizeHeader(column)));
+
+    const resolveHeader = (fieldKey: string, aliases: string[] = []) => {
+      const configured = String(schema.mappings[fieldKey] || '').trim();
+      if (configured && headerLookup.has(normalizeHeader(configured))) return headerLookup.get(normalizeHeader(configured)) || '';
+      for (const alias of [fieldKey, ...aliases]) {
+        const found = headerLookup.get(normalizeHeader(alias));
+        if (found) return found;
+      }
+      return '';
+    };
+
+    const resolvedByField: Record<string, string> = {};
+    HR_SCHEMA_FIELDS.forEach((field) => {
+      resolvedByField[field.key] = resolveHeader(field.key, field.aliases || []);
+    });
+
+    const validRows: any[] = [];
+    const failedRows: Array<{ row: number; reasons: string[]; raw: Record<string, any> }> = [];
+
+    rows.forEach((raw, index) => {
+      const rowNum = index + 2;
+      const reasons: string[] = [];
+      const pick = (fieldKey: string) => {
+        const sourceHeader = resolvedByField[fieldKey];
+        if (!sourceHeader) return '';
+        if (ignoreSet.has(normalizeHeader(sourceHeader))) return '';
+        return String(raw[sourceHeader] ?? '').trim();
+      };
+
+      const userId = pick('userId');
+      const givenName = pick('givenName');
+      const surname = pick('surname');
+      const name = pick('name') || [givenName, surname].filter(Boolean).join(' ').trim();
+      const email = pick('email').toLowerCase();
+      const enabled = pick('enabled');
+      const status = normalizeHrStatusWithSchema(pick('status'), enabled, schema);
+      const mapped = {
+        userId,
+        id: userId,
+        name,
+        givenName,
+        surname,
+        description: pick('description'),
+        email,
+        enabled,
+        employeeId: pick('employeeId'),
+        employeeStatus: pick('status'),
+        status,
+        department: pick('department'),
+        city: pick('city'),
+        managerId: pick('managerId'),
+        title: pick('title'),
+        creationDate: pick('creationDate'),
+        lastLogonDate: pick('lastLogonDate'),
+        type: 'hr-user'
+      } as Record<string, any>;
+
+      customColumns.forEach((column) => {
+        const sourceHeader = headerLookup.get(normalizeHeader(column)) || column;
+        const value = String(raw[sourceHeader] ?? '').trim();
+        if (value) mapped[column] = value;
+      });
+
+      if (!mapped.userId) reasons.push('Missing required field: User ID');
+      if (!mapped.name) reasons.push('Missing required field: Display Name');
+      if (!mapped.email) reasons.push('Missing required field: Email ID');
+
+      if (reasons.length > 0) {
+        failedRows.push({ row: rowNum, reasons, raw });
+        return;
+      }
+
+      validRows.push(mapped);
+    });
+
+    return { validRows, failedRows };
   };
 
   const resolveAccountColumnValue = (account: any, column: string, app?: Application | null) => {
@@ -666,7 +787,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     let rows: any[] = [];
     let fileName = `${type.toLowerCase()}_${selectedAppId || 'global'}_data.csv`;
 
-    if (type === 'HR') headers = HR_TEMPLATE_HEADERS;
+
+    if (type === 'HR') headers = getTemplateHeadersForHrSchema(getResolvedHrFeedSchema());
 	else if (type === 'APPLICATIONS') {
   // Minimal columns your import expects
   headers = ['appId', 'name', 'appType', 'ownerId', 'ownerAdminId', 'ownerAdminIds', 'ownerAdminTeams', 'description'];
@@ -734,11 +856,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       
       const headers = lines[0].split(',').map(h => h.trim());
       let expectedHeaders: string[] = [];
-      if (type === 'HR') expectedHeaders = HR_TEMPLATE_HEADERS;
+      if (type === 'HR') expectedHeaders = getTemplateHeadersForHrSchema(getResolvedHrFeedSchema());
       else if (type === 'APP_ENT') expectedHeaders = ENTITLEMENT_TEMPLATE_HEADERS;
       else if (type === 'APP_SOD') expectedHeaders = SOD_POLICY_TEMPLATE_HEADERS;
 
-      const isValid = type === 'APP_ACCESS' ? true : expectedHeaders.every(h => headers.includes(h));
+      const isValid = type === 'APP_ACCESS' || type === 'HR' ? true : expectedHeaders.every(h => headers.includes(h));
       if (!isValid) {
         alert(`Invalid CSV headers. Expected: ${expectedHeaders.join(', ')}`);
         return;
@@ -810,6 +932,21 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         });
         setSaveUploadMappingForApp(true);
         setShowUploadMapper(true);
+        if (e.target) e.target.value = '';
+        return;
+      }
+      if (type === 'HR') {
+        const mapped = mapHrUploadRows(headers, data);
+        if (mapped.failedRows.length > 0) {
+          downloadImportErrorReport(mapped.failedRows);
+          alert(`Imported mapping found ${mapped.failedRows.length} invalid HR row(s). Error report downloaded.`);
+        }
+        if (mapped.validRows.length === 0) {
+          alert('No valid HR rows found. Update HR feed mapping in Customize > HR Feed Schema or fix the uploaded file.');
+          if (e.target) e.target.value = '';
+          return;
+        }
+        onDataImport('HR', mapped.validRows);
         if (e.target) e.target.value = '';
         return;
       }
