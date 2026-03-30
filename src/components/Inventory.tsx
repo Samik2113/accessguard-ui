@@ -378,8 +378,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     const value = String(raw || '').trim();
     if (!value) return '';
     const lowered = value.toLowerCase();
-    if (lowered.includes('active') || lowered.includes('onroll') || lowered.includes('enabled') || lowered.includes('current')) return 'ACTIVE';
     if (lowered.includes('terminat') || lowered.includes('inactive') || lowered.includes('separat') || lowered.includes('offboard') || lowered.includes('exit') || lowered.includes('left') || lowered.includes('former') || lowered.includes('disable')) return 'TERMINATED';
+    if (lowered.includes('active') || lowered.includes('onroll') || lowered.includes('enabled') || lowered.includes('current')) return 'ACTIVE';
     return value.toUpperCase();
   };
 

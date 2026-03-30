@@ -908,10 +908,12 @@ useEffect(() => {
     const value = String(raw || '').trim();
     if (!value) return '';
     const lowered = value.toLowerCase();
-    if (lowered.includes('active') || lowered.includes('onroll') || lowered.includes('enabled') || lowered.includes('current')) return 'ACTIVE';
     if (lowered.includes('terminat') || lowered.includes('inactive') || lowered.includes('separat') || lowered.includes('offboard') || lowered.includes('exit') || lowered.includes('left') || lowered.includes('former') || lowered.includes('disable')) return 'TERMINATED';
+    if (lowered.includes('active') || lowered.includes('onroll') || lowered.includes('enabled') || lowered.includes('current')) return 'ACTIVE';
     return value.toUpperCase();
   };
+
+  const resolveHrStatusSource = (user: any): any => user?.employeeStatus || user?.employmentStatus || user?.status || user?.enabled;
 
   const loadAllHrUsers = async (): Promise<User[]> => {
     const items: User[] = [];
@@ -926,7 +928,7 @@ useEffect(() => {
       const chunk = Array.isArray(res?.items) ? res.items : [];
       items.push(...chunk.map((user: any) => ({
         ...user,
-        status: normalizeHrStatus(user?.status || user?.employeeStatus || user?.employmentStatus || user?.enabled)
+        status: normalizeHrStatus(resolveHrStatusSource(user))
       })));
       continuationToken = res?.continuationToken || undefined;
     } while (continuationToken);
@@ -1109,7 +1111,7 @@ useEffect(() => {
         const name = String(r.name || [r.givenName, r.surname].filter(Boolean).join(' ') || '').trim();
         const email = String(r.email || '').trim().toLowerCase();
         const enabled = String(r.enabled ?? '').trim().toLowerCase();
-        const derivedStatus = r.status || r.employeeStatus || (enabled === 'false' || enabled === '0' || enabled === 'no' ? 'Inactive' : enabled === 'true' || enabled === '1' || enabled === 'yes' ? 'Active' : '');
+        const derivedStatus = r.employeeStatus || r.employmentStatus || r.status || (enabled === 'false' || enabled === '0' || enabled === 'no' ? 'Inactive' : enabled === 'true' || enabled === '1' || enabled === 'yes' ? 'Active' : '');
         return {
           ...r,
           id: userId,

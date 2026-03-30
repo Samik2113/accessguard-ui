@@ -381,7 +381,8 @@ function buildCorrelation(hr, now) {
 }
 
 function normalizeStatus(hr) {
-  const raw = (hr.status || hr.employmentStatus || "").toLowerCase();
+  const raw = String(hr.employeeStatus || hr.employmentStatus || hr.status || "").toLowerCase();
+  if (raw.includes("terminat") || raw.includes("inactive") || raw.includes("separat") || raw.includes("offboard") || raw.includes("exit") || raw.includes("left") || raw.includes("former") || raw.includes("disable")) return "Inactive";
   if (raw.includes("active") || raw.includes("onroll") || raw.includes("enabled")) return "Active";
   return "Inactive";
 }

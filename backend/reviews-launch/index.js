@@ -38,10 +38,11 @@ const normalizeHrStatus = (raw) => {
   const value = String(raw || "").trim();
   if (!value) return "";
   const lowered = value.toLowerCase();
-  if (lowered.includes("active") || lowered.includes("onroll") || lowered.includes("enabled") || lowered.includes("current")) return "ACTIVE";
   if (lowered.includes("terminat") || lowered.includes("inactive") || lowered.includes("separat") || lowered.includes("offboard") || lowered.includes("exit") || lowered.includes("left") || lowered.includes("former") || lowered.includes("disable")) return "TERMINATED";
+  if (lowered.includes("active") || lowered.includes("onroll") || lowered.includes("enabled") || lowered.includes("current")) return "ACTIVE";
   return value.toUpperCase();
 };
+const resolveHrStatusSource = (hr, fallback) => hr?.employeeStatus || hr?.employmentStatus || hr?.status || fallback;
 const normalizeAccountStatus = (raw) => {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -403,7 +404,7 @@ module.exports = async function (context, req) {
       const accountStatus = normalizeAccountStatus(account.accountStatus);
       const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
       const isOrphan = !hr;
-      const hrStatus = normalizeHrStatus(hr?.status || hr?.employmentStatus || account?.correlation?.status);
+      const hrStatus = normalizeHrStatus(resolveHrStatusSource(hr, account?.correlation?.status));
       const isTerminated = hrStatus === "TERMINATED" && accountStatus === "ACTIVE";
 
       if (hrStatus === "TERMINATED" && accountStatus === "INACTIVE") continue;
