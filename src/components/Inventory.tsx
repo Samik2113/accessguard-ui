@@ -1344,7 +1344,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           )}
           {hasTerminatedIdentityRisk && (
             <div className="flex items-center gap-1 text-orange-700 font-bold uppercase text-[8px]">
-              <AlertTriangle className="w-2.5 h-2.5" /> TERMINATED USER WITH ACTIVE ACCOUNT
+              <AlertTriangle className="w-2.5 h-2.5" /> DORMANT ACCOUNT
             </div>
           )}
           {hasPrivileged && (
@@ -2045,7 +2045,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                       {group.userName}
                                       {group.entitlements.some((entry) => hasActiveAccountForTerminatedIdentity(entry)) && (
                                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 text-[8px] font-black uppercase">
-                                          <AlertTriangle className="w-2.5 h-2.5" /> Terminated
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Dormant
                                         </span>
                                       )}
                                       {hasPrivileged && (
@@ -2068,7 +2068,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                         </span>
                                         {group.entitlements.some((entry) => hasActiveAccountForTerminatedIdentity(entry)) && (
                                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 font-bold">
-                                            <AlertTriangle className="w-3 h-3" /> Terminated
+                                            <AlertTriangle className="w-3 h-3" /> Dormant
                                           </span>
                                         )}
                                       </div>
@@ -2112,7 +2112,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                       {acc.userName}
                                       {hasActiveAccountForTerminatedIdentity(acc) && (
                                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 text-[8px] font-black uppercase">
-                                          <AlertTriangle className="w-2.5 h-2.5" /> Terminated
+                                          <AlertTriangle className="w-2.5 h-2.5" /> Dormant
                                         </span>
                                       )}
                                       {isPriv && (
@@ -2135,7 +2135,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                         </span>
                                         {hasActiveAccountForTerminatedIdentity(acc) && (
                                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-100 font-bold">
-                                            <AlertTriangle className="w-3 h-3" /> Terminated
+                                            <AlertTriangle className="w-3 h-3" /> Dormant
                                           </span>
                                         )}
                                       </div>
@@ -2417,7 +2417,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                       </span>
                                     ) : hasTerminationRisk ? (
                                       <span className="inline-flex items-center gap-1 text-orange-700 font-black uppercase text-[10px] bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
-                                        <AlertTriangle className="w-3 h-3" /> Terminated User Active Account
+                                        <AlertTriangle className="w-3 h-3" /> Dormant Account
                                       </span>
                                     ) : isPriv ? (
                                       <span className="inline-flex items-center gap-1 text-indigo-600 font-black uppercase text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">

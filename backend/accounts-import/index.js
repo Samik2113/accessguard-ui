@@ -371,7 +371,7 @@ function buildCorrelation(hr, now) {
   }
   const status = normalizeStatus(hr);
   return {
-    isCorrelated: status === "Active",
+    isCorrelated: true,
     status,
     hrUserId: hr.userId || hr.employeeId,
     displayName: hr.displayName || hr.fullName,

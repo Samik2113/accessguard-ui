@@ -400,10 +400,13 @@ module.exports = async function (context, req) {
         const hit = policies.find(policy => (policy.id || policy.policyId) === id);
         return hit?.policyName || String(id);
       });
+      const accountStatus = normalizeAccountStatus(account.accountStatus);
       const isPrivileged = parseBool(account.isPrivileged) || privilegedEntitlementSet.has(SAFE(account.entitlement));
-      const isOrphan = !hr || parseBool(account.isOrphan);
+      const isOrphan = !hr;
       const hrStatus = normalizeHrStatus(hr?.status || hr?.employmentStatus || account?.correlation?.status);
-      const isTerminated = hrStatus === "TERMINATED" && normalizeAccountStatus(account.accountStatus) === "ACTIVE";
+      const isTerminated = hrStatus === "TERMINATED" && accountStatus === "ACTIVE";
+
+      if (hrStatus === "TERMINATED" && accountStatus === "INACTIVE") continue;
 
       const includeByScope =
         riskScope === "ALL_ACCESS" ||
