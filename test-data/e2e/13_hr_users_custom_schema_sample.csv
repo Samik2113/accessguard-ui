@@ -1,0 +1,6 @@
+Account ID,Display name,Given Name,Surname,Description,Email ID,Enabled,Employee ID,Employee Status,Department,City,Manager details,Creation date,Last logon date
+ACCT1001,Aarav Mehta,Aarav,Mehta,,aarav.mehta@acme.com,TRUE,USR001,Active,Finance,Mumbai,MGR001|Samiksha Agarwal,2023-01-15,2026-03-27
+ACCT1002,Neha Iyer,Neha,Iyer,,neha.iyer@acme.com,TRUE,USR002,Active,Finance,Bengaluru,MGR001|Samiksha Agarwal,2023-02-10,2026-03-25
+ACCT1003,Rina Paul,Rina,Paul,,rina.paul@acme.com,FALSE,USR008,Terminated,Finance,Kolkata,MGR001|Samiksha Agarwal,2022-11-04,2025-12-18
+ACCT1004,Prakash Nair,Prakash,Nair,,prakash.nair@acme.com,TRUE,USR017,Terminated,IT,Chennai,MGR004|Nidhi Shah,2021-08-22,2026-03-01
+ACCT1005,Kavya Iqbal,Kavya,Iqbal,,kavya.iqbal@acme.com,TRUE,USR018,Active,IT,Hyderabad,MGR004|Nidhi Shah,2024-05-06,2026-03-28

@@ -1592,6 +1592,101 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     }
   };
 
+  const hrDisplayLabelByKey = useMemo(() => {
+    const labels = new Map<string, string>();
+    HR_SCHEMA_FIELDS.forEach((field) => labels.set(field.key, field.label));
+    labels.set('id', 'Employee ID');
+    labels.set('employeeStatus', 'Employee Status');
+    labels.set('creationDate', 'Creation Date');
+    labels.set('lastLogonDate', 'Last Logon Date');
+    labels.set('givenName', 'Given Name');
+    labels.set('surname', 'Surname');
+    return labels;
+  }, []);
+
+  const formatHrLabel = (key: string) => {
+    const explicit = hrDisplayLabelByKey.get(key);
+    if (explicit) return explicit;
+    return String(key || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => {
+        const upper = part.toUpperCase();
+        if (upper === 'ID' || upper === 'HR') return upper;
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      })
+      .join(' ');
+  };
+
+  const hrHiddenKeys = new Set([
+    '_attachments',
+    '_etag',
+    '_rid',
+    '_self',
+    '_ts',
+    'createdAt',
+    'department',
+    'email',
+    'id',
+    'managerId',
+    'name',
+    'role',
+    'status',
+    'title',
+    'type',
+    'updatedAt',
+    'userId'
+  ]);
+
+  const hrAdditionalColumns = useMemo(() => {
+    const configured = (customization?.hrFeedSchema?.customColumns || [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
+    const preferred = [
+      'employeeId',
+      'employeeStatus',
+      'givenName',
+      'surname',
+      'description',
+      'enabled',
+      'city',
+      'creationDate',
+      'lastLogonDate',
+      ...configured
+    ];
+    const discovered = Array.from(new Set(users.flatMap((user) => Object.keys(user || {}))));
+    return Array.from(new Set([...preferred, ...discovered]))
+      .filter((key) => !hrHiddenKeys.has(key))
+      .filter((key) => users.some((user: any) => String(user?.[key] ?? '').trim().length > 0));
+  }, [users, customization]);
+
+  const getHrFieldValue = (user: User | null | undefined, key: string) => {
+    const value = (user as any)?.[key];
+    if (value === undefined || value === null || String(value).trim() === '') return '-';
+    return String(value);
+  };
+
+  const getViewingUserDetailPairs = (user?: User | null) => {
+    if (!user) return [] as Array<[string, string]>;
+    return Object.keys(user)
+      .filter((key) => !['_attachments', '_etag', '_rid', '_self', '_ts', 'type'].includes(key))
+      .filter((key) => String((user as any)?.[key] ?? '').trim().length > 0)
+      .sort((a, b) => {
+        const order = ['id', 'userId', 'name', 'givenName', 'surname', 'email', 'employeeId', 'status', 'employeeStatus', 'enabled', 'department', 'city', 'managerId', 'title', 'description', 'creationDate', 'lastLogonDate', 'role'];
+        const aIndex = order.indexOf(a);
+        const bIndex = order.indexOf(b);
+        if (aIndex >= 0 || bIndex >= 0) {
+          if (aIndex === -1) return 1;
+          if (bIndex === -1) return -1;
+          return aIndex - bIndex;
+        }
+        return a.localeCompare(b);
+      })
+      .map((key) => [formatHrLabel(key), String((user as any)[key])]);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex border-b border-slate-200">
@@ -1676,6 +1771,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       <th className="px-6 py-3">Department</th>
                       <th className="px-6 py-3">HR Status</th>
                       <th className="px-6 py-3">Reporting Manager</th>
+                      {hrAdditionalColumns.map((column) => (
+                        <th key={`hr-column-${column}`} className="px-6 py-3">{formatHrLabel(column)}</th>
+                      ))}
                       <th className="px-6 py-3">Access Summary</th>
                       <th className="px-6 py-3">Role</th>
                       <th className="px-6 py-3 text-right">Actions</th>
@@ -1714,6 +1812,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             <div className="text-slate-700 font-semibold">{manager?.name || 'N/A'}</div>
                             <div className="text-[10px] text-slate-400 font-mono">{u.managerId || '-'}</div>
                           </td>
+                          {hrAdditionalColumns.map((column) => (
+                            <td key={`${u.id}-${column}`} className="px-6 py-4 text-slate-600 font-medium whitespace-nowrap">
+                              {getHrFieldValue(u, column)}
+                            </td>
+                          ))}
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${userAccess.length > 0 ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
@@ -2480,6 +2583,22 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-sm font-bold uppercase tracking-wide">Terminated HR identity</span>
                     <span className="text-sm">Any still-active application account is treated as high risk.</span>
+                  </div>
+                )}
+
+                {viewingUser && (
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="bg-slate-50 px-4 py-3 border-b">
+                      <span className="font-bold text-slate-700">HR Profile</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-0">
+                      {getViewingUserDetailPairs(viewingUser).map(([label, value]) => (
+                        <div key={label} className="px-4 py-3 border-b border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+                          <p className="mt-1 text-sm text-slate-700 break-words">{value}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
