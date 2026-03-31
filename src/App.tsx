@@ -7,6 +7,7 @@ import ManagerPortal from './components/ManagerPortal';
 import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
+import ModalShell from './components/ModalShell';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
@@ -1984,8 +1985,7 @@ useEffect(() => {
         </div>
 
         {showPasswordReset && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+          <ModalShell overlayClassName="z-50" panelClassName="max-w-md rounded-2xl p-6 space-y-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Reset Password</h3>
                 <p className="text-sm text-slate-500 mt-1">Enter your current password and set a new password.</p>
@@ -2055,8 +2055,7 @@ useEffect(() => {
                   {resettingPassword ? 'Updating...' : 'Update Password'}
                 </button>
               </div>
-            </div>
-          </div>
+          </ModalShell>
         )}
       </div>
     );

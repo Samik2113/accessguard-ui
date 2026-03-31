@@ -4,6 +4,7 @@ import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User,
 import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
 import { useReviewCycleDetail } from '../features/reviews/queries';
 import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
+import ModalShell from './ModalShell';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -732,8 +733,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       <CampaignTable cycleList={archivedCyclesList} title="Archived Campaigns" icon={Archive} />
 
       {selectedCampaignId && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-7xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-7xl max-h-[90vh] flex flex-col overflow-hidden p-0">
             <div className="p-6 border-b flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
                 <Boxes className="w-5 h-5 text-blue-600" />
@@ -1126,14 +1126,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Policy Details Modal */}
       {reassignModal && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[120] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[120]" panelClassName="max-w-2xl max-h-[85vh] p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Reassign Certification Item</h3>
             <p className="text-sm text-slate-500 mb-4">Select a different HR user as reviewer. The access owner cannot be assigned as reviewer.</p>
 
@@ -1197,13 +1195,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                 Reassign
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showBulkReassignModal && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[125] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[125]" panelClassName="max-w-2xl max-h-[85vh] p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
             <p className="text-sm text-slate-500 mb-1">Selected items: {selectedCampaignItemObjects.length}</p>
             <p className="text-sm text-slate-500 mb-4">Skipped due to max limit: {selectedSkippedByLimitCount}</p>
@@ -1269,14 +1265,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                 Reassign Selected
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Policy Details Modal */}
       {viewingPolicyId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[110]" panelClassName="max-w-md p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900">Policy Violation Details</h3>
               <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
@@ -1310,13 +1304,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
               );
             })()}
             <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Close Detail</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showLaunchModal && isAdmin && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-md max-h-[90vh] p-8">
             <h3 className="text-xl font-bold mb-6">Launch New Campaign</h3>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application Type</label>
@@ -1438,13 +1430,11 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
               <Play className="w-4 h-4 fill-current" /> Launch Campaign
             </button>
             <button onClick={() => setShowLaunchModal(false)} className="w-full mt-6 py-3 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {viewingAccountItem && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl p-8 animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[110]" panelClassName="max-w-4xl max-h-[90vh] p-8">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Account Details</h3>
@@ -1502,8 +1492,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                 ))}
               </div>
             )}
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

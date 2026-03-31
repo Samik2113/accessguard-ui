@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { ReviewItem, ActionStatus, Application, SoDPolicy, User, ApplicationAccess, ReviewCycle, ReviewStatus } from '../types';
 import { Check, X, AlertCircle, Search, Filter, Shield, ListChecks, CheckSquare, Square, MessageSquare, ShieldCheck, ShieldAlert, ChevronRight, Send, Lock, Info, AlertTriangle } from 'lucide-react';
+import ModalShell from './ModalShell';
 
 interface ManagerPortalProps {
   items: ReviewItem[];
@@ -464,8 +465,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
 
       {/* Policy Details Modal */}
       {viewingPolicyId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[110]" panelClassName="max-w-md p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900">Policy Violation Details</h3>
               <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
@@ -499,13 +499,11 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
               );
             })()}
             <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Close Detail</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {(showBulkModal.status || singleActionModal) && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[100]" panelClassName="max-w-lg max-h-[85vh] p-8">
             <h3 className="text-xl font-bold mb-4">Finalize Action</h3>
             {((showBulkModal.status === ActionStatus.APPROVED && showBulkModal.items.some(id => isHighRisk(items.find(i => i.id === id)!))) || 
               (singleActionModal?.status === ActionStatus.APPROVED && isHighRisk(items.find(i => i.id === singleActionModal.id)!))) && (
@@ -518,13 +516,11 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
               <button onClick={() => { setJustification(''); setShowBulkModal({ status: null, items: [] }); setSingleActionModal(null); }} className="flex-1 py-3 border rounded-xl font-bold hover:bg-slate-50 transition-colors">Cancel</button>
               <button onClick={showBulkModal.status ? handleBulkSubmit : handleSingleSubmit} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">Confirm</button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {reassignModal && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[120] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[120]" panelClassName="max-w-2xl max-h-[85vh] p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Reassign Certification Item</h3>
             <p className="text-sm text-slate-500 mb-4">Select a different HR user as reviewer. The access owner cannot be assigned as reviewer.</p>
 
@@ -587,13 +583,11 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                 Reassign
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showBulkReassignModal && (
-        <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-[125] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[125]" panelClassName="max-w-2xl max-h-[85vh] p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Bulk Reassign Certification Items</h3>
             <p className="text-sm text-slate-500 mb-2">Selected items: {selectedItemObjects.length} • Eligible: {selectedReassignableCount}</p>
             <p className="text-sm text-slate-500 mb-1">Skipped due to max limit: {selectedSkippedByLimitCount}</p>
@@ -659,8 +653,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                 Reassign Selected
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

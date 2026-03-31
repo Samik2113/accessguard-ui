@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { FileDown, ShieldCheck, UserCheck, AlertTriangle, Layers, ChevronLeft, Shield, Users, X, ShieldAlert, ChevronRight, FileSpreadsheet, Clock, Activity } from 'lucide-react';
 import { ReviewCycle, ReviewItem, Application, ApplicationAccess, ActionStatus, User, SoDPolicy } from '../types';
+import ModalShell from './ModalShell';
 
 interface GovernanceProps {
   cycles: ReviewCycle[];
@@ -374,8 +375,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
       {renderContent()}
 
       {viewingIdentityId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[999]" panelClassName="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden p-0">
             <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <Users className="w-8 h-8 text-indigo-600" />
@@ -458,13 +458,11 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
                 })}
               </div>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {viewingPolicyId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[999]" panelClassName="max-w-md p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-red-600" /> Policy Analysis</h3>
               <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
@@ -492,8 +490,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
               );
             })()}
             <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors">Close Policy View</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

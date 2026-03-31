@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Application, ApplicationAccess, EntitlementDefinition, SoDPolicy, User } from '../types';
 import { Layers, Users, Users2, Shield, ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, X } from 'lucide-react';
+import ModalShell from './ModalShell';
 
 interface MyTeamAccessProps {
   currentManagerId: string;
@@ -165,8 +166,7 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
       </div>
 
       {viewingUserId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[999] p-4">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[999]" panelClassName="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col p-0">
             <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Users2 className="w-6 h-6" /></div>
@@ -285,13 +285,11 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                 })}
               </div>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {viewingPolicyId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[1000]" panelClassName="max-w-md p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900">Policy Violation Details</h3>
               <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
@@ -325,8 +323,7 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
               );
             })()}
             <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all">Close Detail</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

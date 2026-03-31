@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getAccountsByUser, getEntitlements, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
+import ModalShell from './ModalShell';
 import { AppCustomization, ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import {
   APP_TYPE_SCHEMA_TEMPLATES,
@@ -1969,8 +1970,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       )}
 
       {resetResult && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+        <ModalShell panelClassName="max-w-lg rounded-2xl p-6">
             <h3 className="text-lg font-bold text-slate-900">Password updated successfully</h3>
             <p className="text-sm text-slate-600 mt-1">Share this temporary password with {resetResult.name} ({resetResult.userId}). It will not be shown again after you click OK.</p>
 
@@ -1994,13 +1994,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 OK
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showBulkRoleModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <ModalShell panelClassName="max-w-md rounded-2xl p-6">
             <h3 className="text-lg font-bold text-slate-900">Bulk Role Assignment</h3>
             <p className="text-sm text-slate-600 mt-1">Selected users: {selectedUserIds.length}</p>
 
@@ -2034,8 +2032,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 {bulkUpdatingRole ? 'Updating...' : 'Apply Role'}
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {activeSubTab === 'sod' && (
@@ -2569,8 +2566,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
       {/* Delete Application Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[70] bg-slate-900/70" panelClassName="max-w-md p-8">
             <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center mb-6 mx-auto">
               <AlertTriangle className="w-8 h-8 text-red-600" />
             </div>
@@ -2591,14 +2587,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 Yes, Delete All
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Policy Details Modal */}
       {viewingPolicyId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-[60]" panelClassName="max-w-md p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900">Policy Violation Details</h3>
               <button onClick={() => setViewingPolicyId(null)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
@@ -2639,14 +2633,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               );
             })()}
             <button onClick={() => setViewingPolicyId(null)} className="w-full mt-8 py-3 bg-slate-900 text-white rounded-xl font-bold">Close Detail</button>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Global Identity Access Drill-Down Modal */}
       {viewingUserId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50" panelClassName="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col p-0">
             <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg"><Users2 className="w-6 h-6" /></div>
@@ -2812,13 +2804,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 })}
               </div>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {showUploadMapper && pendingAccountUpload && uploadSchemaDraft && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-4xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50" panelClassName="max-w-4xl max-h-[85vh] p-8">
             {(() => {
               const mapperAppType = selectedAppRecord ? getResolvedAppType(selectedAppRecord) : 'Application';
               const correlationFieldKey = getCorrelationFieldKey(mapperAppType);
@@ -2951,13 +2941,11 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 </>
               );
             })()}
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {editingAppConfig && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-start sm:items-center justify-center z-50 p-4 sm:p-6 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-xl max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col my-auto">
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-xl max-h-[85vh] overflow-hidden flex flex-col p-0">
             <div className="p-6 sm:p-8 border-b border-slate-100">
               <h3 className="text-xl font-bold text-slate-900">Edit Application Configuration</h3>
             </div>
@@ -3038,14 +3026,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 Save Changes
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Add Application Modal */}
       {showAddApp && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-start sm:items-center justify-center z-50 p-4 sm:p-6 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col my-auto">
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-md max-h-[85vh] overflow-hidden flex flex-col p-0">
             <div className="p-6 sm:p-8 border-b border-slate-100">
               <h3 className="text-xl font-bold text-slate-900">Configure New Application</h3>
             </div>
@@ -3126,14 +3112,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 Add App
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Edit Entitlement Modal */}
       {editingEnt && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50" panelClassName="max-w-xl p-8">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-slate-900">Edit Entitlement: <code className="text-blue-600 ml-2">{editingEnt.entitlement}</code></h3>
               <button onClick={() => setEditingEnt(null)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-5 h-5" /></button>
@@ -3172,14 +3156,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 Save Changes
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Global SoD Modal */}
       {showAddSod && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in zoom-in-95">
+        <ModalShell overlayClassName="z-50" panelClassName="max-w-2xl p-8">
             <h3 className="text-xl font-bold text-slate-900 mb-6">Create New Inter-App SoD Policy</h3>
             <div className="space-y-6">
               <div>
@@ -3248,8 +3230,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               <button onClick={() => setShowAddSod(false)} className="flex-1 px-6 py-4 border border-slate-200 rounded-2xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
               <button onClick={handleAddGlobalSod} className="flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700">Create Policy</button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );

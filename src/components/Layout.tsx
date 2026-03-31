@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { HR_SCHEMA_FIELDS, NAV_ITEMS } from '../constants';
 import { AppCustomization, UserRole } from '../types';
 import { ShieldCheck, User as UserIcon, LogOut, ChevronDown, Settings, X } from 'lucide-react';
+import ModalShell from './ModalShell';
 
 const getOnPrimaryTextColor = (input: string, fallback = '#2563eb') => {
   const value = String(input || '').trim();
@@ -180,8 +181,7 @@ const Layout: React.FC<LayoutProps> = ({
       </main>
 
       {showCustomization && currentUser.role === UserRole.ADMIN && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[120] p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <ModalShell overlayClassName="z-[120]" panelClassName="max-w-4xl max-h-[90vh] rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">Customize Platform</h3>
               <button onClick={() => setShowCustomization(false)} className="p-2 hover:bg-slate-100 rounded-lg">
@@ -429,8 +429,7 @@ const Layout: React.FC<LayoutProps> = ({
                 Save
               </button>
             </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );
