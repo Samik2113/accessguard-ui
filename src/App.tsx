@@ -37,6 +37,7 @@ import {
   loginUser,
   bootstrapFirstUser,
   changePassword,
+  completeFirstLoginPasswordSetup,
   resetUserPassword,
   setUserRole,
   setUserRolesBulk,
@@ -222,6 +223,17 @@ function getOnPrimaryTextColor(input: unknown, fallback: string) {
   return yiq >= 150 ? '#0f172a' : '#ffffff';
 }
 
+function buildFirstLoginSetupLink(email: string, setupToken: string) {
+  if (typeof window === 'undefined') return '';
+  const base = `${window.location.origin}${window.location.pathname}`;
+  const params = new URLSearchParams({
+    firstLogin: '1',
+    email: String(email || '').trim().toLowerCase(),
+    setupToken: String(setupToken || '').trim()
+  });
+  return `${base}?${params.toString()}`;
+}
+
 
 
 const App: React.FC = () => {
@@ -253,6 +265,14 @@ const App: React.FC = () => {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const [resettingPassword, setResettingPassword] = useState(false);
+  const [showFirstLoginPasswordSetup, setShowFirstLoginPasswordSetup] = useState(false);
+  const [firstLoginEmail, setFirstLoginEmail] = useState('');
+  const [firstLoginToken, setFirstLoginToken] = useState('');
+  const [firstLoginPassword, setFirstLoginPassword] = useState('');
+  const [firstLoginConfirmPassword, setFirstLoginConfirmPassword] = useState('');
+  const [firstLoginError, setFirstLoginError] = useState<string | null>(null);
+  const [firstLoginSuccess, setFirstLoginSuccess] = useState<string | null>(null);
+  const [submittingFirstLoginPassword, setSubmittingFirstLoginPassword] = useState(false);
   
   const [users, setUsers] = useState<User[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
@@ -438,6 +458,17 @@ const App: React.FC = () => {
     setLoggingIn(true);
     try {
       const res: any = await loginUser({ email, password });
+      if (res?.mustChangePassword) {
+        setShowPasswordReset(true);
+        setResetEmail(email);
+        setResetCurrentPassword(password);
+        setResetNewPassword('');
+        setResetConfirmPassword('');
+        setResetError('Password change required before you can continue.');
+        setResetSuccess(null);
+        setLoginPassword('');
+        return;
+      }
       const roleRaw = String(res?.user?.role || '').toUpperCase();
       const role = roleRaw === UserRole.ADMIN ? UserRole.ADMIN : roleRaw === UserRole.AUDITOR ? UserRole.AUDITOR : UserRole.USER;
       const loggedInUser = {
@@ -451,7 +482,14 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       writePersistedSession(loggedInUser, nextTab, sessionTtlMs);
     } catch (err: any) {
-      setLoginError(err?.message || 'Invalid emailId or password.');
+      const message = err?.message || 'Invalid emailId or password.';
+      setLoginError(message);
+      if (String(message).toLowerCase().includes('password setup required')) {
+        setFirstLoginEmail(email);
+        setFirstLoginError(null);
+        setFirstLoginSuccess(null);
+        setShowFirstLoginPasswordSetup(true);
+      }
     } finally {
       setLoggingIn(false);
     }
@@ -499,6 +537,19 @@ const App: React.FC = () => {
         console.warn('Failed to load global customization, using local/default fallback.', err);
       }
     })();
+
+    const query = new URLSearchParams(window.location.search);
+    const setupToken = String(query.get('setupToken') || '').trim();
+    const setupEmail = String(query.get('email') || '').trim().toLowerCase();
+    if (setupToken) {
+      setFirstLoginToken(setupToken);
+      setFirstLoginEmail(setupEmail);
+      setFirstLoginError(null);
+      setFirstLoginSuccess(null);
+      setShowFirstLoginPasswordSetup(true);
+      const cleanedUrl = `${window.location.pathname}${window.location.hash || ''}`;
+      window.history.replaceState({}, document.title, cleanedUrl);
+    }
 
     setSessionHydrated(true);
   }, []);
@@ -651,6 +702,41 @@ const App: React.FC = () => {
       setResetError(err?.message || 'Failed to reset password.');
     } finally {
       setResettingPassword(false);
+    }
+  };
+
+  const handleCompleteFirstLoginPasswordSetup = async () => {
+    setFirstLoginError(null);
+    setFirstLoginSuccess(null);
+
+    const email = firstLoginEmail.trim().toLowerCase();
+    const setupToken = firstLoginToken.trim();
+    if (!email || !setupToken || !firstLoginPassword || !firstLoginConfirmPassword) {
+      setFirstLoginError('Fill all fields.');
+      return;
+    }
+    if (firstLoginPassword.length < 8) {
+      setFirstLoginError('Password must be at least 8 characters.');
+      return;
+    }
+    if (firstLoginPassword !== firstLoginConfirmPassword) {
+      setFirstLoginError('Password and confirm password must match.');
+      return;
+    }
+
+    setSubmittingFirstLoginPassword(true);
+    try {
+      await completeFirstLoginPasswordSetup({ email, setupToken, newPassword: firstLoginPassword });
+      setFirstLoginSuccess('Password created successfully. You can sign in now.');
+      setLoginEmail(email);
+      setLoginPassword('');
+      setFirstLoginPassword('');
+      setFirstLoginConfirmPassword('');
+      setFirstLoginToken('');
+    } catch (err: any) {
+      setFirstLoginError(err?.message || 'Failed to create password.');
+    } finally {
+      setSubmittingFirstLoginPassword(false);
     }
   };
 
@@ -1129,12 +1215,14 @@ useEffect(() => {
 
       const importResult: any = await importHrUsers(normalized, { replaceAll: true, debug: true, resetPasswords: false, returnCredentials: true });
       if (Array.isArray(importResult?.credentials) && importResult.credentials.length > 0) {
-        const headers = ['userId', 'name', 'email', 'temporaryPassword', 'mustChangePassword'];
+        const headers = ['userId', 'name', 'email', 'passwordSetupLink', 'setupToken', 'setupTokenExpiresAt', 'mustChangePassword'];
         const rows = importResult.credentials.map((cred: any) => [
           cred.userId,
           cred.name,
           cred.email,
-          cred.temporaryPassword,
+          buildFirstLoginSetupLink(cred.email, cred.setupToken),
+          cred.setupToken,
+          cred.setupTokenExpiresAt,
           String(!!cred.mustChangePassword)
         ]);
         const csv = [headers.join(','), ...rows.map((row: string[]) => row.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -1142,10 +1230,10 @@ useEffect(() => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `new_user_credentials_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `new_user_password_setup_links_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        alert(`Generated ${importResult.credentials.length} temporary passwords. CSV downloaded for secure sharing.`);
+        alert(`Generated ${importResult.credentials.length} password setup links. CSV downloaded for secure sharing.`);
       }
       const items = await loadAllHrUsers();
       setUsers(items);
@@ -1789,9 +1877,13 @@ useEffect(() => {
 
   const handleResetUserPassword = async (userId: string) => {
     const res: any = await resetUserPassword({ userId });
-    await addAuditLog('PASSWORD_RESET', `Temporary password reset for user ${userId}`);
+    const email = String(res?.user?.email || '').trim().toLowerCase();
+    const setupToken = String(res?.setupToken || '').trim();
+    await addAuditLog('PASSWORD_RESET', `Issued password setup link for user ${userId}`);
     return {
-      temporaryPassword: String(res?.temporaryPassword || ''),
+      setupToken,
+      setupTokenExpiresAt: String(res?.setupTokenExpiresAt || ''),
+      setupLink: buildFirstLoginSetupLink(email, setupToken),
       user: res?.user || { userId }
     };
   };
@@ -1892,6 +1984,19 @@ useEffect(() => {
               className="w-full text-sm text-blue-700 hover:text-blue-800 font-semibold"
             >
               Reset Password
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowFirstLoginPasswordSetup(true);
+                setFirstLoginEmail(loginEmail.trim().toLowerCase());
+                setFirstLoginError(null);
+                setFirstLoginSuccess(null);
+              }}
+              className="w-full text-sm text-blue-700 hover:text-blue-800 font-semibold"
+            >
+              First-Time Login: Set Password
             </button>
 
             <button
@@ -2053,6 +2158,80 @@ useEffect(() => {
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
                 >
                   {resettingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+          </ModalShell>
+        )}
+
+        {showFirstLoginPasswordSetup && (
+          <ModalShell overlayClassName="z-50" panelClassName="max-w-md rounded-2xl p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">First-Time Password Setup</h3>
+                <p className="text-sm text-slate-500 mt-1">Use your one-time setup token to create a password before first sign-in.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Email Id</label>
+                <input
+                  type="email"
+                  value={firstLoginEmail}
+                  onChange={(e) => setFirstLoginEmail(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Setup Token</label>
+                <input
+                  type="text"
+                  value={firstLoginToken}
+                  onChange={(e) => setFirstLoginToken(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">New Password</label>
+                <input
+                  type="password"
+                  value={firstLoginPassword}
+                  onChange={(e) => setFirstLoginPassword(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={firstLoginConfirmPassword}
+                  onChange={(e) => setFirstLoginConfirmPassword(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              {firstLoginError && <p className="text-sm text-red-600">{firstLoginError}</p>}
+              {firstLoginSuccess && <p className="text-sm text-emerald-600">{firstLoginSuccess}</p>}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFirstLoginPasswordSetup(false);
+                    setFirstLoginError(null);
+                    setFirstLoginSuccess(null);
+                  }}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteFirstLoginPasswordSetup}
+                  disabled={submittingFirstLoginPassword}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  {submittingFirstLoginPassword ? 'Saving...' : 'Create Password'}
                 </button>
               </div>
           </ModalShell>

@@ -1,6 +1,6 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
-const crypto = require("crypto");
+const { issuePasswordSetup } = require("../_shared/password-setup");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
@@ -15,22 +15,6 @@ const schema = {
 };
 
 const validate = ajv.compile(schema);
-
-function generateTempPassword(length = 12) {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
-  const bytes = crypto.randomBytes(length);
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    out += alphabet[bytes[i] % alphabet.length];
-  }
-  return out;
-}
-
-function hashPassword(password, saltHex) {
-  const salt = saltHex || crypto.randomBytes(16).toString("hex");
-  const hash = crypto.pbkdf2Sync(String(password), salt, 100000, 32, "sha256").toString("hex");
-  return { salt, hash };
-}
 
 function cors(req) {
   return {
@@ -111,18 +95,19 @@ module.exports = async function (context, req) {
       }
     }
 
-    const temporaryPassword = generateTempPassword();
-    const hashed = hashPassword(temporaryPassword);
     const nowIso = new Date().toISOString();
+    const setupState = issuePasswordSetup(nowIso);
 
     const updatedAuth = {
       ...authUser,
       id: targetUserId,
       userId: targetUserId,
-      passwordHash: hashed.hash,
-      passwordSalt: hashed.salt,
+      passwordHash: null,
+      passwordSalt: null,
       passwordAlgo: "pbkdf2_sha256_100000",
       mustChangePassword: true,
+      setupTokenHash: setupState.setupTokenHash,
+      setupTokenExpiresAt: setupState.setupTokenExpiresAt,
       updatedAt: nowIso,
       type: "user-auth"
     };
@@ -154,7 +139,8 @@ module.exports = async function (context, req) {
           name: displayName,
           email
         },
-        temporaryPassword,
+        setupToken: setupState.setupToken,
+        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
         mustChangePassword: true
       }
     };

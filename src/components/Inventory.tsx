@@ -30,7 +30,7 @@ interface InventoryProps {
   onUpdateSoD: (policies: SoDPolicy[]) => void;
   onSetUserRole: (userId: string, role: 'ADMIN' | 'AUDITOR' | 'USER') => Promise<void>;
   onBulkSetUserRole: (userIds: string[], role: 'ADMIN' | 'AUDITOR' | 'USER') => Promise<void>;
-  onResetUserPassword: (userId: string) => Promise<{ temporaryPassword: string; user?: any }>;
+  onResetUserPassword: (userId: string) => Promise<{ setupToken: string; setupLink: string; setupTokenExpiresAt?: string; user?: any }>;
   onSelectApp?: (appId: string) => void;
 }
 
@@ -193,7 +193,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const [bulkRole, setBulkRole] = useState<'ADMIN' | 'AUDITOR' | 'USER'>('USER');
   const [bulkUpdatingRole, setBulkUpdatingRole] = useState(false);
   const [showBulkRoleModal, setShowBulkRoleModal] = useState(false);
-  const [resetResult, setResetResult] = useState<{ userId: string; name: string; temporaryPassword: string } | null>(null);
+  const [resetResult, setResetResult] = useState<{ userId: string; name: string; setupLink: string; setupTokenExpiresAt?: string } | null>(null);
   const [copiedPassword, setCopiedPassword] = useState(false);
   const [showSchemaConfig, setShowSchemaConfig] = useState(false);
   const [schemaDraft, setSchemaDraft] = useState<Application['accountSchema'] | null>(null);
@@ -1704,12 +1704,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       setResettingUserId(u.id);
       setCopiedPassword(false);
       const res = await onResetUserPassword(u.id);
-      const temporaryPassword = String(res?.temporaryPassword || '');
-      if (!temporaryPassword) {
-        alert('Password reset completed, but no temporary password was returned.');
+      const setupLink = String(res?.setupLink || '');
+      if (!setupLink) {
+        alert('Password setup link was not returned.');
         return;
       }
-      setResetResult({ userId: u.id, name: u.name, temporaryPassword });
+      setResetResult({ userId: u.id, name: u.name, setupLink, setupTokenExpiresAt: String(res?.setupTokenExpiresAt || '') || undefined });
     } catch (e: any) {
       alert(`Failed to reset password: ${e?.message || 'Unknown error'}`);
     } finally {
@@ -1718,12 +1718,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   };
 
   const copyResetPassword = async () => {
-    if (!resetResult?.temporaryPassword) return;
+    if (!resetResult?.setupLink) return;
     try {
-      await navigator.clipboard.writeText(resetResult.temporaryPassword);
+      await navigator.clipboard.writeText(resetResult.setupLink);
       setCopiedPassword(true);
     } catch {
-      alert('Copy failed. Please copy the password manually before clicking OK.');
+      alert('Copy failed. Please copy the setup link manually before clicking OK.');
     }
   };
 
@@ -2040,7 +2040,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                 disabled={resettingUserId === u.id}
                                 className="text-orange-600 hover:text-orange-800 flex items-center gap-1.5 font-bold text-xs disabled:text-slate-300 disabled:cursor-not-allowed"
                               >
-                                <KeyRound className="w-3.5 h-3.5" /> {resettingUserId === u.id ? 'Resetting...' : 'Reset Password'}
+                                <KeyRound className="w-3.5 h-3.5" /> {resettingUserId === u.id ? 'Issuing...' : 'Issue Setup Link'}
                               </button>
                               <button onClick={() => setViewingUserId(u.id)} className="text-blue-600 hover:text-blue-800 flex items-center gap-1.5 font-bold text-xs">
                                 <Eye className="w-3.5 h-3.5" /> Drill Down
@@ -2060,20 +2060,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
       {resetResult && (
         <ModalShell panelClassName="max-w-lg rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-slate-900">Password updated successfully</h3>
-            <p className="text-sm text-slate-600 mt-1">Share this temporary password with {resetResult.name} ({resetResult.userId}). It will not be shown again after you click OK.</p>
+            <h3 className="text-lg font-bold text-slate-900">Password setup link generated</h3>
+            <p className="text-sm text-slate-600 mt-1">Share this one-time password setup link with {resetResult.name} ({resetResult.userId}). It will not be shown again after you click OK.</p>
 
             <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
-              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Temporary Password</p>
-              <p className="mt-1 text-sm font-mono text-slate-800 break-all">{resetResult.temporaryPassword}</p>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Setup Link</p>
+              <p className="mt-1 text-sm font-mono text-slate-800 break-all">{resetResult.setupLink}</p>
             </div>
+
+            {resetResult.setupTokenExpiresAt && (
+              <p className="mt-3 text-xs text-slate-500">Expires: {new Date(resetResult.setupTokenExpiresAt).toLocaleString()}</p>
+            )}
 
             <div className="mt-5 flex items-center gap-3 justify-end">
               <button
                 onClick={copyResetPassword}
                 className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 inline-flex items-center gap-2"
               >
-                <Copy className="w-4 h-4" /> {copiedPassword ? 'Copied' : 'Copy Password'}
+                <Copy className="w-4 h-4" /> {copiedPassword ? 'Copied' : 'Copy Link'}
               </button>
               <button
                 onClick={closeResetPasswordModal}

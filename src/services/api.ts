@@ -326,6 +326,9 @@ export const bootstrapFirstUser = (payload: { userId?: string; name: string; ema
 export const changePassword = (payload: { email: string; currentPassword: string; newPassword: string }) =>
   postJson("/api/auth-change-password", payload);
 
+export const completeFirstLoginPasswordSetup = (payload: { email: string; setupToken: string; newPassword: string }) =>
+  postJson("/api/auth-first-login-setup", payload);
+
 export const resetUserPassword = (payload: { userId: string }) =>
   postJson("/api/auth-reset-password", payload);
 

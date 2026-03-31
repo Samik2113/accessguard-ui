@@ -62,6 +62,10 @@ module.exports = async function (context, req) {
     const authUser = authQuery.resources?.[0];
     if (!authUser) return bad(401, "Invalid emailId or password.", req);
 
+    if (authUser.mustChangePassword && (!authUser.passwordSalt || !authUser.passwordHash)) {
+      return bad(403, "Password setup required. Use the first-time setup option to create your password.", req);
+    }
+
     const verified = verifyPassword(password, authUser.passwordSalt, authUser.passwordHash);
     if (!verified) return bad(401, "Invalid emailId or password.", req);
 

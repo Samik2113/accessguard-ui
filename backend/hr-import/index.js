@@ -1,6 +1,7 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const crypto = require("crypto");
+const { issuePasswordSetup } = require("../_shared/password-setup");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
@@ -179,22 +180,22 @@ module.exports = async function (context, req) {
       };
       await usersC.items.upsert(item);
 
-      const shouldIssueTempPassword = resetPasswords || !existingAuth;
-      let tempPassword = null;
+      const shouldIssuePasswordSetup = resetPasswords || !existingAuth;
+      let setupState = null;
       let passwordSalt = existingAuth?.passwordSalt;
       let passwordHash = existingAuth?.passwordHash;
 
-      if (shouldIssueTempPassword) {
-        tempPassword = generateTempPassword();
-        const hashed = hashPassword(tempPassword);
-        passwordSalt = hashed.salt;
-        passwordHash = hashed.hash;
+      if (shouldIssuePasswordSetup) {
+        setupState = issuePasswordSetup(now);
+        passwordSalt = null;
+        passwordHash = null;
 
         issuedCredentials.push({
           userId,
           name: item.name,
           email,
-          temporaryPassword: tempPassword,
+          setupToken: setupState.setupToken,
+          setupTokenExpiresAt: setupState.setupTokenExpiresAt,
           mustChangePassword: true
         });
       }
@@ -207,15 +208,17 @@ module.exports = async function (context, req) {
         passwordHash,
         passwordSalt,
         passwordAlgo: "pbkdf2_sha256_100000",
-        mustChangePassword: shouldIssueTempPassword ? true : !!existingAuth?.mustChangePassword,
+        mustChangePassword: shouldIssuePasswordSetup ? true : !!existingAuth?.mustChangePassword,
+        setupTokenHash: shouldIssuePasswordSetup ? setupState.setupTokenHash : (existingAuth?.setupTokenHash || null),
+        setupTokenExpiresAt: shouldIssuePasswordSetup ? setupState.setupTokenExpiresAt : (existingAuth?.setupTokenExpiresAt || null),
         status: "ACTIVE",
         createdAt: existingAuth?.createdAt || now,
         updatedAt: now,
         type: "user-auth"
       };
 
-      if (!authDoc.passwordHash || !authDoc.passwordSalt) {
-        throw new Error(`Auth profile missing password hash for userId=${userId}`);
+      if ((!authDoc.passwordHash || !authDoc.passwordSalt) && !authDoc.setupTokenHash) {
+        throw new Error(`Auth profile missing password or setup token for userId=${userId}`);
       }
 
       await authC.items.upsert(authDoc);
@@ -317,17 +320,18 @@ module.exports = async function (context, req) {
     });
 
     if (!breakglassAuth) {
-      const tempPassword = generateTempPassword();
-      const hashed = hashPassword(tempPassword);
+      const setupState = issuePasswordSetup(now);
       await authC.items.upsert({
         id: BREAKGLASS_USER_ID,
         userId: BREAKGLASS_USER_ID,
         email: breakglassEmail,
         role: "ADMIN",
-        passwordHash: hashed.hash,
-        passwordSalt: hashed.salt,
+        passwordHash: null,
+        passwordSalt: null,
         passwordAlgo: "pbkdf2_sha256_100000",
         mustChangePassword: true,
+        setupTokenHash: setupState.setupTokenHash,
+        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
         status: "ACTIVE",
         createdAt: now,
         updatedAt: now,
@@ -337,7 +341,8 @@ module.exports = async function (context, req) {
         userId: BREAKGLASS_USER_ID,
         name: String(breakglassHr?.name || BREAKGLASS_NAME),
         email: breakglassEmail,
-        temporaryPassword: tempPassword,
+        setupToken: setupState.setupToken,
+        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
         mustChangePassword: true
       });
     } else {
