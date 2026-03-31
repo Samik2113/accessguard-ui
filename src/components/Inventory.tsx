@@ -2350,8 +2350,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       </div>
                     )}
 
-                    <div className="bg-slate-50 rounded-xl border overflow-hidden max-h-[600px] overflow-y-auto shadow-inner">
-                      <table className="w-full text-left text-[11px]">
+                    <div className="bg-slate-50 rounded-xl border shadow-inner max-h-[600px] overflow-auto">
+                      <table className="min-w-max w-full text-left text-[11px]">
                         <thead className="sticky top-0 bg-slate-100 z-10">
                           <tr className="text-slate-400 uppercase font-bold border-b">
                             <th className="px-4 py-3">Identity / Account</th>
@@ -2513,8 +2513,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       </div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic flex items-center gap-1.5"><Info className="w-3 h-3" /> You can edit definitions inline via the Edit button</p>
                     </div>
-                    <div className="bg-slate-50 rounded-xl border overflow-hidden max-h-[500px] overflow-y-auto shadow-inner">
-                      <table className="w-full text-left text-[11px]">
+                    <div className="bg-slate-50 rounded-xl border shadow-inner max-h-[500px] overflow-auto">
+                      <table className="min-w-max w-full text-left text-[11px]">
                         <thead className="sticky top-0 bg-slate-100 z-10">
                           <tr className="text-slate-400 uppercase font-bold border-b">
                             <th className="px-4 py-3">Entitlement</th>
@@ -2956,10 +2956,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       )}
 
       {editingAppConfig && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-xl shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold mb-6 text-slate-900">Edit Application Configuration</h3>
-            <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="fixed inset-0 bg-slate-900/50 flex items-start sm:items-center justify-center z-50 p-4 sm:p-6 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-xl max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col my-auto">
+            <div className="p-6 sm:p-8 border-b border-slate-100">
+              <h3 className="text-xl font-bold text-slate-900">Edit Application Configuration</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+              <div className="space-y-5 pr-1">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Application Name</label>
                 <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" value={editingAppConfig.name || ''} onChange={e => setEditingAppConfig({ ...editingAppConfig, name: e.target.value })} />
@@ -3024,7 +3027,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-8">
+            </div>
+            <div className="flex gap-3 p-6 sm:p-8 border-t border-slate-100 bg-white">
               <button onClick={() => setEditingAppConfig(null)} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
               <button
                 onClick={handleSaveAppConfig}
@@ -3040,10 +3044,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
       {/* Add Application Modal */}
       {showAddApp && (
-        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold mb-6 text-slate-900">Configure New Application</h3>
-            <div className="space-y-5">
+        <div className="fixed inset-0 bg-slate-900/50 flex items-start sm:items-center justify-center z-50 p-4 sm:p-6 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[85vh] shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col my-auto">
+            <div className="p-6 sm:p-8 border-b border-slate-100">
+              <h3 className="text-xl font-bold text-slate-900">Configure New Application</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+              <div className="space-y-5 pr-1">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Application Name</label>
                 <input type="text" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none" placeholder="e.g. SAP Finance, AWS Prod" value={newApp.name} onChange={e => setNewApp({...newApp, name: e.target.value})} />
@@ -3108,7 +3115,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                 />
               </div>
             </div>
-            <div className="flex gap-3 mt-8">
+            </div>
+            <div className="flex gap-3 p-6 sm:p-8 border-t border-slate-100 bg-white">
               <button onClick={() => setShowAddApp(false)} className="flex-1 px-6 py-3 border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
               <button
                 onClick={handleAddApp}
