@@ -383,7 +383,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     return value.toUpperCase();
   };
 
-  const isTerminatedUser = (user?: User | null) => normalizeHrStatus((user as any)?.status) === 'TERMINATED';
+  const resolveHrStatusSource = (user?: User | null) => (user as any)?.employeeStatus || (user as any)?.employmentStatus || (user as any)?.status || (user as any)?.enabled;
+
+  const isTerminatedUser = (user?: User | null) => normalizeHrStatus(resolveHrStatusSource(user)) === 'TERMINATED';
 
   const hasActiveAccountForTerminatedIdentity = (entry: ApplicationAccess) => {
     if (!parseBool((entry as any).isTerminated)) return false;
@@ -1786,7 +1788,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       const hasSod = userAccess.some(a => a.isSoDConflict);
                       const hasTerminationRisk = isTerminatedUser(u) && userAccess.some((entry) => normalizeAccountStatus((entry as any).accountStatus, getAppRecord(entry.appId)) === 'ACTIVE');
                       const manager = users.find(m => m.id === u.managerId);
-                      const hrStatus = normalizeHrStatus((u as any).status);
+                      const hrStatus = normalizeHrStatus(resolveHrStatusSource(u));
                       return (
                         <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-6 py-4">
