@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { getAccounts, getAccountsByUser, getEntitlements, importSodPolicies } from '../services/api';
-import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
+import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, ChevronDown, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
 import ModalShell from './ModalShell';
 import { AppCustomization, ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import {
@@ -34,8 +34,97 @@ interface InventoryProps {
   onSelectApp?: (appId: string) => void;
 }
 
+interface MultiSelectOption {
+  value: string;
+  label: string;
+}
+
+interface MultiSelectDropdownProps {
+  options: MultiSelectOption[];
+  selectedValues: string[];
+  placeholder: string;
+  onChange: (values: string[]) => void;
+}
+
+const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ options, selectedValues, placeholder, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isOpen]);
+
+  const selectedLabels = options
+    .filter((option) => selectedValues.includes(option.value))
+    .map((option) => option.label);
+
+  const toggleValue = (value: string) => {
+    if (selectedValues.includes(value)) {
+      onChange(selectedValues.filter((current) => current !== value));
+      return;
+    }
+    onChange([...selectedValues, value]);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
+        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none text-left flex items-center justify-between gap-3"
+      >
+        <span className={`block truncate text-sm ${selectedLabels.length > 0 ? 'text-slate-700 font-medium' : 'text-slate-400'}`}>
+          {selectedLabels.length > 0 ? selectedLabels.join(', ') : placeholder}
+        </span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+          <div className="max-h-56 overflow-y-auto py-2">
+            {options.map((option) => {
+              const checked = selectedValues.includes(option.value);
+              return (
+                <label key={option.value} className="flex items-start gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleValue(option.value)}
+                    className="mt-0.5 rounded border-slate-300 text-blue-600"
+                  />
+                  <span className="text-sm text-slate-700 leading-5">{option.label}</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-4 py-2.5">
+            <span className="text-[11px] font-medium text-slate-500">{selectedValues.length} selected</span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="text-[11px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Inventory: React.FC<InventoryProps> = ({ users, access, applications, entitlements, sodPolicies, customization, onDataImport, onAddApp, onUpdateApp, onRemoveApp, onUpdateEntitlement, onUpdateSoD, onSetUserRole, onBulkSetUserRole, onResetUserPassword, onSelectApp }) => {
   const APPLICATION_TYPE_OPTIONS: Array<NonNullable<Application['appType']>> = ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'];
+  const userMultiSelectOptions = users.map((user) => ({ value: user.id, label: `${user.name} (${user.id})` }));
 
   const getOwnerLabels = (appType?: Application['appType']) => {
     if (appType === 'Database') return { primary: 'Database Owner', secondary: 'Database Admin' };
@@ -2994,18 +3083,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(editingAppConfig.appType).secondary}</label>
-                <select
-                  multiple
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none min-h-[140px]"
-                  value={getAdminReviewerIds(editingAppConfig)}
-                  onChange={e => {
-                    const ownerAdminIds = Array.from(e.currentTarget.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((option: HTMLOptionElement) => option.value);
-                    setEditingAppConfig({ ...editingAppConfig, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' });
-                  }}
-                >
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">Hold Ctrl to select multiple reviewer identities.</p>
+                <MultiSelectDropdown
+                  options={userMultiSelectOptions}
+                  selectedValues={getAdminReviewerIds(editingAppConfig)}
+                  placeholder="Select reviewer identities"
+                  onChange={(ownerAdminIds) => setEditingAppConfig({ ...editingAppConfig, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' })}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Select one or more reviewer identities from the dropdown.</p>
                 <input
                   type="text"
                   className="mt-3 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
@@ -3080,18 +3164,13 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">{getOwnerLabels(newApp.appType).secondary}</label>
-                <select
-                  multiple
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none min-h-[140px]"
-                  value={newApp.ownerAdminIds}
-                  onChange={e => {
-                    const ownerAdminIds = Array.from(e.currentTarget.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((option: HTMLOptionElement) => option.value);
-                    setNewApp({ ...newApp, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' });
-                  }}
-                >
-                  {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-500">Hold Ctrl to select multiple reviewer identities.</p>
+                <MultiSelectDropdown
+                  options={userMultiSelectOptions}
+                  selectedValues={newApp.ownerAdminIds}
+                  placeholder="Select reviewer identities"
+                  onChange={(ownerAdminIds) => setNewApp({ ...newApp, ownerAdminIds, ownerAdminId: ownerAdminIds[0] || '' })}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Select one or more reviewer identities from the dropdown.</p>
                 <input
                   type="text"
                   className="mt-3 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"

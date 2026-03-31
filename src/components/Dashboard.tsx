@@ -1326,23 +1326,21 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
             </div>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application</label>
-              <input
-                list="launch-applications-list"
+              <select
                 value={launchSelectedAppName}
                 onChange={e => setLaunchSelectedAppName(e.target.value)}
-                placeholder="Search and select application"
                 className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              />
-              <datalist id="launch-applications-list">
+              >
+                <option value="">Select application...</option>
                 {launchApplicationsFiltered.map(app => {
-                  const appId = String((app as any).appId || app.id || '');
+                  const appId = String((app as any).appId || app.id || '').trim();
                   const appName = String(app.name || '').trim();
                   return (
-                    <option key={appId || appName} value={appName} />
+                    <option key={appId || appName} value={appId}>{appName}</option>
                   );
                 })}
-              </datalist>
-              <p className="mt-1 text-[11px] text-slate-500">Type to search and pick by application name within the selected type.</p>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">Choose an application from the selected type.</p>
             </div>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Review Completion Due Date</label>
@@ -1401,8 +1399,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
             )}
             <button
               onClick={() => {
-                const selectedName = String(launchSelectedAppName || '').trim();
-                if (!selectedName) {
+                const selectedId = String(launchSelectedAppName || '').trim();
+                if (!selectedId) {
                   alert('Select an application to launch campaign.');
                   return;
                 }
@@ -1410,14 +1408,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                   alert('Select a specific orphan reviewer.');
                   return;
                 }
-                const matchedApps = launchApplicationsFiltered.filter(app => String(app.name || '').trim().toLowerCase() === selectedName.toLowerCase());
-                if (matchedApps.length > 1) {
-                  alert('Multiple applications exist with this name. Please make application names unique before launching.');
-                  return;
-                }
-                const selectedApp = matchedApps[0];
-                const selectedId = String((selectedApp as any)?.appId || selectedApp?.id || '').trim();
-                if (!selectedId) {
+                const selectedApp = launchApplicationsFiltered.find(app => String((app as any)?.appId || app?.id || '').trim() === selectedId);
+                if (!selectedApp) {
                   alert('Selected application is invalid. Please choose from the dropdown list.');
                   return;
                 }
