@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { getAccounts, getEntitlements, importSodPolicies } from '../services/api';
+import { getAccounts, getAccountsByUser, getEntitlements, importSodPolicies } from '../services/api';
 import { Upload, Database, FileText, CheckCircle2, AlertCircle, Download, FileSpreadsheet, Plus, Settings2, Link, Link2Off, Trash2, ShieldAlert, ListChecks, Users2, Eye, Shield, UserMinus, UserCheck, X, ShieldCheck, Zap, Edit2, Info, ArrowRight, ChevronRight, AlertTriangle, Package, KeyRound, Copy } from 'lucide-react';
 import { AppCustomization, ApplicationAccess, User, Application, EntitlementDefinition, SoDPolicy } from '../types';
 import {
@@ -92,6 +92,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     serverEnvironment: '' as 'UAT' | 'PROD' | ''
   });
   const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [userDrilldownAccess, setUserDrilldownAccess] = useState<ApplicationAccess[] | null>(null);
+  const [userDrilldownLoading, setUserDrilldownLoading] = useState(false);
+  const [userDrilldownError, setUserDrilldownError] = useState<string | null>(null);
   const [groupInApp, setGroupInApp] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
@@ -366,12 +369,37 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const normalizeAccountStatus = (raw: any, app?: Application | null) => {
     const value = String(raw || '').trim();
-    if (!value) return '';
+    if (!value) return 'ACTIVE';
     const schema = getResolvedAccountSchema(app);
     const lowered = value.toLowerCase();
     if (schema.statusRules.activeValues.map(v => v.toLowerCase()).includes(lowered)) return 'ACTIVE';
     if (schema.statusRules.inactiveValues.map(v => v.toLowerCase()).includes(lowered)) return 'INACTIVE';
-    return value;
+    return value.toUpperCase();
+  };
+
+  const getAccountStatusMeta = (entry: Pick<ApplicationAccess, 'appId' | 'accountStatus'>) => {
+    const normalized = normalizeAccountStatus((entry as any)?.accountStatus, getAppRecord(entry.appId));
+    if (normalized === 'INACTIVE') {
+      return {
+        normalized,
+        label: 'INACTIVE',
+        className: 'bg-amber-50 text-amber-700 border border-amber-100'
+      };
+    }
+    return {
+      normalized: normalized || 'ACTIVE',
+      label: normalized || 'ACTIVE',
+      className: 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+    };
+  };
+
+  const renderAccountStatusBadge = (entry: Pick<ApplicationAccess, 'appId' | 'accountStatus'>) => {
+    const meta = getAccountStatusMeta(entry);
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase ${meta.className}`}>
+        {meta.label}
+      </span>
+    );
   };
 
   const normalizeHrStatus = (raw: any) => {
@@ -387,9 +415,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
   const isTerminatedUser = (user?: User | null) => normalizeHrStatus(resolveHrStatusSource(user)) === 'TERMINATED';
 
-  const hasActiveAccountForTerminatedIdentity = (entry: ApplicationAccess) => {
-    if (!parseBool((entry as any).isTerminated)) return false;
-    return normalizeAccountStatus((entry as any).accountStatus, getAppRecord(entry.appId)) === 'ACTIVE';
+  const hasActiveAccountForTerminatedIdentity = (entry: ApplicationAccess, user?: User | null) => {
+    const accountIsActive = normalizeAccountStatus((entry as any).accountStatus, getAppRecord(entry.appId)) === 'ACTIVE';
+    if (!accountIsActive) return false;
+    if (parseBool((entry as any).isTerminated)) return true;
+    if (normalizeHrStatus((entry as any).hrStatus) === 'TERMINATED') return true;
+    return isTerminatedUser(user);
   };
 
   const getHrFallback = (seed: { employeeId?: string; email?: string; loginId?: string; userId?: string }) => {
@@ -1507,10 +1538,68 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     return Object.values(groups);
   }, [selectedAppData, groupInApp]);
 
+  useEffect(() => {
+    if (!viewingUserId) {
+      setUserDrilldownAccess(null);
+      setUserDrilldownLoading(false);
+      setUserDrilldownError(null);
+      return;
+    }
+
+    let alive = true;
+    setUserDrilldownLoading(true);
+    setUserDrilldownError(null);
+    setUserDrilldownAccess(null);
+
+    (async () => {
+      try {
+        const res: any = await getAccountsByUser(viewingUserId, 1000);
+        if (!alive) return;
+
+        const items = Array.isArray(res?.items) ? res.items : [];
+        const enriched: ApplicationAccess[] = items.map((item: any) => {
+          const existing = access.find((entry) => entry.id === item.id)
+            || access.find((entry) => entry.appId === item.appId && entry.userId === item.userId && entry.entitlement === item.entitlement);
+          const appRecord = getAppRecord(item.appId);
+          return {
+            ...item,
+            ...existing,
+            userName: item.userName || item.name || existing?.userName || '',
+            appName: existing?.appName || appRecord?.name || String(item.appId || ''),
+            correlatedUserId: existing?.correlatedUserId || item?.correlation?.hrUserId || viewingUserId,
+            accountStatus: item.accountStatus ?? existing?.accountStatus,
+            isOrphan: typeof item.isOrphan === 'boolean' ? item.isOrphan : (existing?.isOrphan ?? false),
+            isSoDConflict: Boolean(existing?.isSoDConflict),
+            violatedPolicyIds: existing?.violatedPolicyIds || [],
+            violatedPolicyNames: existing?.violatedPolicyNames || [],
+            hrStatus: existing?.hrStatus,
+            isTerminated: existing?.isTerminated,
+            email: item.email || existing?.email,
+            appId: item.appId,
+            entitlement: item.entitlement,
+            id: item.id,
+            userId: item.userId
+          };
+        });
+
+        setUserDrilldownAccess(enriched);
+      } catch (e: any) {
+        if (!alive) return;
+        setUserDrilldownError(e?.message || 'Failed to load application accounts for this identity.');
+        setUserDrilldownAccess([]);
+      } finally {
+        if (alive) setUserDrilldownLoading(false);
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [viewingUserId, access, applications]);
+
   const userGlobalAccess = useMemo(() => {
     if (!viewingUserId) return [];
+    if (userDrilldownAccess) return userDrilldownAccess;
     return access.filter(a => a.correlatedUserId === viewingUserId);
-  }, [access, viewingUserId]);
+  }, [access, viewingUserId, userDrilldownAccess]);
 
   const viewingUser = users.find(u => u.id === viewingUserId);
 
@@ -2324,9 +2413,16 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     </div>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className="text-[10px] font-bold text-slate-500">
-                                      {Array.from(new Set(group.entitlements.map(e => String((e as any).accountStatus || '').trim()).filter(Boolean))).join(', ') || '-'}
-                                    </span>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(Array.from(new Map(group.entitlements.map((entry) => {
+                                        const meta = getAccountStatusMeta(entry);
+                                        return [meta.normalized, meta];
+                                      })).values()) as Array<ReturnType<typeof getAccountStatusMeta>>).map((statusMeta) => (
+                                        <span key={`${group.userId}-${statusMeta.normalized}`} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase ${statusMeta.className}`}>
+                                          {statusMeta.label}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </td>
                                   {selectedAppCustomColumns.map(col => (
                                     <td key={`${group.userId}-${col}`} className="px-4 py-3">
@@ -2387,7 +2483,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <code className={`px-1.5 py-0.5 rounded border ${hasSod ? 'bg-red-50 text-red-700 border-red-100 font-bold' : isPriv ? 'bg-indigo-50 text-indigo-700 border-indigo-100 font-bold' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>{acc.entitlement}</code>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className="text-[10px] font-bold text-slate-500">{String((acc as any).accountStatus || '').trim() || '-'}</span>
+                                    {renderAccountStatusBadge(acc)}
                                   </td>
                                   {selectedAppCustomColumns.map(col => (
                                     <td key={`${acc.id}-${col}`} className="px-4 py-3">
@@ -2565,6 +2661,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             </div>
             <div className="p-6 flex-1 overflow-y-auto bg-slate-50/30">
               <div className="space-y-6">
+                {userDrilldownLoading && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-sm text-blue-800 font-medium">
+                    Loading application accounts for this identity...
+                  </div>
+                )}
+
+                {userDrilldownError && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-800 font-medium">
+                    {userDrilldownError}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-4 mb-2">
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Apps with Access</p>
@@ -2628,6 +2736,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                           <tr>
                             <th className="px-4 py-2">Account ID</th>
                             <th className="px-4 py-2">Entitlement</th>
+                            <th className="px-4 py-2">Account Status</th>
                             <th className="px-4 py-2 text-right">Risk & SoD Status</th>
                           </tr>
                         </thead>
@@ -2636,7 +2745,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             const isPriv = isPrivilegedAccount(acc);
                             const isOrphan = parseBool((acc as any).isOrphan);
                             const hasSod = acc.isSoDConflict;
-                            const hasTerminationRisk = hasActiveAccountForTerminatedIdentity(acc);
+                            const hasTerminationRisk = hasActiveAccountForTerminatedIdentity(acc, viewingUser);
                             const level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = hasSod ? 'CRITICAL' : (isOrphan || hasTerminationRisk) ? 'HIGH' : isPriv ? 'MEDIUM' : 'LOW';
                             return (
                               <tr key={acc.id} className="hover:bg-slate-50/50">
@@ -2648,6 +2757,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                       <ShieldCheck className="w-3 h-3 text-indigo-500 fill-current" />
                                     </span>
                                   )}
+                                </td>
+                                <td className="px-4 py-2">
+                                  {renderAccountStatusBadge(acc)}
                                 </td>
                                 <td className="px-4 py-2 text-right">
                                   <div className="flex flex-col items-end gap-1">

@@ -45,7 +45,7 @@ const normalizeHrStatus = (raw) => {
 const resolveHrStatusSource = (hr, fallback) => hr?.employeeStatus || hr?.employmentStatus || hr?.status || fallback;
 const normalizeAccountStatus = (raw) => {
   const value = String(raw || "").trim();
-  if (!value) return "";
+  if (!value) return "ACTIVE";
   const lowered = value.toLowerCase();
   if (["active", "enable", "enabled", "1", "true", "a"].includes(lowered)) return "ACTIVE";
   if (["inactive", "disable", "disabled", "0", "false", "i"].includes(lowered)) return "INACTIVE";
