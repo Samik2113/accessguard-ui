@@ -93,6 +93,8 @@ module.exports = async function (context, req) {
     const itemsC = db.container("reviewItems");       // PK: /managerId
     const logsC = db.container("auditLogs");
     const appsC = db.container("applications");
+    const now = new Date();
+    const nowIso = now.toISOString();
 
     const draftCycleId = String(body.cycleId || "").trim();
     if (draftCycleId) {
@@ -315,8 +317,6 @@ module.exports = async function (context, req) {
 
     const parseBool = (value) => value === true || value === 1 || String(value || "").toLowerCase() === "true" || String(value || "").toLowerCase() === "yes";
 
-    const now = new Date();
-    const nowIso = now.toISOString();
     const appId = body.appId.trim();
     const appIdSafe = SAFE(appId);
     const requestedCertificationTypeRaw = String(body.certificationType || "MANAGER").trim().toUpperCase();
