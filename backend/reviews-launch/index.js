@@ -5,14 +5,26 @@ const { customAlphabet } = require("nanoid");
 const { sendEmail } = require("../_shared/email");
 const { readAppCustomization } = require("../_shared/customization");
 const { renderTemplatedEmail } = require("../_shared/email-templates");
+const { buildCampaignDefinition, persistCampaignDefinition, materializeCampaign, activateDraftCampaign, readCycleById, findOverlappingDraftOrActiveCycles } = require("../_shared/review-campaigns");
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 6);
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 
 const schema = {
   type: "object",
-  required: ["appId"],
+  anyOf: [
+    { required: ["cycleId"] },
+    { required: ["name", "ownerId", "scope", "reviewerType"] },
+    { required: ["appId"] }
+  ],
   properties: {
+    cycleId: { type: "string" },
     appId: { type: "string", minLength: 1 },
+    ownerId: { type: "string" },
+    scope: { type: "object" },
+    reviewerType: { type: "string" },
+    specificReviewerId: { type: "string" },
+    startAt: { type: "string" },
+    startNow: { type: "boolean" },
     dueDate: { type: "string" },
     name: { type: "string" },
     certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER", "APPLICATION_ADMIN"] },
@@ -80,6 +92,225 @@ module.exports = async function (context, req) {
     const itemsC = db.container("reviewItems");       // PK: /managerId
     const logsC = db.container("auditLogs");
     const appsC = db.container("applications");
+
+    const draftCycleId = String(body.cycleId || "").trim();
+    if (draftCycleId) {
+      const draftCycle = await readCycleById(cyclesC, draftCycleId);
+      if (!draftCycle) return bad(404, "Review cycle not found", req);
+      if (String(draftCycle.status || "").toUpperCase() !== "DRAFT") {
+        return bad(409, "Only draft campaigns can be launched using cycleId", req);
+      }
+      if (draftCycle.startNow === false && draftCycle.startAt && new Date(draftCycle.startAt).getTime() > now.getTime()) {
+        return bad(409, "Campaign start date is in the future. Stage it until the configured start date.", req);
+      }
+
+      const activatedItems = await activateDraftCampaign({ db, cycle: draftCycle, now });
+      const assignmentByManager = new Map();
+      activatedItems.forEach((item) => {
+        const entry = assignmentByManager.get(item.managerId) || { count: 0 };
+        entry.count += 1;
+        assignmentByManager.set(item.managerId, entry);
+      });
+
+      const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+      const customization = await readAppCustomization(logsC);
+      const notifyResults = [];
+      for (const [managerId, info] of assignmentByManager.entries()) {
+        let reviewerHr = null;
+        try {
+          const hrRead = await hrC.item(managerId, managerId).read();
+          reviewerHr = hrRead?.resource || null;
+        } catch (_) {
+        }
+        const reviewerEmail = String(reviewerHr?.email || "").trim().toLowerCase();
+        if (!reviewerEmail) {
+          notifyResults.push({ managerId, ok: false, skipped: true, reason: "NO_EMAIL" });
+          continue;
+        }
+        const due = draftCycle.dueDate ? new Date(draftCycle.dueDate).toLocaleDateString() : "N/A";
+        const fallbackText = [
+          `Hello ${reviewerHr?.name || managerId},`,
+          "",
+          `You have ${info.count} review item(s) assigned for campaign \"${draftCycle.name}\" (${draftCycle.appName}).`,
+          `Due date: ${due}`,
+          portalUrl ? `Portal: ${portalUrl}` : null,
+          "",
+          "Please review and submit your decisions."
+        ].filter(Boolean).join("\n");
+        const emailContent = renderTemplatedEmail(
+          customization,
+          "reviewAssignment",
+          {
+            subject: `[AccessGuard] Review items assigned (${draftCycle.appName})`,
+            text: fallbackText
+          },
+          {
+            reviewerName: reviewerHr?.name || managerId,
+            pendingCount: info.count,
+            cycleName: draftCycle.name,
+            appName: draftCycle.appName,
+            dueDate: due,
+            portalUrl,
+            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+          }
+        );
+        const sendResult = await sendEmail(context, {
+          to: reviewerEmail,
+          subject: emailContent.subject,
+          text: emailContent.text,
+          html: emailContent.html,
+          metadata: {
+            type: "REVIEW_ASSIGNMENT",
+            cycleId: draftCycle.id,
+            appId: draftCycle.appId,
+            managerId,
+            itemCount: info.count
+          }
+        });
+        notifyResults.push({ managerId, to: reviewerEmail, itemCount: info.count, ...sendResult });
+      }
+
+      await logsC.items.upsert({
+        id: `LOG_${Date.now()}`,
+        userId: req.headers["x-actor-id"] || "ADM001",
+        userName: req.headers["x-actor-name"] || "Admin User",
+        timestamp: nowIso,
+        action: "REVIEW_LAUNCH",
+        details: `cycleId=${draftCycle.id}; draftActivation=true; itemsCreated=${activatedItems.length}`,
+        type: "audit"
+      });
+
+      return {
+        status: 200,
+        headers: cors(req),
+        body: {
+          ok: true,
+          cycleId: draftCycle.id,
+          appId: draftCycle.appId,
+          appName: draftCycle.appName,
+          itemsCreated: activatedItems.length,
+          pending: activatedItems.length,
+          status: "ACTIVE",
+          notificationSummary: {
+            attempted: notifyResults.length,
+            sent: notifyResults.filter((result) => result.ok).length,
+            skipped: notifyResults.filter((result) => result.skipped).length
+          }
+        }
+      };
+    }
+
+    if (body.scope && body.reviewerType) {
+      const definition = await buildCampaignDefinition({
+        db,
+        payload: body,
+        actor: {
+          id: String(req.headers["x-actor-id"] || "ADM001"),
+          name: String(req.headers["x-actor-name"] || "Admin User")
+        },
+        now,
+        mode: "ACTIVE"
+      });
+      const overlaps = await findOverlappingDraftOrActiveCycles(cyclesC, definition.summary.selectedAppIds, definition.cycle.id);
+      if (overlaps.length > 0) {
+        return bad(409, `Selected scope overlaps with existing campaign(s): ${overlaps.map((cycle) => cycle.name).join(", ")}`, req);
+      }
+      const launched = await persistCampaignDefinition({ db, definition, mode: "ACTIVE" });
+
+      const assignmentByManager = new Map();
+      launched.items.forEach((item) => {
+        const notifyEntry = assignmentByManager.get(item.managerId) || { count: 0 };
+        notifyEntry.count += 1;
+        assignmentByManager.set(item.managerId, notifyEntry);
+      });
+
+      await logsC.items.upsert({
+        id: `LOG_${Date.now()}`,
+        userId: req.headers["x-actor-id"] || "ADM001",
+        userName: req.headers["x-actor-name"] || "Admin User",
+        timestamp: nowIso,
+        action: "REVIEW_LAUNCH",
+        details: `cycleId=${launched.cycle.id}; scope=${launched.summary.scopeSummary}; itemsCreated=${launched.items.length}`,
+        type: "audit"
+      });
+
+      const portalUrl = String(process.env.NOTIFY_PORTAL_URL || process.env.VITE_API_BASE_URL || "").trim();
+      const customization = await readAppCustomization(logsC);
+      const notifyResults = [];
+      for (const [managerId, info] of assignmentByManager.entries()) {
+        let reviewerHr = null;
+        try {
+          const hrRead = await hrC.item(managerId, managerId).read();
+          reviewerHr = hrRead?.resource || null;
+        } catch (_) {
+        }
+        const reviewerEmail = String(reviewerHr?.email || "").trim().toLowerCase();
+        if (!reviewerEmail) {
+          notifyResults.push({ managerId, ok: false, skipped: true, reason: "NO_EMAIL" });
+          continue;
+        }
+        const due = launched.cycle.dueDate ? new Date(launched.cycle.dueDate).toLocaleDateString() : "N/A";
+        const fallbackText = [
+          `Hello ${reviewerHr?.name || managerId},`,
+          "",
+          `You have ${info.count} review item(s) assigned for campaign \"${launched.cycle.name}\" (${launched.cycle.appName}).`,
+          `Due date: ${due}`,
+          portalUrl ? `Portal: ${portalUrl}` : null,
+          "",
+          "Please review and submit your decisions."
+        ].filter(Boolean).join("\n");
+        const emailContent = renderTemplatedEmail(
+          customization,
+          "reviewAssignment",
+          {
+            subject: `[AccessGuard] Review items assigned (${launched.cycle.appName})`,
+            text: fallbackText
+          },
+          {
+            reviewerName: reviewerHr?.name || managerId,
+            pendingCount: info.count,
+            cycleName: launched.cycle.name,
+            appName: launched.cycle.appName,
+            dueDate: due,
+            portalUrl,
+            portalLine: portalUrl ? `Portal: ${portalUrl}` : ""
+          }
+        );
+        const sendResult = await sendEmail(context, {
+          to: reviewerEmail,
+          subject: emailContent.subject,
+          text: emailContent.text,
+          html: emailContent.html,
+          metadata: {
+            type: "REVIEW_ASSIGNMENT",
+            cycleId: launched.cycle.id,
+            appId: launched.cycle.appId,
+            managerId,
+            itemCount: info.count
+          }
+        });
+        notifyResults.push({ managerId, to: reviewerEmail, itemCount: info.count, ...sendResult });
+      }
+
+      return {
+        status: 200,
+        headers: cors(req),
+        body: {
+          ok: true,
+          cycleId: launched.cycle.id,
+          appId: launched.cycle.appId,
+          appName: launched.cycle.appName,
+          itemsCreated: launched.items.length,
+          pending: launched.items.length,
+          status: "ACTIVE",
+          notificationSummary: {
+            attempted: notifyResults.length,
+            sent: notifyResults.filter((result) => result.ok).length,
+            skipped: notifyResults.filter((result) => result.skipped).length
+          }
+        }
+      };
+    }
 
     const parseBool = (value) => value === true || value === 1 || String(value || "").toLowerCase() === "true" || String(value || "").toLowerCase() === "yes";
 

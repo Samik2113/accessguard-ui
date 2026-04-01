@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy, ApplicationAccess, CertificationType, OrphanReviewerMode } from '../types';
+import { ReviewCycle, ReviewStatus, Application, ReviewItem, ActionStatus, User, SoDPolicy, ApplicationAccess, CampaignConfigPayload, CampaignReviewerType } from '../types';
 import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, Eye, Search, UserCheck, AlertCircle, ShieldCheck, History, Shield, AlertTriangle, ChevronRight, ShieldAlert, Filter, Activity, Lock, Archive, CheckCircle2, FileSpreadsheet, Send, CheckSquare, Square } from 'lucide-react';
 import { useReviewCycleDetail } from '../features/reviews/queries';
 import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
@@ -10,14 +10,9 @@ interface DashboardProps {
   cycles: ReviewCycle[];
   applications: Application[];
   access: ApplicationAccess[];
-  onLaunch: (
-    appId: string,
-    dueDate?: string,
-    certificationType?: CertificationType,
-    riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY',
-    orphanReviewerMode?: OrphanReviewerMode,
-    customOrphanReviewerId?: string
-  ) => void;
+  onStageCampaign: (payload: CampaignConfigPayload) => Promise<void> | void;
+  onLaunchCampaign: (payload: CampaignConfigPayload | { cycleId: string }) => Promise<void> | void;
+  onDeleteDraftCampaign: (cycleId: string) => Promise<void> | void;
   reviewItems: ReviewItem[];
   users: User[];
   sodPolicies: SoDPolicy[];
@@ -26,22 +21,35 @@ interface DashboardProps {
   onBulkReassign?: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
   onSendNotifications?: (payload: { mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'; cycleId?: string; appId?: string; managerId?: string; selectedRecipientEmail?: string; dryRun?: boolean }) => Promise<any>;
   onCancelCampaign?: (cycleId: string, reason: string) => Promise<void> | void;
+  launchingReview?: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onLaunch, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign }) => {
+const defaultDueDate = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 14);
+  return d.toISOString().split('T')[0];
+};
+
+const defaultStartDate = () => new Date().toISOString().split('T')[0];
+
+const createDefaultCampaignForm = (): CampaignConfigPayload => ({
+  name: '',
+  ownerId: '',
+  dueDate: defaultDueDate(),
+  startAt: defaultStartDate(),
+  startNow: true,
+  riskScope: 'ALL_ACCESS',
+  scope: {
+    specificAppIds: []
+  },
+  reviewerType: 'MANAGER'
+});
+
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onStageCampaign, onLaunchCampaign, onDeleteDraftCampaign, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign, launchingReview = false }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-  const [launchDueDate, setLaunchDueDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 14);
-    return d.toISOString().split('T')[0];
-  });
-  const [launchSelectedAppType, setLaunchSelectedAppType] = useState<'ALL' | NonNullable<Application['appType']>>('ALL');
-  const [launchCertificationType, setLaunchCertificationType] = useState<CertificationType>('MANAGER');
-  const [launchSelectedAppName, setLaunchSelectedAppName] = useState('');
-  const [launchRiskScope, setLaunchRiskScope] = useState<'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'>('ALL_ACCESS');
-  const [launchOrphanReviewerMode, setLaunchOrphanReviewerMode] = useState<OrphanReviewerMode>('APPLICATION_OWNER');
-  const [launchCustomOrphanReviewerId, setLaunchCustomOrphanReviewerId] = useState('');
+  const [campaignForm, setCampaignForm] = useState<CampaignConfigPayload>(createDefaultCampaignForm());
+  const [launchStep, setLaunchStep] = useState<1 | 2 | 3>(1);
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
@@ -81,31 +89,94 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
   }, [selectedCampaignId]);
 
   const isClosedCycle = (status?: ReviewStatus) => status === ReviewStatus.COMPLETED || status === ReviewStatus.CANCELLED;
+  const nowIsoDate = new Date().toISOString().split('T')[0];
+
+  const cycleMatchesAppFilter = (cycle: ReviewCycle, appFilter: string) => {
+    if (appFilter === 'ALL') return true;
+    const appIds = new Set([String(cycle.appId || '').trim(), ...(Array.isArray(cycle.appIds) ? cycle.appIds.map((id) => String(id || '').trim()) : [])].filter(Boolean));
+    return appIds.has(appFilter);
+  };
+
+  const getCycleScopeLabel = (cycle: ReviewCycle) => {
+    if (cycle.scopeSummary) return cycle.scopeSummary;
+    if (Array.isArray(cycle.appIds) && cycle.appIds.length > 1) return `${cycle.appIds.length} applications`;
+    return cycle.appName || 'Scope not set';
+  };
+
+  const getReviewerLabel = (cycle: ReviewCycle) => {
+    if (cycle.reviewerLabel) return cycle.reviewerLabel;
+    if (cycle.reviewerType === 'APPLICATION_OWNER') return 'Application Owner';
+    if (cycle.reviewerType === 'APPLICATION_ADMIN') return 'Application Admin';
+    if (cycle.reviewerType === 'ENTITLEMENT_OWNER') return 'Entitlement Owner';
+    if (cycle.reviewerType === 'SPECIFIC_USER') return 'Specific User';
+    return 'Manager';
+  };
+
+  const updateCampaignForm = (patch: Partial<CampaignConfigPayload>) => {
+    setCampaignForm((current) => ({ ...current, ...patch }));
+  };
+
+  const updateCampaignScope = (patch: Partial<CampaignConfigPayload['scope']>) => {
+    setCampaignForm((current) => ({ ...current, scope: { ...(current.scope || {}), ...patch } }));
+  };
+
+  const openNewCampaignModal = () => {
+    setCampaignForm(createDefaultCampaignForm());
+    setLaunchStep(1);
+    setShowLaunchModal(true);
+  };
+
+  const openEditDraftModal = (cycle: ReviewCycle) => {
+    setCampaignForm({
+      cycleId: cycle.id,
+      name: cycle.name || '',
+      ownerId: cycle.campaignOwnerId || '',
+      dueDate: cycle.dueDate ? String(cycle.dueDate).split('T')[0] : defaultDueDate(),
+      startAt: cycle.startAt ? String(cycle.startAt).split('T')[0] : defaultStartDate(),
+      startNow: cycle.startNow !== false,
+      riskScope: cycle.riskScope || 'ALL_ACCESS',
+      scope: {
+        ALL_APPLICATIONS: Boolean(cycle.scope?.ALL_APPLICATIONS),
+        ALL_SERVERS: Boolean(cycle.scope?.ALL_SERVERS),
+        ALL_DATABASES: Boolean(cycle.scope?.ALL_DATABASES),
+        ALL_SHARED_MAILBOXES: Boolean(cycle.scope?.ALL_SHARED_MAILBOXES),
+        ALL_SHARED_FOLDERS: Boolean(cycle.scope?.ALL_SHARED_FOLDERS),
+        specificAppIds: Array.isArray(cycle.scope?.specificAppIds) ? cycle.scope!.specificAppIds! : Array.isArray(cycle.appIds) ? cycle.appIds : []
+      },
+      reviewerType: cycle.reviewerType || cycle.certificationType || 'MANAGER',
+      specificReviewerId: cycle.specificReviewerId || ''
+    });
+    setLaunchStep(1);
+    setShowLaunchModal(true);
+  };
+
+  const selectedScopeCount = [
+    campaignForm.scope?.ALL_APPLICATIONS,
+    campaignForm.scope?.ALL_SERVERS,
+    campaignForm.scope?.ALL_DATABASES,
+    campaignForm.scope?.ALL_SHARED_MAILBOXES,
+    campaignForm.scope?.ALL_SHARED_FOLDERS
+  ].filter(Boolean).length + (campaignForm.scope?.specificAppIds?.length || 0);
+
+  const canLaunchImmediately = campaignForm.startNow || !campaignForm.startAt || campaignForm.startAt <= nowIsoDate;
 
   const activeCyclesList = useMemo(() => {
     return cycles.filter(c => !isClosedCycle(c.status))
-      .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter)
+      .filter(c => cycleMatchesAppFilter(c, dashboardAppFilter))
       .filter(c => dashboardRiskScopeFilter === 'ALL' || (c.riskScope || 'ALL_ACCESS') === dashboardRiskScopeFilter)
       .filter(c => dashboardStatusFilter === 'ALL' || c.status === dashboardStatusFilter);
   }, [cycles, dashboardAppFilter, dashboardRiskScopeFilter, dashboardStatusFilter]);
 
   const archivedCyclesList = useMemo(() => {
     return cycles.filter(c => isClosedCycle(c.status))
-      .filter(c => dashboardAppFilter === 'ALL' || c.appId === dashboardAppFilter)
+      .filter(c => cycleMatchesAppFilter(c, dashboardAppFilter))
       .filter(c => dashboardRiskScopeFilter === 'ALL' || (c.riskScope || 'ALL_ACCESS') === dashboardRiskScopeFilter);
   }, [cycles, dashboardAppFilter, dashboardRiskScopeFilter]);
 
   const launchApplicationsSorted = useMemo(() => {
     return [...applications].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   }, [applications]);
-
-  const launchApplicationTypeOptions = useMemo(() => {
-    return ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'] as Array<NonNullable<Application['appType']>>;
-  }, []);
-
-  const launchApplicationsFiltered = useMemo(() => {
-    return launchApplicationsSorted.filter((app) => launchSelectedAppType === 'ALL' || (app.appType || 'Application') === launchSelectedAppType);
-  }, [launchApplicationsSorted, launchSelectedAppType]);
+  const launchApplicationTypeOptions = useMemo(() => ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'] as Array<NonNullable<Application['appType']>>, []);
 
   const viewingItems = useMemo(() => {
     if (!selectedCampaignId) return [];
@@ -593,6 +664,57 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
     return [...configuredPairs, ...customPairs, ...fallbackPairs];
   };
 
+  const validateCampaignForm = () => {
+    if (!String(campaignForm.name || '').trim()) {
+      alert('Campaign name is required.');
+      return false;
+    }
+    if (!String(campaignForm.ownerId || '').trim()) {
+      alert('Campaign owner is required.');
+      return false;
+    }
+    if (!String(campaignForm.dueDate || '').trim()) {
+      alert('Due date is required.');
+      return false;
+    }
+    if (!campaignForm.startNow && !String(campaignForm.startAt || '').trim()) {
+      alert('Start date is required when Start Now is off.');
+      return false;
+    }
+    if (selectedScopeCount === 0) {
+      alert('Select at least one campaign scope.');
+      return false;
+    }
+    if (campaignForm.reviewerType === 'SPECIFIC_USER' && !String(campaignForm.specificReviewerId || '').trim()) {
+      alert('Select the specific reviewer.');
+      return false;
+    }
+    return true;
+  };
+
+  const submitStageCampaign = async () => {
+    if (!validateCampaignForm()) return;
+    await onStageCampaign(campaignForm);
+    setShowLaunchModal(false);
+  };
+
+  const submitLaunchCampaign = async () => {
+    if (!validateCampaignForm()) return;
+    if (!canLaunchImmediately) {
+      alert('Future-dated campaigns must be staged first and can be launched on or after the start date.');
+      return;
+    }
+    await onLaunchCampaign(campaignForm);
+    setShowLaunchModal(false);
+  };
+
+  const toggleSpecificApplication = (appId: string) => {
+    const current = new Set<string>(campaignForm.scope?.specificAppIds || []);
+    if (current.has(appId)) current.delete(appId);
+    else current.add(appId);
+    updateCampaignScope({ specificAppIds: Array.from(current).sort() });
+  };
+
   const CampaignTable = ({ cycleList, title, icon: Icon }: { cycleList: ReviewCycle[], title: string, icon: any }) => (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-8">
       <div className="px-8 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
@@ -619,8 +741,6 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
               cycleList.map((cycle) => {
                 const isCancelled = cycle.status === ReviewStatus.CANCELLED;
                 const isCompleted = cycle.status === ReviewStatus.COMPLETED;
-                const app = applications.find(a => a.id === cycle.appId);
-                const owner = users.find(u => u.id === app?.ownerId);
                 const dueDateLabel = cycle.dueDate
                   ? new Date(cycle.dueDate).toLocaleDateString()
                   : '—';
@@ -629,7 +749,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                   <tr key={cycle.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-5">
                       <div className="font-bold text-slate-800">{cycle.name}</div>
-                      <div className="text-xs text-blue-600 font-medium">{cycle.appName}</div>
+                      <div className="text-xs text-blue-600 font-medium">{getCycleScopeLabel(cycle)}</div>
                       <div className="mt-1">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                           {getRiskScopeLabel(cycle.riskScope)}
@@ -643,11 +763,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                       </div>
                     </td>
                     <td className="px-8 py-5">
-                      <div className="text-sm font-medium text-slate-700">{owner?.name || '---'}</div>
-                      <div className="text-[10px] text-slate-400 uppercase">App Owner</div>
+                      <div className="text-sm font-medium text-slate-700">{cycle.campaignOwnerName || users.find(u => u.id === cycle.campaignOwnerId)?.name || '---'}</div>
+                      <div className="text-[10px] text-slate-400 uppercase">Owner</div>
+                      <div className="mt-1 text-[11px] text-slate-500 font-semibold">Reviewer: {getReviewerLabel(cycle)}</div>
                     </td>
                     <td className="px-8 py-5">
                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase w-fit ${
+                          cycle.status === ReviewStatus.DRAFT ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                           cycle.status === ReviewStatus.ACTIVE ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                           (cycle.status === ReviewStatus.REMEDIATION || cycle.status === ReviewStatus.PENDING_VERIFICATION) ? 'bg-orange-50 text-orange-600 border border-orange-100' :
                           cycle.status === ReviewStatus.CANCELLED ? 'bg-slate-100 text-slate-600 border border-slate-200' :
@@ -669,9 +791,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                       )}
                     </td>
                     <td className="px-8 py-5 text-right">
-                      <button onClick={() => setSelectedCampaignId(cycle.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-all ml-auto">
-                        <Eye className="w-3.5 h-3.5" /> View Details
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {isAdmin && cycle.status === ReviewStatus.DRAFT && (
+                          <button onClick={() => openEditDraftModal(cycle)} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-xs font-bold transition-all">
+                            <FileSpreadsheet className="w-3.5 h-3.5" /> Edit Draft
+                          </button>
+                        )}
+                        <button onClick={() => setSelectedCampaignId(cycle.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-bold transition-all">
+                          <Eye className="w-3.5 h-3.5" /> View Details
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -692,15 +821,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
         </div>
         {isAdmin && (
           <button
-            onClick={() => {
-              setLaunchSelectedAppType('ALL');
-              setLaunchSelectedAppName('');
-              setLaunchRiskScope('ALL_ACCESS');
-              setLaunchCertificationType('MANAGER');
-              setLaunchOrphanReviewerMode('APPLICATION_OWNER');
-              setLaunchCustomOrphanReviewerId('');
-              setShowLaunchModal(true);
-            }}
+            onClick={openNewCampaignModal}
             className="flex items-center gap-2 px-6 py-3 text-white rounded-xl font-semibold shadow-lg hover:opacity-90 transition-all"
             style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
           >
@@ -742,9 +863,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-slate-500">
                     <Calendar className="w-3.5 h-3.5" /> Due: {selectedCampaign?.dueDate ? new Date(selectedCampaign.dueDate).toLocaleDateString() : '—'}
                   </div>
+                  <div className="mt-1 text-[11px] font-semibold text-blue-600">{selectedCampaign ? getCycleScopeLabel(selectedCampaign) : '—'}</div>
                   <div className="mt-1">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                       Risk Scope: {getRiskScopeLabel(selectedCampaign?.riskScope)}
+                    </span>
+                    <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                      Reviewer: {selectedCampaign ? getReviewerLabel(selectedCampaign) : 'Manager'}
                     </span>
                   </div>
                   {selectedCampaign?.status === ReviewStatus.CANCELLED && selectedCampaign?.cancelReason && (
@@ -753,7 +878,36 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                 </div>
               </div>
               <div className="flex gap-2">
-                {isAdmin && onSendNotifications && !isClosedCycle(selectedCampaign?.status) && (
+                {isAdmin && selectedCampaign?.status === ReviewStatus.DRAFT && (
+                  <>
+                    <button
+                      onClick={() => openEditDraftModal(selectedCampaign)}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-all"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" /> Edit Draft
+                    </button>
+                    <button
+                      onClick={() => onLaunchCampaign({ cycleId: selectedCampaign.id })}
+                      disabled={launchingReview || (!selectedCampaign.startNow && Boolean(selectedCampaign.startAt) && String(selectedCampaign.startAt).split('T')[0] > nowIsoDate)}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 border border-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-emerald-500 transition-all disabled:opacity-60"
+                    >
+                      <Play className="w-4 h-4" /> {launchingReview ? 'Launching...' : 'Launch Campaign'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const confirmed = window.confirm(`Delete draft campaign '${selectedCampaign.name}'? This cannot be undone.`);
+                        if (!confirmed) return;
+                        await onDeleteDraftCampaign(selectedCampaign.id);
+                        setSelectedCampaignId(null);
+                      }}
+                      disabled={launchingReview}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-bold shadow-sm hover:bg-red-100 transition-all disabled:opacity-60"
+                    >
+                      <X className="w-4 h-4" /> Delete Campaign
+                    </button>
+                  </>
+                )}
+                {isAdmin && onSendNotifications && !isClosedCycle(selectedCampaign?.status) && selectedCampaign?.status !== ReviewStatus.DRAFT && (
                   <>
                     {selectedCampaign?.status === ReviewStatus.REMEDIATION ? (
                       <>
@@ -820,7 +974,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
                     )}
                   </>
                 )}
-                {isAdmin && onCancelCampaign && selectedCampaign && !isClosedCycle(selectedCampaign.status) && (
+                {isAdmin && onCancelCampaign && selectedCampaign && !isClosedCycle(selectedCampaign.status) && selectedCampaign.status !== ReviewStatus.DRAFT && (
                   <button
                     onClick={async () => {
                       if (!selectedCampaign) return;
@@ -1308,120 +1462,153 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onL
       )}
 
       {showLaunchModal && isAdmin && (
-        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-md max-h-[90vh] p-8">
-            <h3 className="text-xl font-bold mb-6">Launch New Campaign</h3>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application Type</label>
-              <select
-                value={launchSelectedAppType}
-                onChange={e => {
-                  setLaunchSelectedAppType(e.target.value as 'ALL' | NonNullable<Application['appType']>);
-                  setLaunchSelectedAppName('');
-                }}
-                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              >
-                <option value="ALL">All Types</option>
-                {launchApplicationTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Application</label>
-              <select
-                value={launchSelectedAppName}
-                onChange={e => setLaunchSelectedAppName(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              >
-                <option value="">Select application...</option>
-                {launchApplicationsFiltered.map(app => {
-                  const appId = String((app as any).appId || app.id || '').trim();
-                  const appName = String(app.name || '').trim();
-                  return (
-                    <option key={appId || appName} value={appId}>{appName}</option>
-                  );
-                })}
-              </select>
-              <p className="mt-1 text-[11px] text-slate-500">Choose an application from the selected type.</p>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Review Completion Due Date</label>
-              <input type="date" value={launchDueDate} onChange={e => setLaunchDueDate(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10" />
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Certification Type</label>
-              <select
-                value={launchCertificationType}
-                onChange={e => setLaunchCertificationType(e.target.value as CertificationType)}
-                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              >
-                <option value="MANAGER">Manager Certification</option>
-                <option value="APPLICATION_OWNER">Application Owner Certification</option>
-                <option value="APPLICATION_ADMIN">Application Admin Certification</option>
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Risk Scope</label>
-              <select
-                value={launchRiskScope}
-                onChange={e => setLaunchRiskScope(e.target.value as 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY')}
-                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              >
-                <option value="ALL_ACCESS">All Access</option>
-                <option value="SOD_ONLY">SoD Conflicts Only</option>
-                <option value="PRIVILEGED_ONLY">Privileged Access Only</option>
-                <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
-              </select>
-            </div>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Orphan Account Reviewer</label>
-              <select
-                value={launchOrphanReviewerMode}
-                onChange={e => setLaunchOrphanReviewerMode(e.target.value as OrphanReviewerMode)}
-                className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-              >
-                <option value="APPLICATION_OWNER">Route to Application Owner</option>
-                <option value="APPLICATION_ADMIN">Route to Application Admin</option>
-                <option value="CUSTOM">Route to Specific Reviewer</option>
-              </select>
-              <p className="mt-1 text-[11px] text-slate-500">Use this when HR correlation is missing and the account is treated as orphaned.</p>
-            </div>
-            {launchOrphanReviewerMode === 'CUSTOM' && (
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Specific Orphan Reviewer</label>
-                <select
-                  value={launchCustomOrphanReviewerId}
-                  onChange={e => setLaunchCustomOrphanReviewerId(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700"
-                >
-                  <option value="">Select reviewer...</option>
-                  {users.map(user => <option key={user.id} value={user.id}>{user.name} ({user.id})</option>)}
-                </select>
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-4xl max-h-[90vh] p-8 overflow-y-auto">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold">{campaignForm.cycleId ? 'Edit Draft Campaign' : 'Launch Campaign Wizard'}</h3>
+                <p className="text-sm text-slate-500 mt-1">Configure campaign details, scope, and reviewer routing.</p>
               </div>
-            )}
-            <button
-              onClick={() => {
-                const selectedId = String(launchSelectedAppName || '').trim();
-                if (!selectedId) {
-                  alert('Select an application to launch campaign.');
-                  return;
-                }
-                if (launchOrphanReviewerMode === 'CUSTOM' && !String(launchCustomOrphanReviewerId || '').trim()) {
-                  alert('Select a specific orphan reviewer.');
-                  return;
-                }
-                const selectedApp = launchApplicationsFiltered.find(app => String((app as any)?.appId || app?.id || '').trim() === selectedId);
-                if (!selectedApp) {
-                  alert('Selected application is invalid. Please choose from the dropdown list.');
-                  return;
-                }
-                onLaunch(selectedId, launchDueDate, launchCertificationType, launchRiskScope, launchOrphanReviewerMode, launchCustomOrphanReviewerId);
-                setShowLaunchModal(false);
-              }}
-              className="w-full py-3 rounded-xl font-bold text-white hover:opacity-90 transition-all inline-flex items-center justify-center gap-2"
-              style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}
-            >
-              <Play className="w-4 h-4 fill-current" /> Launch Campaign
-            </button>
-            <button onClick={() => setShowLaunchModal(false)} className="w-full mt-6 py-3 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+              <div className="flex items-center gap-2">
+                {[1, 2, 3].map((step) => (
+                  <button
+                    key={step}
+                    type="button"
+                    onClick={() => setLaunchStep(step as 1 | 2 | 3)}
+                    className={`w-8 h-8 rounded-full text-xs font-black border ${launchStep === step ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+                  >
+                    {step}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className={`rounded-2xl border p-5 ${launchStep === 1 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 1</p>
+                <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Details</h4>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Campaign Name</label>
+                    <input value={campaignForm.name} onChange={(e) => updateCampaignForm({ name: e.target.value })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Campaign Owner</label>
+                    <select value={campaignForm.ownerId} onChange={(e) => updateCampaignForm({ ownerId: e.target.value })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                      <option value="">Select owner...</option>
+                      {users.map((user) => <option key={user.id} value={user.id}>{user.name} ({user.id})</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Due Date</label>
+                      <input type="date" value={campaignForm.dueDate} onChange={(e) => updateCampaignForm({ dueDate: e.target.value })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Start Date</label>
+                      <input type="date" value={campaignForm.startAt || ''} onChange={(e) => updateCampaignForm({ startAt: e.target.value })} disabled={campaignForm.startNow} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 disabled:text-slate-400" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                    <input type="checkbox" checked={campaignForm.startNow} onChange={(e) => updateCampaignForm({ startNow: e.target.checked, startAt: e.target.checked ? defaultStartDate() : campaignForm.startAt || defaultStartDate() })} />
+                    Start now
+                  </label>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Risk Scope</label>
+                    <select value={campaignForm.riskScope || 'ALL_ACCESS'} onChange={(e) => updateCampaignForm({ riskScope: e.target.value as CampaignConfigPayload['riskScope'] })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                      <option value="ALL_ACCESS">All Access</option>
+                      <option value="SOD_ONLY">SoD Conflicts Only</option>
+                      <option value="PRIVILEGED_ONLY">Privileged Access Only</option>
+                      <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`rounded-2xl border p-5 ${launchStep === 2 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 2</p>
+                <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Scope</h4>
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      ['ALL_APPLICATIONS', 'All Applications'],
+                      ['ALL_SERVERS', 'All Servers'],
+                      ['ALL_DATABASES', 'All Databases'],
+                      ['ALL_SHARED_MAILBOXES', 'All Shared Mailboxes'],
+                      ['ALL_SHARED_FOLDERS', 'All Shared Folders']
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+                        <input type="checkbox" checked={Boolean((campaignForm.scope as any)?.[key])} onChange={(e) => updateCampaignScope({ [key]: e.target.checked } as CampaignConfigPayload['scope'])} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Specific Applications</label>
+                    <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white">
+                      {launchApplicationsSorted.map((app) => {
+                        const appId = String((app as any).appId || app.id || '').trim();
+                        const isChecked = Boolean(campaignForm.scope?.specificAppIds?.includes(appId));
+                        return (
+                          <label key={appId} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 text-sm text-slate-700">
+                            <input type="checkbox" checked={isChecked} onChange={() => toggleSpecificApplication(appId)} />
+                            <span className="font-semibold">{app.name}</span>
+                            <span className="text-[11px] text-slate-400">{app.appType || 'Application'}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`rounded-2xl border p-5 ${launchStep === 3 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 3</p>
+                <h4 className="text-base font-bold text-slate-900 mt-2">Reviewer Assignment</h4>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Reviewer Type</label>
+                    <select value={campaignForm.reviewerType} onChange={(e) => updateCampaignForm({ reviewerType: e.target.value as CampaignReviewerType, specificReviewerId: e.target.value === 'SPECIFIC_USER' ? campaignForm.specificReviewerId : '' })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                      <option value="MANAGER">Manager</option>
+                      <option value="APPLICATION_OWNER">Application Owner</option>
+                      <option value="APPLICATION_ADMIN">Application Admin</option>
+                      <option value="ENTITLEMENT_OWNER">Entitlement Owner</option>
+                      <option value="SPECIFIC_USER">Specific User</option>
+                    </select>
+                  </div>
+                  {campaignForm.reviewerType === 'SPECIFIC_USER' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Specific Reviewer</label>
+                      <select value={campaignForm.specificReviewerId || ''} onChange={(e) => updateCampaignForm({ specificReviewerId: e.target.value })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                        <option value="">Select reviewer...</option>
+                        {users.map((user) => <option key={user.id} value={user.id}>{user.name} ({user.id})</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                    <p className="font-bold text-slate-900">Campaign Summary</p>
+                    <p className="mt-2">Scope selections: {selectedScopeCount}</p>
+                    <p className="mt-1">Risk scope: {getRiskScopeLabel(campaignForm.riskScope)}</p>
+                    <p className="mt-1">Launch mode: {canLaunchImmediately ? 'Can launch now' : 'Future start date requires draft staging'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex gap-3">
+                <button onClick={() => setLaunchStep((current) => current > 1 ? ((current - 1) as 1 | 2 | 3) : current)} disabled={launchStep === 1} className="px-4 py-2 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Back</button>
+                <button onClick={() => setLaunchStep((current) => current < 3 ? ((current + 1) as 1 | 2 | 3) : current)} disabled={launchStep === 3} className="px-4 py-2 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next</button>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button onClick={submitStageCampaign} disabled={launchingReview} className="px-5 py-2 rounded-xl font-bold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                  {launchingReview ? 'Saving...' : 'Stage Campaign'}
+                </button>
+                <button onClick={submitLaunchCampaign} disabled={launchingReview || !canLaunchImmediately} className="px-5 py-2 rounded-xl font-bold text-white hover:opacity-90 transition-all disabled:opacity-50" style={{ backgroundColor: 'var(--ag-primary, #2563eb)', color: 'var(--ag-on-primary, #ffffff)' }}>
+                  <span className="inline-flex items-center gap-2"><Play className="w-4 h-4 fill-current" /> {launchingReview ? 'Launching...' : 'Launch Campaign'}</span>
+                </button>
+                <button onClick={() => setShowLaunchModal(false)} disabled={launchingReview} className="px-5 py-2 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-60">Cancel</button>
+              </div>
+            </div>
         </ModalShell>
       )}
 

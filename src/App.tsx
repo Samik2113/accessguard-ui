@@ -8,7 +8,7 @@ import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
 import ModalShell from './components/ModalShell';
-import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode } from './types';
+import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode, CampaignConfigPayload } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
 import { getApplications } from "./services/api";
@@ -28,12 +28,14 @@ import {
   getReviewCycles,
   getReviewItems,
   launchReview,
+  stageReviewCampaign,
   actOnItem,
   reassignReviewItem,
   reassignReviewItemsBulk,
   confirmManager,
   cancelCycle,
   sendReviewNotifications,
+  deleteReviewDraft,
   loginUser,
   bootstrapFirstUser,
   changePassword,
@@ -373,15 +375,39 @@ const App: React.FC = () => {
     ...cycle,
     appId: String(cycle?.appId ?? cycle?.applicationId ?? ''),
     appName: cycle?.appName || getApplicationNameById(cycle?.appId),
+    appIds: Array.isArray(cycle?.appIds) ? cycle.appIds.map((id: any) => String(id || '').trim()).filter(Boolean) : undefined,
+    appTypes: Array.isArray(cycle?.appTypes) ? cycle.appTypes : undefined,
+    scope: cycle?.scope && typeof cycle.scope === 'object' ? cycle.scope : undefined,
+    scopeSummary: String(cycle?.scopeSummary || '').trim() || undefined,
     cancelledAt: cycle?.cancelledAt || undefined,
     cancelReason: typeof cycle?.cancelReason === 'string' ? cycle.cancelReason : undefined,
+    stagedAt: cycle?.stagedAt || undefined,
+    startAt: cycle?.startAt || undefined,
+    startNow: cycle?.startNow !== false,
     pendingRemediationItems: typeof cycle?.pendingRemediationItems === 'number' ? cycle.pendingRemediationItems : 0,
     confirmedManagers: Array.isArray(cycle?.confirmedManagers) ? cycle.confirmedManagers : [],
     certificationType: cycle?.certificationType === 'APPLICATION_OWNER'
       ? 'APPLICATION_OWNER'
       : cycle?.certificationType === 'APPLICATION_ADMIN'
         ? 'APPLICATION_ADMIN'
-        : 'MANAGER',
+        : cycle?.certificationType === 'ENTITLEMENT_OWNER'
+          ? 'ENTITLEMENT_OWNER'
+          : cycle?.certificationType === 'SPECIFIC_USER'
+            ? 'SPECIFIC_USER'
+            : 'MANAGER',
+    reviewerType: cycle?.reviewerType === 'APPLICATION_OWNER'
+      ? 'APPLICATION_OWNER'
+      : cycle?.reviewerType === 'APPLICATION_ADMIN'
+        ? 'APPLICATION_ADMIN'
+        : cycle?.reviewerType === 'ENTITLEMENT_OWNER'
+          ? 'ENTITLEMENT_OWNER'
+          : cycle?.reviewerType === 'SPECIFIC_USER'
+            ? 'SPECIFIC_USER'
+            : 'MANAGER',
+    reviewerLabel: String(cycle?.reviewerLabel || '').trim() || undefined,
+    specificReviewerId: String(cycle?.specificReviewerId || '').trim() || undefined,
+    campaignOwnerId: String(cycle?.campaignOwnerId || '').trim() || undefined,
+    campaignOwnerName: String(cycle?.campaignOwnerName || '').trim() || undefined,
     riskScope: cycle?.riskScope === 'SOD_ONLY'
       ? 'SOD_ONLY'
       : cycle?.riskScope === 'PRIVILEGED_ONLY'
@@ -1461,86 +1487,99 @@ useEffect(() => {
     addAuditLog('SOD_UPDATE', `SoD policies updated manually.`);
   };
 
-  const handleLaunchReview = async (
-    appId: string,
-    dueDateStr?: string,
-    certificationType: CertificationType = 'MANAGER',
-    riskScope: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY' = 'ALL_ACCESS',
-    orphanReviewerMode: OrphanReviewerMode = 'APPLICATION_OWNER',
-    customOrphanReviewerId?: string
-  ) => {
+  const refreshCampaignData = async (cycleId?: string) => {
+    await invalidateReviewQueries(cycleId);
+    const cyclesRes = await getReviewCycles({ top: 200 });
+    const itemsRes = await getReviewItems({ top: 500 });
+    console.debug('UAR: cycles refreshed', cyclesRes);
+    console.debug('UAR: items refreshed', itemsRes);
+    setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
+    setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
+  };
+
+  const handleStageCampaign = async (payload: CampaignConfigPayload) => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      alert('Only Admin can stage certifications.');
+      return;
+    }
+
+    setLaunchingReview(true);
+    try {
+      const response = await stageReviewCampaign(payload, {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role
+      });
+      await refreshCampaignData(response?.cycleId);
+      await addAuditLog(payload.cycleId ? 'CAMPAIGN_STAGE_UPDATE' : 'CAMPAIGN_STAGE', `Staged review campaign ${payload.name}. Cycle ID: ${response?.cycleId || 'N/A'}`);
+      alert(`Draft campaign saved: ${payload.name}`);
+    } catch (e: any) {
+      console.error('Failed to stage review:', e);
+      alert(`Failed to stage review: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setLaunchingReview(false);
+    }
+  };
+
+  const handleLaunchCampaign = async (payload: CampaignConfigPayload | { cycleId: string }) => {
     if (currentUser.role !== UserRole.ADMIN) {
       alert('Only Admin can launch certifications.');
       return;
     }
-    const targetApp = getApplicationById(appId);
-    if (!targetApp) return;
-    const normalizedAppId = getApplicationId(targetApp);
-    const candidateAppIds = new Set(
-      [normalizedAppId, String((targetApp as any)?.appId || ''), String((targetApp as any)?.id || '')]
-        .map(v => String(v || '').trim())
-        .filter(Boolean)
-    );
-    const existingActive = cycles.find(c => candidateAppIds.has(String(c.appId || '').trim()) && c.status !== ReviewStatus.COMPLETED && c.status !== ReviewStatus.CANCELLED);
-    if (existingActive) { alert(`A campaign for ${targetApp.name} is already running.`); return; }
-    const appAccess = access.filter(a => candidateAppIds.has(String(a.appId || '').trim()));
-    let hasAccounts = appAccess.length > 0;
-    if (!hasAccounts) {
-      const backendChecks = await Promise.all(
-        Array.from(candidateAppIds).map(async (candidateId) => {
-          try {
-            const res: any = await getAccounts(candidateId, undefined, undefined, 1);
-            return Array.isArray(res?.items) && res.items.length > 0;
-          } catch {
-            return false;
-          }
-        })
-      );
-      hasAccounts = backendChecks.some(Boolean);
-    }
-    if (!hasAccounts) { alert(`No accounts found for ${targetApp.name}.`); return; }
 
     setLaunchingReview(true);
     try {
-      const now = new Date();
-      const dueDate = dueDateStr ? new Date(dueDateStr) : new Date();
-      if (!dueDateStr) dueDate.setDate(dueDate.getDate() + 14);
-
-      // Call backend to launch review
-      if (!normalizedAppId || typeof normalizedAppId !== 'string' || normalizedAppId.trim().length === 0) {
-        throw new Error('No valid appId provided for UAR launch');
-      }
       const response = await launchReview(
-        {
-          appId: normalizedAppId.trim(),
-          name: targetApp.name,
-          dueDate: dueDate.toISOString(),
-          certificationType,
-          riskScope,
-          orphanReviewerMode,
-          customOrphanReviewerId: customOrphanReviewerId ? customOrphanReviewerId.trim() : undefined
-        },
+        'cycleId' in payload
+          ? { cycleId: payload.cycleId }
+          : {
+              name: payload.name,
+              ownerId: payload.ownerId,
+              dueDate: payload.dueDate,
+              startAt: payload.startAt,
+              startNow: payload.startNow,
+              reviewerType: payload.reviewerType,
+              certificationType: payload.reviewerType,
+              scope: payload.scope,
+              specificReviewerId: payload.specificReviewerId,
+              riskScope: payload.riskScope || 'ALL_ACCESS'
+            },
         {
           id: currentUser.id,
           name: currentUser.name,
           role: currentUser.role
         }
       );
-      await invalidateReviewQueries(response?.cycleId);
-
-      // Refresh cycles and items from backend
-      const cyclesRes = await getReviewCycles({ top: 200 });
-      const itemsRes = await getReviewItems({ top: 500 });
-      console.debug('UAR: cycles after launch', cyclesRes);
-      console.debug('UAR: items after launch', itemsRes);
-      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
-      setReviewItems(Array.isArray(itemsRes?.items) ? normalizeReviewItems(itemsRes.items) : []);
-
-      await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign for ${targetApp.name}. Cycle ID: ${response?.id || 'N/A'}`);
-      alert(`✓ Review campaign launched for ${targetApp.name}!`);
+      await refreshCampaignData(response?.cycleId);
+      await addAuditLog('CAMPAIGN_LAUNCH', `Launched review campaign. Cycle ID: ${response?.cycleId || 'N/A'}`);
+      alert('Campaign launched successfully.');
     } catch (e: any) {
       console.error('Failed to launch review:', e);
       alert(`Failed to launch review: ${e?.message || 'Unknown error'}`);
+    } finally {
+      setLaunchingReview(false);
+    }
+  };
+
+  const handleDeleteDraftCampaign = async (cycleId: string) => {
+    if (currentUser.role !== UserRole.ADMIN) {
+      alert('Only Admin can delete draft campaigns.');
+      return;
+    }
+
+    setLaunchingReview(true);
+    try {
+      await deleteReviewDraft({ cycleId }, {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role
+      });
+      await refreshCampaignData(cycleId);
+      await addAuditLog('CAMPAIGN_DRAFT_DELETE', `Deleted draft campaign ${cycleId}.`);
+      alert('Draft campaign deleted.');
+    } catch (e: any) {
+      console.error('Failed to delete draft campaign:', e);
+      alert(`Failed to delete draft campaign: ${e?.message || 'Unknown error'}`);
     } finally {
       setLaunchingReview(false);
     }
@@ -2249,7 +2288,7 @@ useEffect(() => {
       customization={customization}
       onSaveCustomization={handleSaveCustomization}
     >
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} access={access} onLaunch={handleLaunchReview} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} access={access} onStageCampaign={handleStageCampaign} onLaunchCampaign={handleLaunchCampaign} onDeleteDraftCampaign={handleDeleteDraftCampaign} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} launchingReview={launchingReview} />}
       {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} entitlements={entitlements} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory

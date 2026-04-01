@@ -189,11 +189,61 @@ export const getManagerItems      = (managerId: string, status?: string) =>
   getReviewItems({ managerId, status });
 
 // -------------------- UAR flows (Write) --------------------
+export const stageReviewCampaign = async (payload: {
+  cycleId?: string;
+  name: string;
+  ownerId: string;
+  dueDate: string;
+  startAt?: string;
+  startNow: boolean;
+  riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
+  scope: {
+    ALL_APPLICATIONS?: boolean;
+    ALL_SERVERS?: boolean;
+    ALL_DATABASES?: boolean;
+    ALL_SHARED_MAILBOXES?: boolean;
+    ALL_SHARED_FOLDERS?: boolean;
+    specificAppIds?: string[];
+  };
+  reviewerType: 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'ENTITLEMENT_OWNER' | 'SPECIFIC_USER';
+  specificReviewerId?: string;
+}, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
+  console.debug('[API] stageReviewCampaign payload:', payload);
+  try {
+    const result = await postJson('/api/reviews-stage', payload, {}, {
+      headers: {
+        ...(actor?.id ? { 'x-actor-id': actor.id } : {}),
+        ...(actor?.name ? { 'x-actor-name': actor.name } : {}),
+        ...(actor?.role ? { 'x-actor-role': actor.role } : {})
+      }
+    });
+    console.debug('[API] stageReviewCampaign result:', result);
+    return result;
+  } catch (err) {
+    console.error('[API] stageReviewCampaign error:', err);
+    throw err;
+  }
+};
+
 export const launchReview = async (payload: {
-  appId: string;
+  cycleId?: string;
+  appId?: string;
   name?: string;
+  ownerId?: string;
   dueDate?: string;
-  certificationType?: 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN';
+  startAt?: string;
+  startNow?: boolean;
+  certificationType?: 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'ENTITLEMENT_OWNER' | 'SPECIFIC_USER';
+  reviewerType?: 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'ENTITLEMENT_OWNER' | 'SPECIFIC_USER';
+  scope?: {
+    ALL_APPLICATIONS?: boolean;
+    ALL_SERVERS?: boolean;
+    ALL_DATABASES?: boolean;
+    ALL_SHARED_MAILBOXES?: boolean;
+    ALL_SHARED_FOLDERS?: boolean;
+    specificAppIds?: string[];
+  };
+  specificReviewerId?: string;
   riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
   orphanReviewerMode?: 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'CUSTOM';
   customOrphanReviewerId?: string;
@@ -212,6 +262,24 @@ export const launchReview = async (payload: {
     return result;
   } catch (err) {
     console.error('[API] launchReview error:', err);
+    throw err;
+  }
+};
+
+export const deleteReviewDraft = async (payload: { cycleId: string }, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
+  console.debug('[API] deleteReviewDraft payload:', payload);
+  try {
+    const result = await postJson('/api/reviews-delete', payload, {}, {
+      headers: {
+        ...(actor?.id ? { 'x-actor-id': actor.id } : {}),
+        ...(actor?.name ? { 'x-actor-name': actor.name } : {}),
+        ...(actor?.role ? { 'x-actor-role': actor.role } : {})
+      }
+    });
+    console.debug('[API] deleteReviewDraft result:', result);
+    return result;
+  } catch (err) {
+    console.error('[API] deleteReviewDraft error:', err);
     throw err;
   }
 };

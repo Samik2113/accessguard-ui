@@ -20,13 +20,13 @@ module.exports = async function (context, req) {
 
       if (appId) {
         const { resources } = await cyclesC.items.query({
-          query: "SELECT TOP 1 c.id, c.cycleId, c.name, c.appId, c.appName, c.status, c.launchedAt, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c._etag, c._ts FROM c WHERE (c.id=@id OR c.cycleId=@id) AND c.appId=@a",
+          query: "SELECT TOP 1 c.id, c.cycleId, c.name, c.appId, c.appName, c.appIds, c.appTypes, c.scope, c.scopeSummary, c.status, c.stagedAt, c.launchedAt, c.startAt, c.startNow, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c.campaignOwnerId, c.campaignOwnerName, c.reviewerType, c.reviewerLabel, c.specificReviewerId, c._etag, c._ts FROM c WHERE (c.id=@id OR c.cycleId=@id) AND c.appId=@a",
           parameters: [{ name: "@id", value: cycleId }, { name: "@a", value: appId }]
         }, { partitionKey: appId }).fetchAll();
         cycle = resources?.[0] || null;
       } else {
         const { resources } = await cyclesC.items.query({
-          query: "SELECT TOP 1 c.id, c.cycleId, c.name, c.appId, c.appName, c.status, c.launchedAt, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c._etag, c._ts FROM c WHERE c.id=@id OR c.cycleId=@id",
+          query: "SELECT TOP 1 c.id, c.cycleId, c.name, c.appId, c.appName, c.appIds, c.appTypes, c.scope, c.scopeSummary, c.status, c.stagedAt, c.launchedAt, c.startAt, c.startNow, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c.campaignOwnerId, c.campaignOwnerName, c.reviewerType, c.reviewerLabel, c.specificReviewerId, c._etag, c._ts FROM c WHERE c.id=@id OR c.cycleId=@id",
           parameters: [{ name: "@id", value: cycleId }]
         }, { enableCrossPartitionQuery: true }).fetchAll();
         cycle = resources?.[0] || null;
@@ -47,7 +47,7 @@ module.exports = async function (context, req) {
     // A) If appId provided -> partitioned query
     // ----------------------------------------
     if (appId) {
-      let query = "SELECT c.id, c.cycleId, c.name, c.appId, c.appName, c.status, c.launchedAt, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c._etag, c._ts FROM c WHERE c.appId=@a";
+      let query = "SELECT c.id, c.cycleId, c.name, c.appId, c.appName, c.appIds, c.appTypes, c.scope, c.scopeSummary, c.status, c.stagedAt, c.launchedAt, c.startAt, c.startNow, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c.campaignOwnerId, c.campaignOwnerName, c.reviewerType, c.reviewerLabel, c.specificReviewerId, c._etag, c._ts FROM c WHERE c.appId=@a";
       const params = [{ name: "@a", value: appId }];
       if (status) {
         query += " AND UPPER(c.status)=@s";
@@ -70,7 +70,7 @@ module.exports = async function (context, req) {
     // B) No appId -> cross-partition query across all apps
     // -----------------------------------------------------
     let queryAll =
-      "SELECT c.id, c.cycleId, c.name, c.appId, c.appName, c.status, c.launchedAt, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c._etag, c._ts FROM c WHERE c.type = 'review-cycle'"; // make sure your cycle docs have type set
+      "SELECT c.id, c.cycleId, c.name, c.appId, c.appName, c.appIds, c.appTypes, c.scope, c.scopeSummary, c.status, c.stagedAt, c.launchedAt, c.startAt, c.startNow, c.dueDate, c.completedAt, c.cancelledAt, c.cancelReason, c.totalItems, c.pendingItems, c.pendingRemediationItems, c.confirmedManagers, c.campaignOwnerId, c.campaignOwnerName, c.reviewerType, c.reviewerLabel, c.specificReviewerId, c._etag, c._ts FROM c WHERE c.type = 'review-cycle'"; // make sure your cycle docs have type set
     const paramsAll = [];
 
     if (status) {

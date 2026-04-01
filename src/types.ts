@@ -51,8 +51,31 @@ export interface SoDPolicy {
   riskLevel: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-export type CertificationType = 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN';
+export type CampaignReviewerType = 'MANAGER' | 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'ENTITLEMENT_OWNER' | 'SPECIFIC_USER';
+export type CertificationType = CampaignReviewerType;
 export type OrphanReviewerMode = 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'CUSTOM';
+
+export interface CampaignScopeSelection {
+  ALL_APPLICATIONS?: boolean;
+  ALL_SERVERS?: boolean;
+  ALL_DATABASES?: boolean;
+  ALL_SHARED_MAILBOXES?: boolean;
+  ALL_SHARED_FOLDERS?: boolean;
+  specificAppIds?: string[];
+}
+
+export interface CampaignConfigPayload {
+  cycleId?: string;
+  name: string;
+  ownerId: string;
+  dueDate: string;
+  startAt?: string;
+  startNow: boolean;
+  riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
+  scope: CampaignScopeSelection;
+  reviewerType: CampaignReviewerType;
+  specificReviewerId?: string;
+}
 
 export interface Application {
   id: string;
@@ -92,10 +115,17 @@ export interface ReviewCycle {
   name: string;
   appId: string; 
   appName: string;
+  appIds?: string[];
+  appTypes?: Array<NonNullable<Application['appType']>>;
+  scope?: CampaignScopeSelection;
+  scopeSummary?: string;
   year: number;
   quarter: number;
   status: ReviewStatus;
+  stagedAt?: string;
   launchedAt?: string;
+  startAt?: string;
+  startNow?: boolean;
   dueDate?: string;
   completedAt?: string;
   cancelledAt?: string;
@@ -105,6 +135,11 @@ export interface ReviewCycle {
   pendingRemediationItems?: number;
   confirmedManagers: string[]; // List of manager IDs who submitted
   certificationType?: CertificationType;
+  reviewerType?: CampaignReviewerType;
+  reviewerLabel?: string;
+  specificReviewerId?: string;
+  campaignOwnerId?: string;
+  campaignOwnerName?: string;
   riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
   orphanReviewerMode?: OrphanReviewerMode;
   orphanReviewerId?: string;
