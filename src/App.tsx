@@ -1606,18 +1606,10 @@ useEffect(() => {
         comment,
         etag: (item as any)?._etag
       });
-      await invalidateReviewQueries(item.reviewCycleId);
       console.log('[handleAction] actOnItem complete');
 
-      // Refresh items from backend
-      console.log('[handleAction] Fetching review items from backend');
-      const itemsRes = await getReviewItems({ top: 500 });
-      console.log('[handleAction] itemsRes:', itemsRes);
-      const mappedItems = Array.isArray(itemsRes?.items)
-        ? normalizeReviewItems(itemsRes.items)
-        : [];
-      console.log('[handleAction] mappedItems:', mappedItems);
-      setReviewItems(mappedItems);
+      // Refresh cycle summaries and review items so dashboard progress stays in sync.
+      await refreshCampaignData(item.reviewCycleId);
 
       await addAuditLog('ITEM_ACTION', `${status} on review item ${itemId}`);
       console.log('[handleAction] addAuditLog complete');
@@ -1649,13 +1641,7 @@ useEffect(() => {
         )
       );
       const impactedCycleId = reviewItems.find(i => itemIds.includes(i.id))?.reviewCycleId;
-      await invalidateReviewQueries(impactedCycleId);
-
-      // Refresh items from backend
-      const itemsRes = await getReviewItems({ top: 500 });
-      setReviewItems(Array.isArray(itemsRes?.items)
-        ? normalizeReviewItems(itemsRes.items)
-        : []);
+      await refreshCampaignData(impactedCycleId);
       
       await addAuditLog('BULK_DECISION', `Bulk ${status} on ${itemIds.length} items`);
     } catch (e: any) {
