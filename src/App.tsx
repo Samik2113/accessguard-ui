@@ -1542,7 +1542,9 @@ useEffect(() => {
               certificationType: payload.reviewerType,
               scope: payload.scope,
               specificReviewerId: payload.specificReviewerId,
-              riskScope: payload.riskScope || 'ALL_ACCESS'
+              riskScope: payload.riskScope || 'ALL_ACCESS',
+              orphanReviewerMode: payload.orphanReviewerMode,
+              customOrphanReviewerId: payload.orphanReviewerId
             },
         {
           id: currentUser.id,

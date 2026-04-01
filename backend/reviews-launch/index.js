@@ -30,6 +30,7 @@ const schema = {
     certificationType: { type: "string", enum: ["MANAGER", "APPLICATION_OWNER", "APPLICATION_ADMIN"] },
     riskScope: { type: "string", enum: ["ALL_ACCESS", "SOD_ONLY", "PRIVILEGED_ONLY", "ORPHAN_ONLY"] },
     orphanReviewerMode: { type: "string", enum: ["APPLICATION_OWNER", "APPLICATION_ADMIN", "CUSTOM"] },
+    orphanReviewerId: { type: "string" },
     customOrphanReviewerId: { type: "string" },
     launchIfExists: { type: "boolean" }
   },

@@ -75,6 +75,8 @@ export interface CampaignConfigPayload {
   scope: CampaignScopeSelection;
   reviewerType: CampaignReviewerType;
   specificReviewerId?: string;
+  orphanReviewerMode?: OrphanReviewerMode;
+  orphanReviewerId?: string;
 }
 
 export interface Application {

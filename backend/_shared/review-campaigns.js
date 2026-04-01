@@ -286,12 +286,18 @@ async function buildCampaignDefinition({ db, payload, actor, now, mode, cycleId 
   const reviewerTypeRaw = String(payload?.reviewerType || "MANAGER").trim().toUpperCase();
   const reviewerType = REVIEWER_TYPES.has(reviewerTypeRaw) ? reviewerTypeRaw : "MANAGER";
   const specificReviewerId = String(payload?.specificReviewerId || "").trim();
+  const orphanReviewerModeRaw = String(payload?.orphanReviewerMode || "APPLICATION_OWNER").trim().toUpperCase();
+  const orphanReviewerMode = ["APPLICATION_OWNER", "APPLICATION_ADMIN", "CUSTOM"].includes(orphanReviewerModeRaw)
+    ? orphanReviewerModeRaw
+    : "APPLICATION_OWNER";
+  const orphanReviewerId = String(payload?.customOrphanReviewerId || payload?.orphanReviewerId || "").trim();
   const scope = payload?.scope || {};
 
   if (!campaignName) throw new Error("Campaign name is required.");
   if (!campaignOwnerId) throw new Error("Campaign owner is required.");
   if (!startNow && !startAt) throw new Error("Start date is required when start now is not selected.");
   if (reviewerType === "SPECIFIC_USER" && !specificReviewerId) throw new Error("Specific reviewer is required.");
+  if (orphanReviewerMode === "CUSTOM" && !orphanReviewerId) throw new Error("Specific orphan reviewer is required.");
 
   const allApps = await readAllApplications(appsC);
   const selectedApps = resolveSelectedApps(allApps, scope);
@@ -395,7 +401,13 @@ async function buildCampaignDefinition({ db, payload, actor, now, mode, cycleId 
     const fallbackToken = `OWNER_${SAFE(appId || cycleId || campaignName)}`;
 
     let managerId = "";
-    if (reviewerType === "SPECIFIC_USER") {
+    if (isOrphan && orphanReviewerMode === "CUSTOM") {
+      managerId = orphanReviewerId;
+    } else if (isOrphan && orphanReviewerMode === "APPLICATION_ADMIN") {
+      managerId = await resolveAppAdminReviewerId({ hrC, appMeta, fallbackToken });
+    } else if (isOrphan && orphanReviewerMode === "APPLICATION_OWNER") {
+      managerId = await resolveAppOwnerReviewerId({ hrC, appMeta, fallbackToken });
+    } else if (reviewerType === "SPECIFIC_USER") {
       managerId = specificReviewerId;
     } else if (reviewerType === "APPLICATION_OWNER") {
       managerId = await resolveAppOwnerReviewerId({ hrC, appMeta, fallbackToken });
@@ -470,8 +482,8 @@ async function buildCampaignDefinition({ db, payload, actor, now, mode, cycleId 
     confirmedManagers: [],
     riskScope,
     certificationType: reviewerType,
-    orphanReviewerMode: null,
-    orphanReviewerId: null,
+    orphanReviewerMode,
+    orphanReviewerId: orphanReviewerMode === "CUSTOM" ? orphanReviewerId : undefined,
     year: now.getFullYear(),
     quarter: Math.floor(now.getMonth() / 3) + 1,
     type: "review-cycle"

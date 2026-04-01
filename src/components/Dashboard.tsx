@@ -42,14 +42,15 @@ const createDefaultCampaignForm = (): CampaignConfigPayload => ({
   scope: {
     specificAppIds: []
   },
-  reviewerType: 'MANAGER'
+  reviewerType: 'MANAGER',
+  orphanReviewerMode: 'APPLICATION_OWNER',
+  orphanReviewerId: ''
 });
 
 const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onStageCampaign, onLaunchCampaign, onDeleteDraftCampaign, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign, launchingReview = false }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [campaignForm, setCampaignForm] = useState<CampaignConfigPayload>(createDefaultCampaignForm());
-  const [launchStep, setLaunchStep] = useState<1 | 2 | 3>(1);
   const [showSpecificAppsDropdown, setShowSpecificAppsDropdown] = useState(false);
   const [specificAppsSearch, setSpecificAppsSearch] = useState('');
 
@@ -58,6 +59,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   const [dashboardRiskScopeFilter, setDashboardRiskScopeFilter] = useState<'ALL' | 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY'>('ALL');
 
   // Campaign Detail Filters (Modal)
+  const [campaignAppFilter, setCampaignAppFilter] = useState('ALL');
   const [campaignUserFilter, setCampaignUserFilter] = useState('ALL');
   const [campaignEntitlementFilter, setCampaignEntitlementFilter] = useState('ALL');
   const [campaignStatusFilter, setCampaignStatusFilter] = useState('ALL');
@@ -88,6 +90,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
 
   useEffect(() => {
     setSelectedCampaignItems([]);
+  }, [selectedCampaignId]);
+
+  useEffect(() => {
+    setCampaignAppFilter('ALL');
+    setCampaignUserFilter('ALL');
+    setCampaignEntitlementFilter('ALL');
+    setCampaignStatusFilter('ALL');
+    setCampaignRemediationFilter('ALL');
+    setCampaignRiskFilter('ALL');
+    setCampaignRiskFactorFilter('ALL');
   }, [selectedCampaignId]);
 
   const isClosedCycle = (status?: ReviewStatus) => status === ReviewStatus.COMPLETED || status === ReviewStatus.CANCELLED;
@@ -124,7 +136,6 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
 
   const openNewCampaignModal = () => {
     setCampaignForm(createDefaultCampaignForm());
-    setLaunchStep(1);
     setShowSpecificAppsDropdown(false);
     setSpecificAppsSearch('');
     setShowLaunchModal(true);
@@ -148,9 +159,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
         specificAppIds: Array.isArray(cycle.scope?.specificAppIds) ? cycle.scope!.specificAppIds! : Array.isArray(cycle.appIds) ? cycle.appIds : []
       },
       reviewerType: cycle.reviewerType || cycle.certificationType || 'MANAGER',
-      specificReviewerId: cycle.specificReviewerId || ''
+      specificReviewerId: cycle.specificReviewerId || '',
+      orphanReviewerMode: cycle.orphanReviewerMode || 'APPLICATION_OWNER',
+      orphanReviewerId: cycle.orphanReviewerId || ''
     });
-    setLaunchStep(1);
     setShowSpecificAppsDropdown(false);
     setSpecificAppsSearch('');
     setShowLaunchModal(true);
@@ -204,6 +216,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   }, [reviewItems, selectedCampaignId, cycleDetailQuery.data]);
 
   const uniqueUsersInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.userName))).sort(), [viewingItems]);
+  const uniqueAppsInCampaign = useMemo(() => Array.from(new Set(viewingItems.map((item) => String(item.appName || item.appId || '').trim()).filter(Boolean))).sort(), [viewingItems]);
   const uniqueEntsInCampaign = useMemo(() => Array.from(new Set(viewingItems.map(i => i.entitlement))).sort(), [viewingItems]);
 
   const getRiskScopeLabel = (riskScope?: ReviewCycle['riskScope']) => {
@@ -222,6 +235,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
 
   const filteredViewingItems = useMemo(() => {
     return viewingItems.filter(i => {
+      const matchesApp = campaignAppFilter === 'ALL' || String(i.appName || i.appId || '').trim() === campaignAppFilter;
       const matchesUser = campaignUserFilter === 'ALL' || i.userName === campaignUserFilter;
       const matchesEnt = campaignEntitlementFilter === 'ALL' || i.entitlement === campaignEntitlementFilter;
       const matchesStatus = campaignStatusFilter === 'ALL' || i.status === campaignStatusFilter;
@@ -236,9 +250,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
         (campaignRiskFactorFilter === 'ORPHAN' && i.isOrphan) ||
         (campaignRiskFactorFilter === 'TERMINATED' && isTerminatedRisk(i)) ||
         (campaignRiskFactorFilter === 'NONE' && !hasAnyRiskFactor);
-      return matchesUser && matchesEnt && matchesStatus && matchesRem && matchesRisk && matchesRiskFactor;
+      return matchesApp && matchesUser && matchesEnt && matchesStatus && matchesRem && matchesRisk && matchesRiskFactor;
     });
-  }, [viewingItems, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter, campaignRiskFilter, campaignRiskFactorFilter]);
+  }, [viewingItems, campaignAppFilter, campaignUserFilter, campaignEntitlementFilter, campaignStatusFilter, campaignRemediationFilter, campaignRiskFilter, campaignRiskFactorFilter]);
 
   const selectedCampaign = cycles.find(c => c.id === selectedCampaignId);
   const viewingAccountItem = useMemo(() => {
@@ -378,7 +392,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   const exportCampaignDetail = () => {
     if (!selectedCampaign) return;
     const confirmedManagerIds = new Set((selectedCampaign.confirmedManagers || []).map((id) => String(id)));
-    const headers = ['User', 'Account ID', 'Entitlement', 'Reviewer', 'Reviewer ID', 'Reviewer Confirmation', 'Pending With Reviewer', 'Reassigned By', 'Reassigned At', 'Reassign Count', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
+    const headers = ['User', 'Account ID', 'Application', 'Entitlement', 'Reviewer', 'Reviewer ID', 'Reviewer Confirmation', 'Pending With Reviewer', 'Reassigned By', 'Reassigned At', 'Reassign Count', 'Decision', 'Decision Date', 'Remediation Date', 'Justification', 'Risks'];
     const csvContent = [
       headers.join(','),
       ...viewingItems.map(i => {
@@ -397,6 +411,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
         return [
           `"${i.userName}"`,
           `"${i.appUserId}"`,
+          `"${i.appName || ''}"`,
           `"${i.entitlement}"`,
           `"${reviewer}"`,
           `"${reviewerId}"`,
@@ -705,6 +720,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
     }
     if (campaignForm.reviewerType === 'SPECIFIC_USER' && !String(campaignForm.specificReviewerId || '').trim()) {
       alert('Select the specific reviewer.');
+      return false;
+    }
+    if (campaignForm.orphanReviewerMode === 'CUSTOM' && !String(campaignForm.orphanReviewerId || '').trim()) {
+      alert('Select the orphan account reviewer.');
       return false;
     }
     return true;
@@ -1046,6 +1065,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
             
             <div className="p-6 bg-white border-b space-y-6">
               <div className="flex flex-wrap gap-4 items-center">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Application</span>
+                    <select value={campaignAppFilter} onChange={e => setCampaignAppFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
+                      <option value="ALL">All Applications</option>
+                      {uniqueAppsInCampaign.map(app => <option key={app} value={app}>{app}</option>)}
+                    </select>
+                  </div>
                  <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">User</span>
                     <select value={campaignUserFilter} onChange={e => setCampaignUserFilter(e.target.value)} className="px-3 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-600 outline-none">
@@ -1168,6 +1194,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                       </th>
                     )}
                     <th className="px-6 py-3">User / Account</th>
+                    <th className="px-6 py-3">Application</th>
                     <th className="px-6 py-3">Entitlement</th>
                     <th className="px-6 py-3">Risk Factors</th>
                     <th className="px-6 py-3">Reviewer</th>
@@ -1177,7 +1204,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                 </thead>
                 <tbody className="divide-y text-sm">
                   {filteredViewingItems.length === 0 ? (
-                    <tr><td colSpan={isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) ? 7 : 6} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
+                    <tr><td colSpan={isAdmin && onBulkReassign && !isClosedCycle(selectedCampaign?.status) ? 8 : 7} className="px-6 py-20 text-center text-slate-400 italic">No results found matching current filters.</td></tr>
                   ) : (
                     filteredViewingItems.map(item => {
                         const reviewer = users.find(u => u.id === item.managerId);
@@ -1202,6 +1229,10 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                                 <button onClick={() => setViewingAccountItemId(item.id)} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase text-blue-600 hover:text-blue-700">
                                   <Eye className="w-3 h-3" /> View Account
                                 </button>
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="font-semibold text-slate-800">{item.appName || applications.find((app) => String((app as any).appId || app.id || '').trim() === String(item.appId || '').trim())?.name || 'Unknown Application'}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{item.appId || '—'}</div>
                             </td>
                             <td className="px-6 py-4">
                                 <div className="font-mono text-xs flex items-center gap-2">
@@ -1243,7 +1274,6 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                             </td>
                             <td className="px-6 py-4">
                                 <div className="text-xs font-bold">{reviewer?.name || item.managerId}</div>
-                                <div className="text-[10px] text-slate-400 uppercase">Reviewing Manager</div>
                                 {item.reassignedBy && (
                                   <div className="mt-1 text-[10px] text-slate-500 leading-tight">
                                     <div className="font-semibold">Reassigned by: {users.find(u => u.id === item.reassignedBy)?.name || item.reassignedBy}</div>
@@ -1483,25 +1513,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
         <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-4xl max-h-[90vh] p-8 overflow-y-auto">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div>
-                <h3 className="text-xl font-bold">{campaignForm.cycleId ? 'Edit Draft Campaign' : 'Launch Campaign Wizard'}</h3>
+                <h3 className="text-xl font-bold">{campaignForm.cycleId ? 'Edit Draft Campaign' : 'Campaign Configuration'}</h3>
                 <p className="text-sm text-slate-500 mt-1">Configure campaign details, scope, and reviewer routing.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {[1, 2, 3].map((step) => (
-                  <button
-                    key={step}
-                    type="button"
-                    onClick={() => setLaunchStep(step as 1 | 2 | 3)}
-                    className={`w-8 h-8 rounded-full text-xs font-black border ${launchStep === step ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
-                  >
-                    {step}
-                  </button>
-                ))}
               </div>
             </div>
 
             <div className="space-y-6">
-              <section className={`rounded-2xl border p-5 ${launchStep === 1 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+              <section className="rounded-2xl border border-slate-200 bg-white p-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 1</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Details</h4>
                 <div className="mt-4 space-y-4">
@@ -1542,7 +1560,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                 </div>
               </section>
 
-              <section className={`rounded-2xl border p-5 ${launchStep === 2 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+              <section className="rounded-2xl border border-slate-200 bg-white p-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 2</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Scope</h4>
                 <div className="mt-4 space-y-4">
@@ -1630,7 +1648,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                 </div>
               </section>
 
-              <section className={`rounded-2xl border p-5 ${launchStep === 3 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+              <section className="rounded-2xl border border-slate-200 bg-white p-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 3</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Reviewer Assignment</h4>
                 <div className="mt-4 space-y-4">
@@ -1653,10 +1671,28 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                       </select>
                     </div>
                   )}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Orphan Accounts Reviewed By</label>
+                    <select value={campaignForm.orphanReviewerMode || 'APPLICATION_OWNER'} onChange={(e) => updateCampaignForm({ orphanReviewerMode: e.target.value as 'APPLICATION_OWNER' | 'APPLICATION_ADMIN' | 'CUSTOM', orphanReviewerId: e.target.value === 'CUSTOM' ? campaignForm.orphanReviewerId : '' })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                      <option value="APPLICATION_OWNER">Application Owner</option>
+                      <option value="APPLICATION_ADMIN">Application Admin</option>
+                      <option value="CUSTOM">Select a User</option>
+                    </select>
+                  </div>
+                  {campaignForm.orphanReviewerMode === 'CUSTOM' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Orphan Account Reviewer</label>
+                      <select value={campaignForm.orphanReviewerId || ''} onChange={(e) => updateCampaignForm({ orphanReviewerId: e.target.value })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                        <option value="">Select reviewer...</option>
+                        {users.map((user) => <option key={user.id} value={user.id}>{user.name} ({user.id})</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
                     <p className="font-bold text-slate-900">Campaign Summary</p>
                     <p className="mt-2">Scope selections: {selectedScopeCount}</p>
                     <p className="mt-1">Risk scope: {getRiskScopeLabel(campaignForm.riskScope)}</p>
+                    <p className="mt-1">Orphan routing: {campaignForm.orphanReviewerMode === 'APPLICATION_ADMIN' ? 'Application Admin' : campaignForm.orphanReviewerMode === 'CUSTOM' ? 'Specific User' : 'Application Owner'}</p>
                     <p className="mt-1">Launch mode: {canLaunchImmediately ? 'Can launch now' : 'Future start date requires draft staging'}</p>
                   </div>
                 </div>
@@ -1664,11 +1700,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
             </div>
 
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex gap-3">
-                <button onClick={() => setLaunchStep((current) => current > 1 ? ((current - 1) as 1 | 2 | 3) : current)} disabled={launchStep === 1} className="px-4 py-2 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Back</button>
-                <button onClick={() => setLaunchStep((current) => current < 3 ? ((current + 1) as 1 | 2 | 3) : current)} disabled={launchStep === 3} className="px-4 py-2 border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next</button>
-              </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="ml-auto flex flex-wrap gap-3">
                 <button onClick={submitStageCampaign} disabled={launchingReview} className="px-5 py-2 rounded-xl font-bold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                   {launchingReview ? 'Saving...' : 'Stage Campaign'}
                 </button>

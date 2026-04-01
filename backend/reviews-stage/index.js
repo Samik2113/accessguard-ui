@@ -16,6 +16,9 @@ const schema = {
     riskScope: { type: "string" },
     reviewerType: { type: "string" },
     specificReviewerId: { type: "string" },
+    orphanReviewerMode: { type: "string" },
+    orphanReviewerId: { type: "string" },
+    customOrphanReviewerId: { type: "string" },
     scope: { type: "object" }
   },
   additionalProperties: true
