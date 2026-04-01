@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { ReviewItem, ActionStatus, Application, SoDPolicy, User, ApplicationAccess, ReviewCycle, ReviewStatus } from '../types';
-import { Check, X, AlertCircle, Search, Filter, Shield, ListChecks, CheckSquare, Square, MessageSquare, ShieldCheck, ShieldAlert, ChevronRight, Send, Lock, Info, AlertTriangle } from 'lucide-react';
+import { Check, X, AlertCircle, Search, Filter, Shield, ListChecks, CheckSquare, Square, MessageSquare, ShieldCheck, ShieldAlert, ChevronRight, Send, Lock, Info, AlertTriangle, Eye } from 'lucide-react';
 import ModalShell from './ModalShell';
+import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
 
 interface ManagerPortalProps {
   items: ReviewItem[];
@@ -44,6 +45,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
+  const [viewingAccountItemId, setViewingAccountItemId] = useState<string | null>(null);
 
   const managerItems = useMemo(() => {
     return items.filter(i => i.managerId === currentManagerId);
@@ -52,9 +54,13 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
   const uniqueUsersInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.userName))).sort(), [managerItems]);
   const uniqueEntsInView = useMemo(() => Array.from(new Set(managerItems.map(i => i.entitlement))).sort(), [managerItems]);
 
+  const isTerminatedRisk = (entry: { isTerminated?: boolean; hrStatus?: string }) => {
+    return entry.isTerminated === true || String(entry.hrStatus || '').trim().toUpperCase() === 'TERMINATED';
+  };
+
   const getRiskLevel = (item: ReviewItem) => {
     if (item.isSoDConflict) return 'CRITICAL';
-    if (item.isOrphan) return 'HIGH';
+    if (item.isOrphan || isTerminatedRisk(item)) return 'HIGH';
     if (item.isPrivileged) return 'MEDIUM';
     return 'LOW';
   };
@@ -67,15 +73,65 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
       const matchesStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const level = getRiskLevel(item);
       const matchesRisk = riskFilter === 'ALL' || level === riskFilter;
-      const hasAnyRiskFactor = item.isSoDConflict || item.isPrivileged || item.isOrphan;
+      const hasAnyRiskFactor = item.isSoDConflict || item.isPrivileged || item.isOrphan || isTerminatedRisk(item);
       const matchesRiskFactor = riskFactorFilter === 'ALL' ||
         (riskFactorFilter === 'SOD' && item.isSoDConflict) ||
         (riskFactorFilter === 'PRIVILEGED' && item.isPrivileged) ||
         (riskFactorFilter === 'ORPHAN' && item.isOrphan) ||
+        (riskFactorFilter === 'TERMINATED' && isTerminatedRisk(item)) ||
         (riskFactorFilter === 'NONE' && !hasAnyRiskFactor);
       return matchesUser && matchesEnt && matchesApp && matchesStatus && matchesRisk && matchesRiskFactor;
     });
   }, [managerItems, userFilter, entitlementFilter, appFilter, statusFilter, riskFilter, riskFactorFilter]);
+
+  const viewingAccountItem = useMemo(() => {
+    if (!viewingAccountItemId) return null;
+    return managerItems.find((item) => item.id === viewingAccountItemId) || null;
+  }, [managerItems, viewingAccountItemId]);
+
+  const viewingAccountSeedEntries = useMemo(() => {
+    if (!viewingAccountItem) return [] as ApplicationAccess[];
+    return access.filter((entry) => {
+      return String(entry.appId || '').trim() === String(viewingAccountItem.appId || '').trim()
+        && String(entry.userId || '').trim() === String(viewingAccountItem.appUserId || '').trim();
+    });
+  }, [access, viewingAccountItem]);
+
+  const viewingAccountEntries = useMemo(() => {
+    if (!viewingAccountItem) return [] as ApplicationAccess[];
+
+    const seeds = viewingAccountSeedEntries;
+    const correlatedUserIds = new Set(
+      seeds.map((entry) => String(entry.correlatedUserId || '').trim()).filter(Boolean)
+    );
+    const emails = new Set(seeds.map((entry) => String(entry.email || '').trim().toLowerCase()).filter(Boolean));
+    const userNames = new Set(seeds.map((entry) => String(entry.userName || '').trim().toLowerCase()).filter(Boolean));
+    const appUserIds = new Set([String(viewingAccountItem.appUserId || '').trim(), ...seeds.map((entry) => String(entry.userId || '').trim()).filter(Boolean)]);
+
+    const matches = access.filter((entry) => {
+      const correlatedUserId = String(entry.correlatedUserId || '').trim();
+      const email = String(entry.email || '').trim().toLowerCase();
+      const userName = String(entry.userName || '').trim().toLowerCase();
+      const userId = String(entry.userId || '').trim();
+
+      if (correlatedUserId && correlatedUserIds.has(correlatedUserId)) return true;
+      if (email && emails.has(email)) return true;
+      if (userName && userNames.has(userName)) return true;
+      return userId && appUserIds.has(userId) && String(entry.appId || '').trim() === String(viewingAccountItem.appId || '').trim();
+    });
+
+    const deduped = new Map<string, ApplicationAccess>();
+    for (const entry of matches) {
+      const key = `${String(entry.appId || '').trim()}::${String(entry.userId || '').trim()}::${String(entry.entitlement || '').trim()}`;
+      if (!deduped.has(key)) deduped.set(key, entry);
+    }
+    return Array.from(deduped.values());
+  }, [access, viewingAccountItem, viewingAccountSeedEntries]);
+
+  const viewingAccountApp = useMemo(() => {
+    const targetAppIds = [String(viewingAccountItem?.appId || '').trim()].filter(Boolean);
+    return applications.find((app) => targetAppIds.includes(String((app as any).appId || app.id || '').trim())) || null;
+  }, [applications, viewingAccountItem]);
 
   const getItemDueDateTs = (item: ReviewItem) => {
     const cycle = cycles.find(c => c.id === item.reviewCycleId);
@@ -229,6 +285,169 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     setSelectedItems([]);
   };
 
+  const getAccountDetailPairs = (entry: Record<string, any>, app?: Application | null) => {
+    const hiddenKeys = new Set([
+      'id', '_rid', '_self', '_etag', '_attachments', '_ts', 'type', 'appId', 'appName', 'userId', 'userName', 'managerId',
+      'entitlement', 'isOrphan', 'isPrivileged', 'isSoDConflict', 'violatedPolicyIds', 'violatedPolicyNames', 'reviewCycleId',
+      'status', 'comment', 'createdAt', 'actionedAt', 'remediatedAt', 'reassignedBy', 'reassignedAt', 'reassignmentCount',
+      'appUserId', 'updatedAt', 'correlation', 'sod', 'customAttributes'
+    ]);
+    const normalizedEntry = { ...(entry || {}) } as Record<string, any>;
+    const customAttributes = (normalizedEntry.customAttributes && typeof normalizedEntry.customAttributes === 'object')
+      ? normalizedEntry.customAttributes as Record<string, any>
+      : {};
+
+    const formatAccountDetailLabel = (key: string): string => {
+      const explicitLabels: Record<string, string> = {
+        appId: 'App ID',
+        userId: 'User ID',
+        userName: 'User Name',
+        appUserId: 'App User ID',
+        correlatedUserId: 'Correlated User ID',
+        isOrphan: 'Is Orphan',
+        isPrivileged: 'Is Privileged',
+        isSoDConflict: 'SoD Conflict',
+        isTerminated: 'Dormant Account Risk',
+        hrStatus: 'HR Status',
+        violatedPolicyIds: 'SoD Policy IDs',
+        violatedPolicyNames: 'SoD Policies',
+        createdAt: 'Created At',
+        updatedAt: 'Updated At',
+        accountStatus: 'Account Status',
+        lastLoginDetails: 'Last Login Details',
+        createDate: 'Create Date',
+        userType: 'User Type',
+        displayName: 'Display Name'
+      };
+      if (explicitLabels[key]) return explicitLabels[key];
+
+      return key
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => {
+          const upper = part.toUpperCase();
+          if (upper === 'ID' || upper === 'SOD' || upper === 'HR') return upper;
+          return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+        })
+        .join(' ');
+    };
+
+    const formatAccountDetailValue = (value: any): string => {
+      if (value === undefined || value === null) return '';
+      if (Array.isArray(value)) {
+        return value.map((item) => formatAccountDetailValue(item)).filter(Boolean).join(', ');
+      }
+      if (typeof value === 'object') {
+        return Object.entries(value)
+          .map(([nestedKey, nestedValue]) => {
+            const formatted = formatAccountDetailValue(nestedValue);
+            return formatted ? `${formatAccountDetailLabel(nestedKey)}: ${formatted}` : '';
+          })
+          .filter(Boolean)
+          .join(' | ');
+      }
+      if (typeof value === 'boolean') return value ? 'true' : 'false';
+      return String(value).trim();
+    };
+
+    const normalizeDetailToken = (value: string): string => String(value || '').trim().toLowerCase().replace(/[_\s-]+/g, '');
+
+    const schemaAppType = app?.accountSchema?.schemaAppType || app?.appType || 'Application';
+    const template = APP_TYPE_SCHEMA_TEMPLATES[schemaAppType] || APP_TYPE_SCHEMA_TEMPLATES.Application;
+    const mappings = app?.accountSchema?.mappings || {};
+    const configuredFieldKeysToHide = new Set(['loginId', 'role', 'accountOwnerName', 'loginName', 'dbRole', 'userDetails', 'userId', 'userName', 'privilegeLevel', 'ids', 'displayName', 'mailboxAccess', 'folderAccess']);
+    const storageKeyByField: Record<string, string> = {
+      email: 'email',
+      employeeId: 'employeeId',
+      lastLoginAt: 'lastLoginDetails',
+      accountStatus: 'accountStatus',
+      userType: 'userType',
+      createDate: 'createDate',
+      displayName: 'displayName'
+    };
+    const fieldPriority: Record<string, number> = { email: 10, employeeId: 20, userType: 30, accountStatus: 40, lastLoginAt: 50, createDate: 60 };
+    const fallbackLabelPriority: Record<string, number> = {
+      'Email': 10,
+      'E-mail ID': 10,
+      'Email Id': 10,
+      'Employee ID': 20,
+      'User Type': 30,
+      'Account Status': 40,
+      'Last Login Details': 50,
+      'Create Date': 60,
+      'Created At': 70,
+      'Updated At': 80
+    };
+
+    const resolveConfiguredFieldValue = (fieldKey: string) => {
+      const configuredColumn = String(mappings[fieldKey] || '').trim();
+      const storageKey = storageKeyByField[fieldKey] || fieldKey;
+      const candidates = [
+        normalizedEntry[storageKey],
+        normalizedEntry[fieldKey],
+        configuredColumn ? normalizedEntry[configuredColumn] : undefined,
+        configuredColumn ? customAttributes[configuredColumn] : undefined,
+        customAttributes[storageKey],
+        customAttributes[fieldKey]
+      ];
+      const match = candidates.find((value) => formatAccountDetailValue(value) !== '');
+      return formatAccountDetailValue(match);
+    };
+
+    const mappedColumns = new Set(Object.values(mappings).map((value) => String(value || '').trim()).filter(Boolean));
+    const configuredStorageKeys = new Set(template.fields.flatMap((field) => {
+      const configuredColumn = String(mappings[field.key] || '').trim();
+      const storageKey = storageKeyByField[field.key] || field.key;
+      return [field.key, storageKey, configuredColumn].filter(Boolean);
+    }));
+
+    const configuredPairs = template.fields
+      .filter((field) => !configuredFieldKeysToHide.has(field.key))
+      .map((field) => {
+        const configuredLabel = String(mappings[field.key] || '').trim();
+        const label = configuredLabel || field.label;
+        const value = resolveConfiguredFieldValue(field.key);
+        return value ? ({ label, value, priority: fieldPriority[field.key] ?? 999, sortKey: label.toLowerCase() }) : null;
+      })
+      .filter((pair): pair is { label: string; value: string; priority: number; sortKey: string } => Boolean(pair))
+      .sort((a, b) => a.priority - b.priority || a.sortKey.localeCompare(b.sortKey))
+      .map((pair) => [pair.label, pair.value] as [string, string]);
+
+    const customColumns = Array.isArray(app?.accountSchema?.customColumns)
+      ? app.accountSchema.customColumns.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const usedNormalizedLabels = new Set(configuredPairs.map(([label]) => normalizeDetailToken(label)));
+    const customPairs = customColumns
+      .map((column) => {
+        if (mappedColumns.has(column) || usedNormalizedLabels.has(normalizeDetailToken(column))) return null;
+        const value = formatAccountDetailValue(customAttributes[column] ?? normalizedEntry[column]);
+        return value ? [column, value] as [string, string] : null;
+      })
+      .filter((pair): pair is [string, string] => Boolean(pair))
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    const usedLabels = new Set([...configuredPairs, ...customPairs].map(([label]) => label));
+    const usedNormalizedFallbackLabels = new Set([...configuredPairs, ...customPairs].map(([label]) => normalizeDetailToken(label)));
+    const fallbackPairs = Object.entries(normalizedEntry)
+      .filter(([key, value]) => {
+        if (hiddenKeys.has(key)) return false;
+        if (configuredStorageKeys.has(key)) return false;
+        if (mappedColumns.has(key)) return false;
+        return formatAccountDetailValue(value) !== '';
+      })
+      .map(([key, value]) => [formatAccountDetailLabel(key), formatAccountDetailValue(value)] as [string, string])
+      .filter(([label]) => !usedLabels.has(label) && !usedNormalizedFallbackLabels.has(normalizeDetailToken(label)))
+      .sort(([a], [b]) => {
+        const priorityA = fallbackLabelPriority[a] ?? 999;
+        const priorityB = fallbackLabelPriority[b] ?? 999;
+        return priorityA - priorityB || a.localeCompare(b);
+      });
+
+    return [...configuredPairs, ...customPairs, ...fallbackPairs];
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500 pb-20">
       <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-4">
@@ -299,8 +518,8 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
             </div>
             <div className="flex flex-wrap gap-2">
               {submissionTargets.map(t => (
-                <button key={t.cycleId} onClick={() => onConfirmReview(t.cycleId, currentManagerId)} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-all">
-                  <Send className="w-4 h-4" /> Finalize & Lock {t.appName}
+                <button key={t.cycleId} onClick={() => onConfirmReview(t.cycleId, currentManagerId)} title={t.appName} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-all">
+                  <Send className="w-4 h-4" /> Confirm Decisions
                 </button>
               ))}
             </div>
@@ -367,6 +586,9 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-800">{item.userName}</div>
                     <div className="text-[10px] text-slate-400 font-mono">ID: {item.appUserId}</div>
+                    <button onClick={() => setViewingAccountItemId(item.id)} className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase text-blue-600 hover:text-blue-700">
+                      <Eye className="w-3 h-3" /> View Account
+                    </button>
                   </td>
                   <td className="px-6 py-4 font-black text-slate-900 uppercase">{item.appName}</td>
                   <td className="px-6 py-4">
@@ -401,6 +623,11 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                         {item.isOrphan && (
                           <span className="text-[8px] font-black text-orange-600 uppercase flex items-center gap-1">
                             <AlertTriangle className="w-2.5 h-2.5" /> Orphan Account
+                          </span>
+                        )}
+                        {isTerminatedRisk(item) && (
+                          <span className="text-[8px] font-black text-orange-700 uppercase flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5" /> Dormant Account
                           </span>
                         )}
                         {item.isPrivileged && (
@@ -653,6 +880,77 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                 Reassign Selected
               </button>
             </div>
+        </ModalShell>
+      )}
+
+      {viewingAccountItem && (
+        <ModalShell overlayClassName="z-[110]" panelClassName="max-w-5xl max-h-[90vh] p-8">
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Account Details</h3>
+                <p className="text-sm text-slate-500 mt-1">{viewingAccountItem.userName} · {viewingAccountItem.appUserId}</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mt-2">{viewingAccountApp?.name || viewingAccountItem.appName}</p>
+              </div>
+              <button onClick={() => setViewingAccountItemId(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reviewer</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{users.find((user) => user.id === viewingAccountItem.managerId)?.name || viewingAccountItem.managerId}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entitlement</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">{viewingAccountItem.entitlement}</p>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Flags</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {viewingAccountItem.isSoDConflict && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">SoD Conflict</span>}
+                  {viewingAccountItem.isPrivileged && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">Privileged</span>}
+                  {viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
+                  {isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Dormant Account</span>}
+                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                </div>
+              </div>
+            </div>
+
+            {viewingAccountEntries.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                No matching account record was found in the loaded inventory. The review row details are still shown above.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                  Showing the related access footprint for this identity across correlated accounts, so reviewers such as Application Owners can see more than the single assigned line item.
+                </div>
+                {viewingAccountEntries.map((entry, index) => {
+                  const entryApp = applications.find((app) => String((app as any).appId || app.id || '').trim() === String(entry.appId || '').trim()) || null;
+                  return (
+                    <div key={`${entry.appId}-${entry.userId}-${entry.entitlement}-${index}`} className="rounded-2xl border border-slate-200 overflow-hidden">
+                      <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{entry.userName || viewingAccountItem.userName}</p>
+                          <p className="text-[11px] font-mono text-slate-500">{entry.userId || viewingAccountItem.appUserId}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-semibold text-slate-500">{entry.entitlement}</div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-1">{entryApp?.name || entry.appName || entry.appId}</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+                        {getAccountDetailPairs(entry as Record<string, any>, entryApp).map(([key, value]) => (
+                          <div key={key} className="px-5 py-4 border-b border-slate-100 md:border-r even:md:border-r-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{key}</p>
+                            <p className="mt-1 text-sm text-slate-800 break-words">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
         </ModalShell>
       )}
     </div>
