@@ -47,6 +47,7 @@ module.exports = async function (context, req) {
     const appsC = db.container("applications");
     const logsC = db.container("auditLogs");
     const customization = await readAppCustomization(logsC);
+    const cycleInfo = cycleId ? await readCycle(cyclesC, cycleId, appId) : null;
 
     if (mode === "REMEDIATION_NOTIFY" || mode === "REMEDIATION_REMINDER") {
       if (!cycleId || !appId) {
@@ -82,7 +83,6 @@ module.exports = async function (context, req) {
         };
       }
 
-      const cycleInfo = await readCycle(cyclesC, cycleId, appId);
       const appInfo = await readAppByIdOrAppId(appsC, appId);
       const ownerId = String(appInfo?.ownerId || appInfo?.ownerUserId || "").trim();
       const ownerHr = ownerId ? await readHrUser(hrC, ownerId) : null;
@@ -223,7 +223,13 @@ module.exports = async function (context, req) {
       query += " AND c.reviewCycleId=@cycleId";
       parameters.push({ name: "@cycleId", value: cycleId });
     }
-    if (appId) {
+    const cycleAppIds = Array.isArray(cycleInfo?.appIds)
+      ? cycleInfo.appIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    const hasSyntheticMultiAppId = appId.toUpperCase().startsWith("MULTI_");
+    const shouldFilterByAppId = Boolean(appId) && (!cycleId || (!hasSyntheticMultiAppId && cycleAppIds.length <= 1));
+
+    if (shouldFilterByAppId) {
       query += " AND c.appId=@appId";
       parameters.push({ name: "@appId", value: appId });
     }
@@ -490,8 +496,18 @@ module.exports = async function (context, req) {
 
 async function readCycle(cyclesC, cycleId, appId) {
   try {
-    const { resource } = await cyclesC.item(cycleId, appId).read();
-    return resource || null;
+    if (cycleId && appId) {
+      const { resource } = await cyclesC.item(cycleId, appId).read();
+      if (resource) return resource;
+    }
+  } catch (_) {
+  }
+  try {
+    const { resources } = await cyclesC.items.query({
+      query: "SELECT TOP 1 * FROM c WHERE c.id=@cycleId",
+      parameters: [{ name: "@cycleId", value: cycleId }]
+    }).fetchAll();
+    return resources?.[0] || null;
   } catch (_) {
     return null;
   }

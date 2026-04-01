@@ -443,7 +443,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
     setSendingNotificationMode(mode);
     try {
       const selectedRecipientEmail = users.find(u => u.id === selectedRemediationRecipientId)?.email || undefined;
-      const result: any = await onSendNotifications({ mode, cycleId: selectedCampaign.id, appId: selectedCampaign.appId, selectedRecipientEmail });
+      const includeAppId = mode === 'REMEDIATION_NOTIFY' || mode === 'REMEDIATION_REMINDER';
+      const result: any = await onSendNotifications({
+        mode,
+        cycleId: selectedCampaign.id,
+        appId: includeAppId ? selectedCampaign.appId : undefined,
+        selectedRecipientEmail
+      });
       const modeLabel = mode === 'REMINDER'
         ? 'Reminder'
         : mode === 'ESCALATE'
