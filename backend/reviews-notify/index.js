@@ -271,8 +271,9 @@ module.exports = async function (context, req) {
       }
 
       const { resources: cycleItems } = await itemsC.items.query({ query: allItemsQuery, parameters: allItemsParams }).fetchAll();
-      const cycleInfo = appId ? await readCycle(cyclesC, cycleId, appId) : null;
-      const confirmedManagers = Array.isArray(cycleInfo?.confirmedManagers) ? cycleInfo.confirmedManagers.map((id) => String(id)) : [];
+      const confirmedManagers = Array.isArray(cycleInfo?.confirmedManagers)
+        ? cycleInfo.confirmedManagers.map((id) => String(id))
+        : [];
 
       for (const item of cycleItems || []) {
         const managerId = String(item.managerId || "").trim();
@@ -394,7 +395,6 @@ module.exports = async function (context, req) {
           continue;
         }
 
-        const cycleInfo = cycleId && appId ? await readCycle(cyclesC, cycleId, appId) : null;
         const dueDate = cycleInfo?.dueDate ? new Date(cycleInfo.dueDate).toLocaleDateString() : null;
 
         const fallbackText = awaitingConfirmation ? [

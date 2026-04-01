@@ -225,19 +225,6 @@ function getOnPrimaryTextColor(input: unknown, fallback: string) {
   return yiq >= 150 ? '#0f172a' : '#ffffff';
 }
 
-function buildFirstLoginSetupLink(email: string, setupToken: string) {
-  if (typeof window === 'undefined') return '';
-  const base = `${window.location.origin}${window.location.pathname}`;
-  const params = new URLSearchParams({
-    firstLogin: '1',
-    email: String(email || '').trim().toLowerCase(),
-    setupToken: String(setupToken || '').trim()
-  });
-  return `${base}?${params.toString()}`;
-}
-
-
-
 const App: React.FC = () => {
   const queryClient = useQueryClient();
   const lastSessionTouchRef = useRef(0);
@@ -1241,14 +1228,12 @@ useEffect(() => {
 
       const importResult: any = await importHrUsers(normalized, { replaceAll: true, debug: true, resetPasswords: false, returnCredentials: true });
       if (Array.isArray(importResult?.credentials) && importResult.credentials.length > 0) {
-        const headers = ['userId', 'name', 'email', 'passwordSetupLink', 'setupToken', 'setupTokenExpiresAt', 'mustChangePassword'];
+        const headers = ['userId', 'name', 'email', 'temporaryPassword', 'mustChangePassword'];
         const rows = importResult.credentials.map((cred: any) => [
           cred.userId,
           cred.name,
           cred.email,
-          buildFirstLoginSetupLink(cred.email, cred.setupToken),
-          cred.setupToken,
-          cred.setupTokenExpiresAt,
+          cred.temporaryPassword,
           String(!!cred.mustChangePassword)
         ]);
         const csv = [headers.join(','), ...rows.map((row: string[]) => row.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -1256,10 +1241,10 @@ useEffect(() => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `new_user_password_setup_links_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `new_user_credentials_${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
-        alert(`Generated ${importResult.credentials.length} password setup links. CSV downloaded for secure sharing.`);
+        alert(`Generated ${importResult.credentials.length} temporary passwords. CSV downloaded for secure sharing.`);
       }
       const items = await loadAllHrUsers();
       setUsers(items);
@@ -1904,13 +1889,9 @@ useEffect(() => {
 
   const handleResetUserPassword = async (userId: string) => {
     const res: any = await resetUserPassword({ userId });
-    const email = String(res?.user?.email || '').trim().toLowerCase();
-    const setupToken = String(res?.setupToken || '').trim();
-    await addAuditLog('PASSWORD_RESET', `Issued password setup link for user ${userId}`);
+    await addAuditLog('PASSWORD_RESET', `Temporary password reset for user ${userId}`);
     return {
-      setupToken,
-      setupTokenExpiresAt: String(res?.setupTokenExpiresAt || ''),
-      setupLink: buildFirstLoginSetupLink(email, setupToken),
+      temporaryPassword: String(res?.temporaryPassword || ''),
       user: res?.user || { userId }
     };
   };

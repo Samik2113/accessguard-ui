@@ -1,7 +1,6 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
 const crypto = require("crypto");
-const { issuePasswordSetup } = require("../_shared/password-setup");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
@@ -180,22 +179,22 @@ module.exports = async function (context, req) {
       };
       await usersC.items.upsert(item);
 
-      const shouldIssuePasswordSetup = resetPasswords || !existingAuth;
-      let setupState = null;
+      const shouldIssueTempPassword = resetPasswords || !existingAuth;
+      let tempPassword = null;
       let passwordSalt = existingAuth?.passwordSalt;
       let passwordHash = existingAuth?.passwordHash;
 
-      if (shouldIssuePasswordSetup) {
-        setupState = issuePasswordSetup(now);
-        passwordSalt = null;
-        passwordHash = null;
+      if (shouldIssueTempPassword) {
+        tempPassword = generateTempPassword();
+        const hashed = hashPassword(tempPassword);
+        passwordSalt = hashed.salt;
+        passwordHash = hashed.hash;
 
         issuedCredentials.push({
           userId,
           name: item.name,
           email,
-          setupToken: setupState.setupToken,
-          setupTokenExpiresAt: setupState.setupTokenExpiresAt,
+          temporaryPassword: tempPassword,
           mustChangePassword: true
         });
       }
@@ -208,17 +207,17 @@ module.exports = async function (context, req) {
         passwordHash,
         passwordSalt,
         passwordAlgo: "pbkdf2_sha256_100000",
-        mustChangePassword: shouldIssuePasswordSetup ? true : !!existingAuth?.mustChangePassword,
-        setupTokenHash: shouldIssuePasswordSetup ? setupState.setupTokenHash : (existingAuth?.setupTokenHash || null),
-        setupTokenExpiresAt: shouldIssuePasswordSetup ? setupState.setupTokenExpiresAt : (existingAuth?.setupTokenExpiresAt || null),
+        mustChangePassword: shouldIssueTempPassword ? true : !!existingAuth?.mustChangePassword,
+        setupTokenHash: shouldIssueTempPassword ? null : (existingAuth?.setupTokenHash || null),
+        setupTokenExpiresAt: shouldIssueTempPassword ? null : (existingAuth?.setupTokenExpiresAt || null),
         status: "ACTIVE",
         createdAt: existingAuth?.createdAt || now,
         updatedAt: now,
         type: "user-auth"
       };
 
-      if ((!authDoc.passwordHash || !authDoc.passwordSalt) && !authDoc.setupTokenHash) {
-        throw new Error(`Auth profile missing password or setup token for userId=${userId}`);
+      if (!authDoc.passwordHash || !authDoc.passwordSalt) {
+        throw new Error(`Auth profile missing password hash for userId=${userId}`);
       }
 
       await authC.items.upsert(authDoc);
@@ -320,18 +319,19 @@ module.exports = async function (context, req) {
     });
 
     if (!breakglassAuth) {
-      const setupState = issuePasswordSetup(now);
+      const tempPassword = generateTempPassword();
+      const hashed = hashPassword(tempPassword);
       await authC.items.upsert({
         id: BREAKGLASS_USER_ID,
         userId: BREAKGLASS_USER_ID,
         email: breakglassEmail,
         role: "ADMIN",
-        passwordHash: null,
-        passwordSalt: null,
+        passwordHash: hashed.hash,
+        passwordSalt: hashed.salt,
         passwordAlgo: "pbkdf2_sha256_100000",
         mustChangePassword: true,
-        setupTokenHash: setupState.setupTokenHash,
-        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
+        setupTokenHash: null,
+        setupTokenExpiresAt: null,
         status: "ACTIVE",
         createdAt: now,
         updatedAt: now,
@@ -341,8 +341,7 @@ module.exports = async function (context, req) {
         userId: BREAKGLASS_USER_ID,
         name: String(breakglassHr?.name || BREAKGLASS_NAME),
         email: breakglassEmail,
-        setupToken: setupState.setupToken,
-        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
+        temporaryPassword: tempPassword,
         mustChangePassword: true
       });
     } else {

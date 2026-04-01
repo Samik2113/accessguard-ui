@@ -1,6 +1,6 @@
 const { CosmosClient } = require("@azure/cosmos");
 const Ajv = require("ajv");
-const { issuePasswordSetup } = require("../_shared/password-setup");
+const crypto = require("crypto");
 
 const ajv = new Ajv({ allErrors: true, removeAdditional: "failing" });
 const BREAKGLASS_USER_ID = String(process.env.BREAKGLASS_USER_ID || "ADM001").trim().toUpperCase();
@@ -30,6 +30,22 @@ function bad(status, error, req) {
 
 function defaultRoleFor(userId) {
   return String(userId || "").trim().toUpperCase() === BREAKGLASS_USER_ID ? "ADMIN" : "USER";
+}
+
+function generateTempPassword(length = 12) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  const bytes = crypto.randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
+function hashPassword(password, saltHex) {
+  const salt = saltHex || crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(String(password), salt, 100000, 32, "sha256").toString("hex");
+  return { salt, hash };
 }
 
 module.exports = async function (context, req) {
@@ -95,19 +111,20 @@ module.exports = async function (context, req) {
       }
     }
 
+    const temporaryPassword = generateTempPassword();
+    const hashed = hashPassword(temporaryPassword);
     const nowIso = new Date().toISOString();
-    const setupState = issuePasswordSetup(nowIso);
 
     const updatedAuth = {
       ...authUser,
       id: targetUserId,
       userId: targetUserId,
-      passwordHash: null,
-      passwordSalt: null,
+      passwordHash: hashed.hash,
+      passwordSalt: hashed.salt,
       passwordAlgo: "pbkdf2_sha256_100000",
       mustChangePassword: true,
-      setupTokenHash: setupState.setupTokenHash,
-      setupTokenExpiresAt: setupState.setupTokenExpiresAt,
+      setupTokenHash: null,
+      setupTokenExpiresAt: null,
       updatedAt: nowIso,
       type: "user-auth"
     };
@@ -139,8 +156,7 @@ module.exports = async function (context, req) {
           name: displayName,
           email
         },
-        setupToken: setupState.setupToken,
-        setupTokenExpiresAt: setupState.setupTokenExpiresAt,
+        temporaryPassword,
         mustChangePassword: true
       }
     };
