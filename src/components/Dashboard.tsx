@@ -50,6 +50,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [campaignForm, setCampaignForm] = useState<CampaignConfigPayload>(createDefaultCampaignForm());
   const [launchStep, setLaunchStep] = useState<1 | 2 | 3>(1);
+  const [showSpecificAppsDropdown, setShowSpecificAppsDropdown] = useState(false);
+  const [specificAppsSearch, setSpecificAppsSearch] = useState('');
 
   const [dashboardAppFilter, setDashboardAppFilter] = useState('ALL');
   const [dashboardStatusFilter, setDashboardStatusFilter] = useState('ALL');
@@ -123,6 +125,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   const openNewCampaignModal = () => {
     setCampaignForm(createDefaultCampaignForm());
     setLaunchStep(1);
+    setShowSpecificAppsDropdown(false);
+    setSpecificAppsSearch('');
     setShowLaunchModal(true);
   };
 
@@ -147,6 +151,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
       specificReviewerId: cycle.specificReviewerId || ''
     });
     setLaunchStep(1);
+    setShowSpecificAppsDropdown(false);
+    setSpecificAppsSearch('');
     setShowLaunchModal(true);
   };
 
@@ -177,6 +183,18 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
     return [...applications].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   }, [applications]);
   const launchApplicationTypeOptions = useMemo(() => ['Application', 'Database', 'Servers', 'Shared Mailbox', 'Shared Folder'] as Array<NonNullable<Application['appType']>>, []);
+  const selectedSpecificApplications = useMemo(() => {
+    const selectedIds = new Set(campaignForm.scope?.specificAppIds || []);
+    return launchApplicationsSorted.filter((app) => selectedIds.has(String((app as any).appId || app.id || '').trim()));
+  }, [campaignForm.scope?.specificAppIds, launchApplicationsSorted]);
+  const filteredSpecificApplications = useMemo(() => {
+    const term = specificAppsSearch.trim().toLowerCase();
+    return launchApplicationsSorted.filter((app) => {
+      if (!term) return true;
+      const haystack = `${app.name} ${app.appType || 'Application'} ${String((app as any).appId || app.id || '')}`.toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [launchApplicationsSorted, specificAppsSearch]);
 
   const viewingItems = useMemo(() => {
     if (!selectedCampaignId) return [];
@@ -1482,8 +1500,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className={`rounded-2xl border p-5 ${launchStep === 1 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+            <div className="space-y-6">
+              <section className={`rounded-2xl border p-5 ${launchStep === 1 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 1</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Details</h4>
                 <div className="mt-4 space-y-4">
@@ -1522,9 +1540,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                     </select>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <div className={`rounded-2xl border p-5 ${launchStep === 2 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+              <section className={`rounded-2xl border p-5 ${launchStep === 2 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 2</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Campaign Scope</h4>
                 <div className="mt-4 space-y-4">
@@ -1544,24 +1562,75 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Specific Applications</label>
-                    <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white">
-                      {launchApplicationsSorted.map((app) => {
-                        const appId = String((app as any).appId || app.id || '').trim();
-                        const isChecked = Boolean(campaignForm.scope?.specificAppIds?.includes(appId));
-                        return (
-                          <label key={appId} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 text-sm text-slate-700">
-                            <input type="checkbox" checked={isChecked} onChange={() => toggleSpecificApplication(appId)} />
-                            <span className="font-semibold">{app.name}</span>
-                            <span className="text-[11px] text-slate-400">{app.appType || 'Application'}</span>
-                          </label>
-                        );
-                      })}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowSpecificAppsDropdown((current) => !current)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-left text-sm font-semibold text-slate-700 flex items-center justify-between gap-3"
+                      >
+                        <span className="truncate">
+                          {selectedSpecificApplications.length > 0
+                            ? `${selectedSpecificApplications.length} application${selectedSpecificApplications.length === 1 ? '' : 's'} selected`
+                            : 'Select one or more applications'}
+                        </span>
+                        <ChevronRight className={`w-4 h-4 text-slate-400 transition-transform ${showSpecificAppsDropdown ? 'rotate-90' : ''}`} />
+                      </button>
+                      {selectedSpecificApplications.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedSpecificApplications.slice(0, 6).map((app) => {
+                            const appId = String((app as any).appId || app.id || '').trim();
+                            return (
+                              <span key={appId} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-700">
+                                {app.name}
+                                <button type="button" onClick={() => toggleSpecificApplication(appId)} className="text-slate-400 hover:text-slate-700">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            );
+                          })}
+                          {selectedSpecificApplications.length > 6 && (
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
+                              +{selectedSpecificApplications.length - 6} more
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {showSpecificAppsDropdown && (
+                        <div className="mt-3 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                          <div className="p-3 border-b border-slate-100">
+                            <input
+                              type="text"
+                              value={specificAppsSearch}
+                              onChange={(e) => setSpecificAppsSearch(e.target.value)}
+                              placeholder="Search applications"
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/10"
+                            />
+                          </div>
+                          <div className="max-h-56 overflow-y-auto">
+                            {filteredSpecificApplications.length === 0 ? (
+                              <p className="px-4 py-6 text-sm text-slate-500">No applications match your search.</p>
+                            ) : (
+                              filteredSpecificApplications.map((app) => {
+                                const appId = String((app as any).appId || app.id || '').trim();
+                                const isChecked = Boolean(campaignForm.scope?.specificAppIds?.includes(appId));
+                                return (
+                                  <label key={appId} className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 text-sm text-slate-700 hover:bg-slate-50">
+                                    <input type="checkbox" checked={isChecked} onChange={() => toggleSpecificApplication(appId)} />
+                                    <span className="font-semibold">{app.name}</span>
+                                    <span className="ml-auto text-[11px] text-slate-400">{app.appType || 'Application'}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
-              </div>
+              </section>
 
-              <div className={`rounded-2xl border p-5 ${launchStep === 3 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+              <section className={`rounded-2xl border p-5 ${launchStep === 3 ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'}`}>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Level 3</p>
                 <h4 className="text-base font-bold text-slate-900 mt-2">Reviewer Assignment</h4>
                 <div className="mt-4 space-y-4">
@@ -1591,7 +1660,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                     <p className="mt-1">Launch mode: {canLaunchImmediately ? 'Can launch now' : 'Future start date requires draft staging'}</p>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
 
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
