@@ -8,6 +8,7 @@ import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
 import ModalShell from './components/ModalShell';
+import { isEntraSsoConfigured, logoutFromEntra, signInWithEntraPopup } from './auth/entra';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode, CampaignConfigPayload } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
@@ -37,6 +38,7 @@ import {
   sendReviewNotifications,
   deleteReviewDraft,
   loginUser,
+  loginWithEntra,
   bootstrapFirstUser,
   changePassword,
   completeFirstLoginPasswordSetup,
@@ -108,9 +110,17 @@ function normalizeStringArray(input: unknown, fallback: string[]) {
 }
 
 type PersistedSession = {
-  user: { name: string; id: string; role: UserRole };
+  user: { name: string; id: string; role: UserRole; email?: string; authProvider?: 'LOCAL' | 'ENTRA' };
   activeTab: string;
   expiresAt: number;
+};
+
+type AuthenticatedUser = {
+  name: string;
+  id: string;
+  role: UserRole;
+  email?: string;
+  authProvider?: 'LOCAL' | 'ENTRA';
 };
 
 function readPersistedSession(): PersistedSession | null {
@@ -129,7 +139,7 @@ function readPersistedSession(): PersistedSession | null {
   }
 }
 
-function writePersistedSession(user: { name: string; id: string; role: UserRole }, activeTab: string, ttlMs: number) {
+function writePersistedSession(user: AuthenticatedUser, activeTab: string, ttlMs: number) {
   const payload: PersistedSession = {
     user,
     activeTab,
@@ -229,7 +239,7 @@ const App: React.FC = () => {
   const queryClient = useQueryClient();
   const lastSessionTouchRef = useRef(0);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [currentUser, setCurrentUser] = useState({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser>({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN, authProvider: 'LOCAL' });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionHydrated, setSessionHydrated] = useState(false);
   const [customization, setCustomization] = useState<AppCustomization>(DEFAULT_CUSTOMIZATION);
@@ -237,6 +247,7 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [loggingInWithMicrosoft, setLoggingInWithMicrosoft] = useState(false);
   const [showFirstUserSetup, setShowFirstUserSetup] = useState(false);
   const [setupUserId, setSetupUserId] = useState('ADM001');
   const [setupName, setSetupName] = useState('');
@@ -457,6 +468,24 @@ const App: React.FC = () => {
     () => normalizeIdleTimeoutMinutes(customization.idleTimeoutMinutes, DEFAULT_CUSTOMIZATION.idleTimeoutMinutes) * 60 * 1000,
     [customization.idleTimeoutMinutes]
   );
+  const entraSsoEnabled = isEntraSsoConfigured();
+
+  const applyAuthenticatedSession = (userPayload: any, authProvider: 'LOCAL' | 'ENTRA') => {
+    const roleRaw = String(userPayload?.role || '').toUpperCase();
+    const role = roleRaw === UserRole.ADMIN ? UserRole.ADMIN : roleRaw === UserRole.AUDITOR ? UserRole.AUDITOR : UserRole.USER;
+    const loggedInUser: AuthenticatedUser = {
+      name: String(userPayload?.name || userPayload?.userId || 'User'),
+      id: String(userPayload?.id || userPayload?.userId || ''),
+      email: String(userPayload?.email || '').trim().toLowerCase() || undefined,
+      role,
+      authProvider
+    };
+    const nextTab = role === UserRole.USER ? 'my-team-access' : 'dashboard';
+    setCurrentUser(loggedInUser);
+    setActiveTab(nextTab);
+    setIsAuthenticated(true);
+    writePersistedSession(loggedInUser, nextTab, sessionTtlMs);
+  };
 
   const handleLogin = async () => {
     setLoginError(null);
@@ -482,18 +511,7 @@ const App: React.FC = () => {
         setLoginPassword('');
         return;
       }
-      const roleRaw = String(res?.user?.role || '').toUpperCase();
-      const role = roleRaw === UserRole.ADMIN ? UserRole.ADMIN : roleRaw === UserRole.AUDITOR ? UserRole.AUDITOR : UserRole.USER;
-      const loggedInUser = {
-        name: String(res?.user?.name || res?.user?.userId || 'User'),
-        id: String(res?.user?.id || res?.user?.userId || ''),
-        role
-      };
-      const nextTab = role === UserRole.USER ? 'my-team-access' : 'dashboard';
-      setCurrentUser(loggedInUser);
-      setActiveTab(nextTab);
-      setIsAuthenticated(true);
-      writePersistedSession(loggedInUser, nextTab, sessionTtlMs);
+      applyAuthenticatedSession(res?.user, 'LOCAL');
     } catch (err: any) {
       const message = err?.message || 'Invalid emailId or password.';
       setLoginError(message);
@@ -508,14 +526,32 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
+  const handleMicrosoftLogin = async () => {
+    setLoginError(null);
+    setLoggingInWithMicrosoft(true);
+    try {
+      const tokenResult = await signInWithEntraPopup();
+      const accessToken = String(tokenResult.accessToken || '').trim();
+      if (!accessToken) throw new Error('Microsoft sign-in did not return an API access token.');
+      const res: any = await loginWithEntra(accessToken);
+      applyAuthenticatedSession(res?.user, 'ENTRA');
+    } catch (err: any) {
+      setLoginError(err?.message || 'Microsoft sign-in failed.');
+    } finally {
+      setLoggingInWithMicrosoft(false);
+    }
+  };
+
+  const handleLogout = async (remote = true) => {
+    const shouldLogoutFromEntra = remote && currentUser.authProvider === 'ENTRA';
     setIsAuthenticated(false);
     setActiveTab('dashboard');
     setLoginEmail('');
     setLoginPassword('');
     setLoginError(null);
     setLoggingIn(false);
-    setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN });
+    setLoggingInWithMicrosoft(false);
+    setCurrentUser({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN, authProvider: 'LOCAL' });
     setUsers([]);
     setApplications([]);
     setAccess([]);
@@ -526,6 +562,13 @@ const App: React.FC = () => {
     setSelectedAppId(null);
     clearPersistedSession();
     queryClient.clear();
+    if (shouldLogoutFromEntra) {
+      try {
+        await logoutFromEntra();
+      } catch (err) {
+        console.warn('Failed to complete Entra logout.', err);
+      }
+    }
   };
 
   useEffect(() => {
@@ -631,7 +674,7 @@ const App: React.FC = () => {
     const intervalId = window.setInterval(() => {
       const session = readPersistedSession();
       if (!session || Date.now() >= Number(session.expiresAt || 0)) {
-        handleLogout();
+        void handleLogout(false);
       }
     }, 60 * 1000);
 
@@ -1980,6 +2023,17 @@ useEffect(() => {
             >
               {loggingIn ? 'Signing In...' : 'Sign In'}
             </button>
+
+            {entraSsoEnabled && (
+              <button
+                type="button"
+                onClick={handleMicrosoftLogin}
+                disabled={loggingInWithMicrosoft}
+                className="w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loggingInWithMicrosoft ? 'Connecting to Microsoft...' : 'Sign In with Microsoft'}
+              </button>
+            )}
 
             <button
               type="button"

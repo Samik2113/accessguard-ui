@@ -5,6 +5,10 @@ interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
   readonly VITE_AZ_FUNC_KEY?: string;
   readonly VITE_GEMINI_API_KEY?: string;
+  readonly VITE_ENTRA_TENANT_ID?: string;
+  readonly VITE_ENTRA_CLIENT_ID?: string;
+  readonly VITE_ENTRA_API_SCOPE?: string;
+  readonly VITE_ENTRA_REDIRECT_URI?: string;
   // add other VITE_... variables as needed
 }
 
