@@ -13,6 +13,18 @@ function bad(status, error, req) {
   return { status, headers: cors(req), body: { ok: false, error } };
 }
 
+function normalizeIdentityValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getCandidateEmails(claims) {
+  return Array.from(new Set([
+    normalizeIdentityValue(claims.email),
+    normalizeIdentityValue(claims.preferred_username),
+    normalizeIdentityValue(claims.upn)
+  ].filter(Boolean)));
+}
+
 module.exports = async function (context, req) {
   try {
     if (req.method === 'OPTIONS') return { status: 204, headers: cors(req) };
@@ -24,8 +36,8 @@ module.exports = async function (context, req) {
     if (!conn) return bad(500, 'COSMOS_CONN not set', req);
 
     const claims = await verifyEntraAccessToken(token);
-    const email = String(claims.preferred_username || claims.email || claims.upn || '').trim().toLowerCase();
-    if (!email) return bad(401, 'Email claim was not found in Entra token.', req);
+    const candidateEmails = getCandidateEmails(claims);
+    if (candidateEmails.length === 0) return bad(401, 'Email claim was not found in Entra token.', req);
 
     const client = new CosmosClient(conn);
     const db = client.database('appdb');
@@ -33,15 +45,16 @@ module.exports = async function (context, req) {
     const hrC = db.container('hrUsers');
 
     const authQuery = await authC.items.query({
-      query: "SELECT TOP 1 * FROM c WHERE LOWER(c.email)=@email AND c.type=@type AND c.status='ACTIVE'",
+      query: "SELECT TOP 1 * FROM c WHERE ARRAY_CONTAINS(@emails, LOWER(c.email)) AND c.type=@type AND c.status='ACTIVE'",
       parameters: [
-        { name: '@email', value: email },
+        { name: '@emails', value: candidateEmails },
         { name: '@type', value: 'user-auth' }
       ]
     }).fetchAll();
 
     const authUser = authQuery.resources?.[0];
     if (!authUser) return bad(403, 'This Entra account is not provisioned in AccessGuard.', req);
+    const matchedEmail = normalizeIdentityValue(authUser.email) || candidateEmails[0];
 
     let hrProfile = null;
     try {
@@ -62,7 +75,7 @@ module.exports = async function (context, req) {
           id: String(authUser.userId),
           userId: String(authUser.userId),
           name: String(hrProfile?.name || claims.name || authUser.userId),
-          email,
+          email: matchedEmail,
           role: role === 'ADMIN' || role === 'AUDITOR' ? role : 'USER'
         },
         authProvider: 'ENTRA'
