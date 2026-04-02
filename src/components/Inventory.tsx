@@ -632,8 +632,6 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
 
         if (!loginId) reasons.push('Missing required field: Login ID/Name');
         if (!role) reasons.push('Missing required field: Role');
-        if (!email) reasons.push('Missing required field: E-mail ID (including HR fallback)');
-        if (!employeeId) reasons.push('Missing required field: Employee ID (including HR fallback)');
         if (!accountOwnerName) reasons.push('Missing required field: ID Owner/User Name');
 
         if (reasons.length > 0) {
@@ -704,10 +702,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
         if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
         if (!email && hr?.email) email = String(hr.email || '').trim();
+        if (!displayName) displayName = ids;
 
         if (!ids) reasons.push('Missing required field: Ids');
         if (!displayName) reasons.push('Missing required field: Display Name');
-        if (!email) reasons.push('Missing required field: Email Id (including HR fallback)');
         if (!mailboxAccess) reasons.push('Missing required field: Mailbox Access');
 
         if (reasons.length > 0) {
@@ -739,10 +737,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
         if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
         if (!email && hr?.email) email = String(hr.email || '').trim();
+        if (!displayName) displayName = ids;
 
         if (!ids) reasons.push('Missing required field: Ids');
         if (!displayName) reasons.push('Missing required field: Display Name');
-        if (!email) reasons.push('Missing required field: Email Id (including HR fallback)');
         if (!folderAccess) reasons.push('Missing required field: Folder Access');
 
         if (reasons.length > 0) {
