@@ -3,6 +3,7 @@ import { PublicClientApplication, type AuthenticationResult, type PopupRequest }
 const tenantId = String(import.meta.env.VITE_ENTRA_TENANT_ID || '').trim();
 const clientId = String(import.meta.env.VITE_ENTRA_CLIENT_ID || '').trim();
 const redirectUri = String(import.meta.env.VITE_ENTRA_REDIRECT_URI || window.location.origin).trim();
+const popupRedirectUri = String(import.meta.env.VITE_ENTRA_POPUP_REDIRECT_URI || `${window.location.origin}/entra-auth-callback.html`).trim();
 const apiScope = String(import.meta.env.VITE_ENTRA_API_SCOPE || '').trim();
 
 const configured = Boolean(tenantId && clientId && apiScope);
@@ -36,7 +37,8 @@ async function getMsalInstance() {
 function getPopupRequest(): PopupRequest {
   return {
     scopes: ['openid', 'profile', 'email', apiScope],
-    prompt: 'select_account'
+    prompt: 'select_account',
+    redirectUri: popupRedirectUri
   };
 }
 
