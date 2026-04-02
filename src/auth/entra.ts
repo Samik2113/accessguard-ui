@@ -1,9 +1,8 @@
-import { PublicClientApplication, type AuthenticationResult, type PopupRequest } from '@azure/msal-browser';
+import { PublicClientApplication, type AuthenticationResult, type RedirectRequest } from '@azure/msal-browser';
 
 const tenantId = String(import.meta.env.VITE_ENTRA_TENANT_ID || '').trim();
 const clientId = String(import.meta.env.VITE_ENTRA_CLIENT_ID || '').trim();
 const redirectUri = String(import.meta.env.VITE_ENTRA_REDIRECT_URI || window.location.origin).trim();
-const popupRedirectUri = String(import.meta.env.VITE_ENTRA_POPUP_REDIRECT_URI || `${window.location.origin}/entra-auth-callback.html`).trim();
 const apiScope = String(import.meta.env.VITE_ENTRA_API_SCOPE || '').trim();
 
 const configured = Boolean(tenantId && clientId && apiScope);
@@ -34,11 +33,11 @@ async function getMsalInstance() {
   return msalInstance;
 }
 
-function getPopupRequest(): PopupRequest {
+function getInteractiveRequest(): RedirectRequest {
   return {
     scopes: ['openid', 'profile', 'email', apiScope],
     prompt: 'select_account',
-    redirectUri: popupRedirectUri
+    redirectUri
   };
 }
 
@@ -46,26 +45,25 @@ export function isEntraSsoConfigured() {
   return configured;
 }
 
-export async function signInWithEntraPopup(): Promise<AuthenticationResult> {
+export async function signInWithEntraRedirect(): Promise<void> {
   const instance = await getMsalInstance();
-  const loginResult = await instance.loginPopup(getPopupRequest());
-  if (loginResult.account) instance.setActiveAccount(loginResult.account);
+  await instance.loginRedirect(getInteractiveRequest());
+}
 
-  try {
-    const silentResult = await instance.acquireTokenSilent({
+export async function completeEntraRedirectIfPresent(): Promise<AuthenticationResult | null> {
+  const instance = await getMsalInstance();
+  const result = await instance.handleRedirectPromise();
+  if (!result) return null;
+  if (result.account) instance.setActiveAccount(result.account);
+
+  if (result.accessToken) return result;
+
+  const tokenResult = await instance.acquireTokenSilent({
       scopes: [apiScope],
-      account: loginResult.account || instance.getActiveAccount() || undefined
+      account: result.account || instance.getActiveAccount() || undefined
     });
-    if (silentResult.account) instance.setActiveAccount(silentResult.account);
-    return silentResult;
-  } catch {
-    const popupResult = await instance.acquireTokenPopup({
-      scopes: [apiScope],
-      account: loginResult.account || instance.getActiveAccount() || undefined
-    });
-    if (popupResult.account) instance.setActiveAccount(popupResult.account);
-    return popupResult;
-  }
+  if (tokenResult.account) instance.setActiveAccount(tokenResult.account);
+  return tokenResult;
 }
 
 export async function logoutFromEntra() {

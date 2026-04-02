@@ -8,7 +8,7 @@ import Governance from './components/Governance';
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
 import ModalShell from './components/ModalShell';
-import { isEntraSsoConfigured, logoutFromEntra, signInWithEntraPopup } from './auth/entra';
+import { completeEntraRedirectIfPresent, isEntraSsoConfigured, logoutFromEntra, signInWithEntraRedirect } from './auth/entra';
 import { UserRole, ReviewCycle, ReviewStatus, ReviewItem, ActionStatus, AuditLog, User, ApplicationAccess, Application, EntitlementDefinition, SoDPolicy, AppCustomization, CertificationType, OrphanReviewerMode, CampaignConfigPayload } from './types';
 import { FileSpreadsheet, XCircle, Search, Calendar, Filter, User as UserIcon, Zap } from 'lucide-react';
 import { saveMessageToBackend } from './services/api';
@@ -238,6 +238,7 @@ function getOnPrimaryTextColor(input: unknown, fallback: string) {
 const App: React.FC = () => {
   const queryClient = useQueryClient();
   const lastSessionTouchRef = useRef(0);
+  const entraRedirectHandledRef = useRef(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser>({ name: 'Admin User', id: 'ADM001', role: UserRole.ADMIN, authProvider: 'LOCAL' });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -530,16 +531,10 @@ const App: React.FC = () => {
     setLoginError(null);
     setLoggingInWithMicrosoft(true);
     try {
-      const tokenResult = await signInWithEntraPopup();
-      const accessToken = String(tokenResult.accessToken || '').trim();
-      if (!accessToken) throw new Error('Microsoft sign-in did not return an API access token.');
-      console.info('[SSO] Access token acquired from Entra. Calling /api/auth-sso-login.');
-      const res: any = await loginWithEntra(accessToken);
-      applyAuthenticatedSession(res?.user, 'ENTRA');
+      await signInWithEntraRedirect();
     } catch (err: any) {
       console.error('[SSO] Microsoft sign-in failed before AccessGuard session creation.', err);
       setLoginError(err?.errorMessage || err?.message || err?.code || 'Microsoft sign-in failed.');
-    } finally {
       setLoggingInWithMicrosoft(false);
     }
   };
@@ -572,6 +567,28 @@ const App: React.FC = () => {
       }
     }
   };
+
+  useEffect(() => {
+    if (!entraSsoEnabled || entraRedirectHandledRef.current) return;
+    entraRedirectHandledRef.current = true;
+
+    (async () => {
+      try {
+        const tokenResult = await completeEntraRedirectIfPresent();
+        if (!tokenResult) return;
+        const accessToken = String(tokenResult.accessToken || '').trim();
+        if (!accessToken) throw new Error('Microsoft sign-in did not return an API access token.');
+        console.info('[SSO] Access token acquired from Entra redirect. Calling /api/auth-sso-login.');
+        const res: any = await loginWithEntra(accessToken);
+        applyAuthenticatedSession(res?.user, 'ENTRA');
+      } catch (err: any) {
+        console.error('[SSO] Microsoft redirect sign-in failed before AccessGuard session creation.', err);
+        setLoginError(err?.errorMessage || err?.message || err?.code || 'Microsoft sign-in failed.');
+      } finally {
+        setLoggingInWithMicrosoft(false);
+      }
+    })();
+  }, [entraSsoEnabled, sessionTtlMs]);
 
   useEffect(() => {
     const persisted = readPersistedSession();
