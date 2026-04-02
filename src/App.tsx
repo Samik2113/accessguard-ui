@@ -152,6 +152,31 @@ function clearPersistedSession() {
   localStorage.removeItem(SESSION_STORAGE_KEY);
 }
 
+function decodeJwtPart(token: string, index: number) {
+  const part = String(token || '').split('.')[index] || '';
+  const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  try {
+    return JSON.parse(window.atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function logSsoTokenMetadata(accessToken: string) {
+  const header = decodeJwtPart(accessToken, 0) || {};
+  const payload = decodeJwtPart(accessToken, 1) || {};
+  console.info('[SSO] Token metadata', {
+    alg: header.alg,
+    typ: header.typ,
+    aud: payload.aud,
+    iss: payload.iss,
+    scp: payload.scp,
+    azp: payload.azp,
+    appid: payload.appid
+  });
+}
+
 function readCustomization(): AppCustomization {
   try {
     const raw = localStorage.getItem(CUSTOMIZATION_STORAGE_KEY);
@@ -578,6 +603,7 @@ const App: React.FC = () => {
         if (!tokenResult) return;
         const accessToken = String(tokenResult.accessToken || '').trim();
         if (!accessToken) throw new Error('Microsoft sign-in did not return an API access token.');
+        logSsoTokenMetadata(accessToken);
         console.info('[SSO] Access token acquired from Entra redirect. Calling /api/auth-sso-login.');
         const res: any = await loginWithEntra(accessToken);
         applyAuthenticatedSession(res?.user, 'ENTRA');
