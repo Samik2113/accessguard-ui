@@ -3,7 +3,7 @@ module.exports = async function (context, req) {
   try {
     if (req.method === "OPTIONS") return { status: 204, headers: cors(req) };
 
-    // managerId is OPTIONAL for reads
+    //  managerId is OPTIONAL for reads
     const managerId = (req.query?.managerId || "").trim();
     const status = (req.query?.status || "").trim().toUpperCase(); // optional
     const appId = (req.query?.appId || "").trim(); // optional
