@@ -533,10 +533,12 @@ const App: React.FC = () => {
       const tokenResult = await signInWithEntraPopup();
       const accessToken = String(tokenResult.accessToken || '').trim();
       if (!accessToken) throw new Error('Microsoft sign-in did not return an API access token.');
+      console.info('[SSO] Access token acquired from Entra. Calling /api/auth-sso-login.');
       const res: any = await loginWithEntra(accessToken);
       applyAuthenticatedSession(res?.user, 'ENTRA');
     } catch (err: any) {
-      setLoginError(err?.message || 'Microsoft sign-in failed.');
+      console.error('[SSO] Microsoft sign-in failed before AccessGuard session creation.', err);
+      setLoginError(err?.errorMessage || err?.message || err?.code || 'Microsoft sign-in failed.');
     } finally {
       setLoggingInWithMicrosoft(false);
     }
