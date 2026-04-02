@@ -1,4 +1,4 @@
-import { PublicClientApplication, type AuthenticationResult, type RedirectRequest } from '@azure/msal-browser';
+import { InteractionRequiredAuthError, PublicClientApplication, type AuthenticationResult, type RedirectRequest } from '@azure/msal-browser';
 
 const tenantId = String(import.meta.env.VITE_ENTRA_TENANT_ID || '').trim();
 const clientId = String(import.meta.env.VITE_ENTRA_CLIENT_ID || '').trim();
@@ -35,9 +35,17 @@ async function getMsalInstance() {
 
 function getInteractiveRequest(): RedirectRequest {
   return {
-    scopes: ['openid', 'profile', 'email', apiScope],
+    scopes: ['openid', 'profile', 'email'],
     prompt: 'select_account',
     redirectUri
+  };
+}
+
+function getApiTokenRequest(account?: AuthenticationResult['account'] | null): RedirectRequest {
+  return {
+    scopes: [apiScope],
+    redirectUri,
+    account: account || undefined
   };
 }
 
@@ -56,14 +64,18 @@ export async function completeEntraRedirectIfPresent(): Promise<AuthenticationRe
   if (!result) return null;
   if (result.account) instance.setActiveAccount(result.account);
 
-  if (result.accessToken) return result;
-
-  const tokenResult = await instance.acquireTokenSilent({
-      scopes: [apiScope],
-      account: result.account || instance.getActiveAccount() || undefined
-    });
-  if (tokenResult.account) instance.setActiveAccount(tokenResult.account);
-  return tokenResult;
+  const account = result.account || instance.getActiveAccount() || undefined;
+  try {
+    const tokenResult = await instance.acquireTokenSilent(getApiTokenRequest(account));
+    if (tokenResult.account) instance.setActiveAccount(tokenResult.account);
+    return tokenResult;
+  } catch (err) {
+    if (err instanceof InteractionRequiredAuthError) {
+      await instance.acquireTokenRedirect(getApiTokenRequest(account));
+      return null;
+    }
+    throw err;
+  }
 }
 
 export async function logoutFromEntra() {
