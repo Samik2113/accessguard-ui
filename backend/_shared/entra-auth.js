@@ -1,17 +1,42 @@
 let joseModulePromise = null;
 const jwksByTenant = new Map();
+const JWKS_TTL_MS = 60 * 60 * 1000;
 
 async function getJose() {
   if (!joseModulePromise) joseModulePromise = import('jose');
   return joseModulePromise;
 }
 
-async function getRemoteJwks(tenantId) {
-  if (!jwksByTenant.has(tenantId)) {
-    const { createRemoteJWKSet } = await getJose();
-    jwksByTenant.set(tenantId, createRemoteJWKSet(new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`)));
+async function getLocalJwks(tenantId) {
+  const cached = jwksByTenant.get(tenantId);
+  if (cached && Date.now() - cached.loadedAt < JWKS_TTL_MS) {
+    return cached.jwks;
   }
-  return jwksByTenant.get(tenantId);
+
+  const response = await fetch(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Entra JWKS: HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  const keys = Array.isArray(body?.keys) ? body.keys : [];
+  const normalizedKeys = keys
+    .filter((key) => String(key?.use || '').toLowerCase() === 'sig')
+    .filter((key) => String(key?.kty || '').toUpperCase() === 'RSA')
+    .map((key) => {
+      const clone = { ...key };
+      delete clone.alg;
+      return clone;
+    });
+
+  if (normalizedKeys.length === 0) {
+    throw new Error('Entra JWKS did not contain any RSA signing keys.');
+  }
+
+  const { createLocalJWKSet } = await getJose();
+  const jwks = createLocalJWKSet({ keys: normalizedKeys });
+  jwksByTenant.set(tenantId, { jwks, loadedAt: Date.now() });
+  return jwks;
 }
 
 function normalizeBearerToken(req) {
@@ -29,11 +54,18 @@ async function verifyEntraAccessToken(token, opts = {}) {
   if (!audience && !audienceUri) throw new Error('ENTRA_API_AUDIENCE or ENTRA_API_AUDIENCE_URI not set');
   if (!token) throw new Error('Bearer token is required');
 
-  const { jwtVerify } = await getJose();
-  const jwks = await getRemoteJwks(tenantId);
+  const { decodeProtectedHeader, jwtVerify } = await getJose();
+  const header = decodeProtectedHeader(token);
+  const alg = String(header?.alg || '');
+  if (!['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'].includes(alg)) {
+    throw new Error(`Unsupported token signing algorithm: ${alg || 'unknown'}`);
+  }
+
+  const jwks = await getLocalJwks(tenantId);
   const result = await jwtVerify(token, jwks, {
     issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
-    audience: [audience, audienceUri].filter(Boolean)
+    audience: [audience, audienceUri].filter(Boolean),
+    algorithms: [alg]
   });
   return result.payload;
 }
