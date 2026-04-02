@@ -29,7 +29,8 @@ module.exports = async function (context, req) {
   try {
     if (req.method === 'OPTIONS') return { status: 204, headers: cors(req) };
 
-    const token = normalizeBearerToken(req);
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const token = String(body.accessToken || '').trim() || normalizeBearerToken(req);
     if (!token) return bad(401, 'Authorization bearer token is required.', req);
 
     const conn = process.env.COSMOS_CONN;

@@ -389,11 +389,7 @@ export const loginUser = (payload: { email: string; password: string }) =>
   postJson("/api/auth-login", payload);
 
 export const loginWithEntra = (accessToken: string) =>
-  postJson("/api/auth-sso-login", {}, {}, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`
-    }
-  });
+  postJson("/api/auth-sso-login", { accessToken });
 
 export const bootstrapFirstUser = (payload: { userId?: string; name: string; email: string; password: string }) =>
   postJson("/api/auth-bootstrap-first-user", payload);
