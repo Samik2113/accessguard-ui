@@ -62,8 +62,13 @@ async function verifyEntraAccessToken(token, opts = {}) {
   }
 
   const jwks = await getLocalJwks(tenantId);
+  const acceptedIssuers = [
+    `https://login.microsoftonline.com/${tenantId}/v2.0`,
+    `https://sts.windows.net/${tenantId}/`,
+    `https://sts.windows.net/${tenantId}`
+  ];
   const result = await jwtVerify(token, jwks, {
-    issuer: `https://login.microsoftonline.com/${tenantId}/v2.0`,
+    issuer: acceptedIssuers,
     audience: [audience, audienceUri].filter(Boolean),
     algorithms: [alg]
   });
