@@ -166,12 +166,13 @@ module.exports = async function (context, req) {
 
     /** Distinct users */
     const users = [...new Set(docs.map(d => d.userId))];
+    const correlationKeys = [...new Set(docs.map(getCorrelationLookupKey).filter(Boolean))];
 
     /** HR correlation cache */
     const hrCache = new Map();
-    await Promise.allSettled(users.map(async u => {
-      const hr = await getHrUser(hrC, u);
-      hrCache.set(u, hr);
+    await Promise.allSettled(correlationKeys.map(async key => {
+      const hr = await getHrUser(hrC, key);
+      hrCache.set(key, hr);
     }));
 
     /** Existing entitlements (for SoD scope=app or global) */
@@ -194,7 +195,7 @@ module.exports = async function (context, req) {
     const successUpsertIDs = [];
 
     for (const doc of docs) {
-      const hr = hrCache.get(doc.userId);
+      const hr = hrCache.get(getCorrelationLookupKey(doc));
 
       /** Build correlation */
       const correlation = buildCorrelation(hr, now);
@@ -256,13 +257,12 @@ module.exports = async function (context, req) {
               ok: false,
               error: {
                 code: "ETAG_MISMATCH",
-    const correlationKeys = [...new Set(docs.map(getCorrelationLookupKey).filter(Boolean))];
                 message: "Resource changed",
                 details: { id: d.id, expectedEtag, currentEtag }
               }
-    await Promise.allSettled(correlationKeys.map(async key => {
-      const hr = await getHrUser(hrC, key);
-      hrCache.set(key, hr);
+            }
+          };
+        }
 
         updateRows.push({ id: d.id, etag: expectedEtag });
       } catch (readErr) {
@@ -284,8 +284,6 @@ module.exports = async function (context, req) {
       return true;
     };
     const { ok: upOk, fail: upFail, errors: upErrors } = await runBatches(finalDocs, 50, upsertOne);
-
-      const hr = hrCache.get(getCorrelationLookupKey(doc));
     const uploadedIds = new Set(successUpsertIDs);
     const existingIdsForApp = await listIdsForApp(accountsC, appIdOfBatch);
     const toDelete = existingIdsForApp.filter(id => !uploadedIds.has(id));
