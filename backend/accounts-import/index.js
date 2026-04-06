@@ -256,12 +256,13 @@ module.exports = async function (context, req) {
               ok: false,
               error: {
                 code: "ETAG_MISMATCH",
+    const correlationKeys = [...new Set(docs.map(getCorrelationLookupKey).filter(Boolean))];
                 message: "Resource changed",
                 details: { id: d.id, expectedEtag, currentEtag }
               }
-            }
-          };
-        }
+    await Promise.allSettled(correlationKeys.map(async key => {
+      const hr = await getHrUser(hrC, key);
+      hrCache.set(key, hr);
 
         updateRows.push({ id: d.id, etag: expectedEtag });
       } catch (readErr) {
@@ -284,7 +285,7 @@ module.exports = async function (context, req) {
     };
     const { ok: upOk, fail: upFail, errors: upErrors } = await runBatches(finalDocs, 50, upsertOne);
 
-    /** Step 2 — Sync Delete (only consider succeeded upserts) */
+      const hr = hrCache.get(getCorrelationLookupKey(doc));
     const uploadedIds = new Set(successUpsertIDs);
     const existingIdsForApp = await listIdsForApp(accountsC, appIdOfBatch);
     const toDelete = existingIdsForApp.filter(id => !uploadedIds.has(id));
@@ -352,13 +353,31 @@ function cors(req) {
 
 /** HR correlation lookup */
 async function getHrUser(hrC, userId) {
+  const rawValue = String(userId || "").trim();
+  const normalizedValue = normalizeLookupValue(rawValue);
+  if (!normalizedValue) return null;
+
   try {
-    const { resource } = await hrC.item(userId, userId).read();
-    return resource || null;
+    const { resource } = await hrC.item(rawValue, rawValue).read();
+    if (resource) return resource;
   } catch (e) {
-    if (e.code === 404) return null;
-    throw e;
+    if (e.code !== 404) throw e;
   }
+
+  const { resources } = await hrC.items.query({
+    query: "SELECT TOP 1 * FROM c WHERE LOWER(c.userId)=@value OR LOWER(c.id)=@value OR LOWER(c.employeeId)=@value OR LOWER(c.email)=@value OR LOWER(c.name)=@value",
+    parameters: [{ name: "@value", value: normalizedValue }]
+  }).fetchAll();
+
+  return resources?.[0] || null;
+}
+
+function normalizeLookupValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getCorrelationLookupKey(doc) {
+  return normalizeLookupValue(doc?.correlationValue || doc?.employeeId || doc?.email || doc?.userId);
 }
 
 function buildCorrelation(hr, now) {
@@ -374,7 +393,7 @@ function buildCorrelation(hr, now) {
     isCorrelated: true,
     status,
     hrUserId: hr.userId || hr.employeeId,
-    displayName: hr.displayName || hr.fullName,
+    displayName: hr.displayName || hr.fullName || hr.name,
     department: hr.department || hr.org,
     checkedAt: now
   };

@@ -237,11 +237,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'ids';
     return 'employeeId';
   };
+  const getRecordKeyFieldKey = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'loginName';
+    if (appType === 'Servers') return 'userId';
+    if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'ids';
+    return 'loginId';
+  };
   const getCorrelationFieldLabel = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'Login Name';
     if (appType === 'Servers') return 'Users ID';
     if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'Ids';
     return 'Employee ID';
+  };
+  const getRecordKeyFieldLabel = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Database') return 'Record Login Name';
+    if (appType === 'Servers') return 'Record Users ID';
+    if (appType === 'Shared Mailbox') return 'Record Mailbox ID';
+    if (appType === 'Shared Folder') return 'Record Folder ID';
+    return 'Record Login ID/Name';
   };
   const getEntitlementFieldKey = (appType: NonNullable<Application['appType']>) => {
     if (appType === 'Database') return 'dbRole';
@@ -264,16 +277,27 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'Choose the Ids column that best correlates the shared resource access record to an HR identity.';
     return 'Choose the column used to correlate feed records with HR identities.';
   };
+  const getRecordKeyFieldGuidance = (appType: NonNullable<Application['appType']>) => {
+    if (appType === 'Application') return 'Choose the one account identifier column that must be present for a row to import.';
+    if (appType === 'Database') return 'Choose the database account identifier column that must be present for a row to import.';
+    if (appType === 'Servers') return 'Choose the server account identifier column that must be present for a row to import.';
+    if (appType === 'Shared Mailbox' || appType === 'Shared Folder') return 'Choose the shared resource identifier column that must be present for a row to import.';
+    return 'Choose the source column that makes a record valid for import.';
+  };
   const getResolvedAccountSchema = (app?: Application | null) => {
     const appType = getResolvedAppType(app);
     const fallback = buildDefaultAccountSchema(appType);
     const current = app?.accountSchema;
+    const fallbackCorrelationKey = getCorrelationFieldKey(appType);
+    const fallbackRecordKey = getRecordKeyFieldKey(appType);
     return {
       schemaAppType: appType,
       mappings: {
         ...fallback.mappings,
         ...(current?.mappings || {})
       },
+      correlationColumn: String(current?.correlationColumn || current?.mappings?.[fallbackCorrelationKey] || fallback.correlationColumn || fallback.mappings[fallbackCorrelationKey] || '').trim(),
+      recordKeyColumn: String(current?.recordKeyColumn || current?.mappings?.[fallbackRecordKey] || fallback.recordKeyColumn || fallback.mappings[fallbackRecordKey] || '').trim(),
       ignoreColumns: Array.isArray(current?.ignoreColumns)
         ? current.ignoreColumns.map(v => String(v || '').trim()).filter(Boolean)
         : [],
@@ -513,24 +537,65 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     return isTerminatedUser(user);
   };
 
-  const getHrFallback = (seed: { employeeId?: string; email?: string; loginId?: string; userId?: string }) => {
+  const getHrFallback = (seed: { employeeId?: string; email?: string; loginId?: string; userId?: string; correlationValue?: string }) => {
     const employeeId = String(seed.employeeId || '').trim();
     const email = String(seed.email || '').trim().toLowerCase();
     const loginId = String(seed.loginId || seed.userId || '').trim();
+    const correlationValue = String(seed.correlationValue || '').trim().toLowerCase();
+
+    const findMatchingUser = (value: string) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (!normalized) return undefined;
+      return users.find((user) => {
+        const candidates = [
+          user.id,
+          user.email,
+          user.name,
+          (user as any).employeeId,
+          (user as any).managerId
+        ].map((candidate) => String(candidate || '').trim().toLowerCase()).filter(Boolean);
+        return candidates.includes(normalized);
+      });
+    };
 
     if (employeeId) {
-      const byId = users.find(u => String(u.id || '').trim().toLowerCase() === employeeId.toLowerCase());
+      const byId = findMatchingUser(employeeId);
       if (byId) return byId;
     }
     if (email) {
-      const byEmail = users.find(u => String(u.email || '').trim().toLowerCase() === email);
+      const byEmail = findMatchingUser(email);
       if (byEmail) return byEmail;
     }
+    if (correlationValue) {
+      const byCorrelation = findMatchingUser(correlationValue);
+      if (byCorrelation) return byCorrelation;
+    }
     if (loginId) {
-      const byLogin = users.find(u => String(u.id || '').trim().toLowerCase() === loginId.toLowerCase());
+      const byLogin = findMatchingUser(loginId);
       if (byLogin) return byLogin;
     }
     return undefined;
+  };
+
+  const resolveManagerMeta = (managerValue: string) => {
+    const normalized = String(managerValue || '').trim();
+    if (!normalized) return { primary: 'N/A', secondary: '-' };
+
+    const manager = users.find((user) => {
+      const candidates = [user.id, user.email, user.name, (user as any).employeeId]
+        .map((candidate) => String(candidate || '').trim().toLowerCase())
+        .filter(Boolean);
+      return candidates.includes(normalized.toLowerCase());
+    });
+
+    if (!manager) {
+      return { primary: normalized, secondary: normalized };
+    }
+
+    return {
+      primary: String(manager.name || normalized).trim(),
+      secondary: String(manager.id || (manager as any).employeeId || normalized).trim()
+    };
   };
 
   const downloadImportErrorReport = (errors: Array<{ row: number; reasons: string[]; raw: Record<string, any> }>) => {
@@ -596,6 +661,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     template.fields.forEach(field => {
       resolvedByField[field.key] = resolveHeader(field.key, field.aliases || []);
     });
+    const selectedCorrelationColumn = String(schema.correlationColumn || resolvedByField[getCorrelationFieldKey(appType)] || '').trim();
+    const selectedRecordKeyColumn = String(schema.recordKeyColumn || resolvedByField[getRecordKeyFieldKey(appType)] || '').trim();
+    const selectedRecordKeyLabel = getRecordKeyFieldLabel(appType);
 
     const validRows: any[] = [];
     const failedRows: Array<{ row: number; reasons: string[]; raw: Record<string, any> }> = [];
@@ -609,15 +677,24 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         if (ignoreSet.has(normalizeHeader(sourceHeader))) return '';
         return String(raw[sourceHeader] ?? '').trim();
       };
+      const pickFromColumn = (columnName: string) => {
+        const sourceHeader = String(columnName || '').trim();
+        if (!sourceHeader) return '';
+        if (ignoreSet.has(normalizeHeader(sourceHeader))) return '';
+        const resolvedHeader = headerLookup.get(normalizeHeader(sourceHeader)) || sourceHeader;
+        return String(raw[resolvedHeader] ?? '').trim();
+      };
       const customAttributes = customColumns.reduce((acc, col) => {
         const sourceHeader = headerLookup.get(normalizeHeader(col)) || col;
         const value = String(raw[sourceHeader] ?? '').trim();
         if (value) acc[col] = value;
         return acc;
       }, {} as Record<string, string>);
+      const recordKeyValue = pickFromColumn(selectedRecordKeyColumn);
+      const correlationValue = pickFromColumn(selectedCorrelationColumn);
 
       if (appType === 'Application') {
-        const loginId = pick('loginId');
+        let loginId = pick('loginId') || recordKeyValue;
         const role = pick('role');
         let email = pick('email');
         let employeeId = pick('employeeId');
@@ -625,12 +702,12 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         let accountOwnerName = pick('accountOwnerName');
         const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
 
-        const hr = getHrFallback({ employeeId, email, loginId });
+        const hr = getHrFallback({ employeeId, email, loginId, correlationValue });
         if (!email && employeeId && hr?.email) email = String(hr.email || '').trim();
         if (!employeeId && hr?.id) employeeId = String(hr.id || '').trim();
-        if (!accountOwnerName) accountOwnerName = loginId;
+        if (!accountOwnerName) accountOwnerName = loginId || recordKeyValue;
 
-        if (!loginId) reasons.push('Missing required field: Login ID/Name');
+        if (!recordKeyValue) reasons.push(`Missing required field: ${selectedRecordKeyLabel}`);
         if (!role) reasons.push('Missing required field: Role');
         if (!accountOwnerName) reasons.push('Missing required field: ID Owner/User Name');
 
@@ -649,6 +726,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           employeeId,
           lastLoginDetails: lastLoginAt,
           accountOwnerName,
+          correlationValue: correlationValue || undefined,
+          correlationColumn: selectedCorrelationColumn || undefined,
           customAttributes,
           accountId: loginId
         });
@@ -656,20 +735,19 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       }
 
       if (appType === 'Database') {
-        const loginName = pick('loginName');
+        const loginName = pick('loginName') || recordKeyValue;
         const userType = pick('userType');
         const dbRole = pick('dbRole');
         const createDate = pick('createDate');
         let userDetails = pick('userDetails');
         const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
 
-        const hr = getHrFallback({ loginId: loginName, userId: loginName });
+        const hr = getHrFallback({ loginId: loginName, userId: loginName, correlationValue });
         if (!userDetails && hr?.name) userDetails = String(hr.name || '').trim();
+        if (!userDetails) userDetails = loginName || recordKeyValue;
 
-        if (!loginName) reasons.push('Missing required field: Login Name');
-        if (!userType) reasons.push('Missing required field: User Type');
+        if (!recordKeyValue) reasons.push(`Missing required field: ${selectedRecordKeyLabel}`);
         if (!dbRole) reasons.push('Missing required field: DB Role');
-        if (!userDetails) reasons.push('Missing required field: User Details (including HR fallback)');
 
         if (reasons.length > 0) {
           failedRows.push({ row: rowNum, reasons, raw });
@@ -686,6 +764,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           userType,
           createDate,
           userDetails,
+          correlationValue: correlationValue || undefined,
+          correlationColumn: selectedCorrelationColumn || undefined,
           customAttributes,
           accountId: loginName
         });
@@ -693,18 +773,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       }
 
       if (appType === 'Shared Mailbox') {
-        const ids = pick('ids');
+        const ids = pick('ids') || recordKeyValue;
         let displayName = pick('displayName');
         let email = pick('email');
         const mailboxAccess = pick('mailboxAccess');
         const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
 
-        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
+        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email, correlationValue });
         if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
         if (!email && hr?.email) email = String(hr.email || '').trim();
         if (!displayName) displayName = ids;
 
-        if (!ids) reasons.push('Missing required field: Ids');
+        if (!recordKeyValue) reasons.push(`Missing required field: ${selectedRecordKeyLabel}`);
         if (!displayName) reasons.push('Missing required field: Display Name');
         if (!mailboxAccess) reasons.push('Missing required field: Mailbox Access');
 
@@ -721,6 +801,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           entitlement: mailboxAccess,
           accountStatus,
           displayName,
+          correlationValue: correlationValue || undefined,
+          correlationColumn: selectedCorrelationColumn || undefined,
           customAttributes,
           accountId: ids
         });
@@ -728,18 +810,18 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       }
 
       if (appType === 'Shared Folder') {
-        const ids = pick('ids');
+        const ids = pick('ids') || recordKeyValue;
         let displayName = pick('displayName');
         let email = pick('email');
         const folderAccess = pick('folderAccess');
         const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
 
-        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email });
+        const hr = getHrFallback({ employeeId: ids, loginId: ids, userId: ids, email, correlationValue });
         if (!displayName && hr?.name) displayName = String(hr.name || '').trim();
         if (!email && hr?.email) email = String(hr.email || '').trim();
         if (!displayName) displayName = ids;
 
-        if (!ids) reasons.push('Missing required field: Ids');
+        if (!recordKeyValue) reasons.push(`Missing required field: ${selectedRecordKeyLabel}`);
         if (!displayName) reasons.push('Missing required field: Display Name');
         if (!folderAccess) reasons.push('Missing required field: Folder Access');
 
@@ -756,19 +838,20 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           entitlement: folderAccess,
           accountStatus,
           displayName,
+          correlationValue: correlationValue || undefined,
+          correlationColumn: selectedCorrelationColumn || undefined,
           customAttributes,
           accountId: ids
         });
         return;
       }
 
-      const userId = pick('userId');
-      const userName = pick('userName');
+      const userId = pick('userId') || recordKeyValue;
+      const userName = pick('userName') || userId || recordKeyValue;
       const privilegeLevel = pick('privilegeLevel');
       const accountStatus = normalizeAccountStatus(pick('accountStatus'), app);
 
-      if (!userId) reasons.push('Missing required field: Users ID');
-      if (!userName) reasons.push('Missing required field: User Name');
+      if (!recordKeyValue) reasons.push(`Missing required field: ${selectedRecordKeyLabel}`);
       if (!privilegeLevel) reasons.push('Missing required field: Admin/root');
 
       if (reasons.length > 0) {
@@ -783,6 +866,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         entitlement: privilegeLevel,
         isPrivileged: /admin|root/i.test(privilegeLevel),
         accountStatus,
+        correlationValue: correlationValue || undefined,
+        correlationColumn: selectedCorrelationColumn || undefined,
         customAttributes,
         accountId: userId
       });
@@ -821,6 +906,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
       ...schema,
       schemaAppType: appType,
       mappings,
+      correlationColumn: String(schema.correlationColumn || mappings[getCorrelationFieldKey(appType)] || '').trim(),
+      recordKeyColumn: String(schema.recordKeyColumn || mappings[getRecordKeyFieldKey(appType)] || '').trim(),
       customColumns: Array.from(new Set([...(schema.customColumns || []), ...suggestedCustomColumns]))
     };
   };
@@ -830,13 +917,17 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     const targetApp = getAppRecord(pendingAccountUpload.appId);
     if (!targetApp || !uploadSchemaDraft) return;
     const appType = getResolvedAppType(targetApp);
-    const correlationFieldKey = getCorrelationFieldKey(appType);
     const entitlementFieldKey = getEntitlementFieldKey(appType);
-    const selectedCorrelationColumn = String(uploadSchemaDraft.mappings?.[correlationFieldKey] || '').trim();
+    const selectedCorrelationColumn = String(uploadSchemaDraft.correlationColumn || '').trim();
+    const selectedRecordKeyColumn = String(uploadSchemaDraft.recordKeyColumn || '').trim();
     const selectedEntitlementColumn = String(uploadSchemaDraft.mappings?.[entitlementFieldKey] || '').trim();
 
     if (!selectedCorrelationColumn) {
       alert(`Please select a feed column for correlation (${getCorrelationFieldLabel(appType)}).`);
+      return;
+    }
+    if (!selectedRecordKeyColumn) {
+      alert(`Please select a feed column for the mandatory record identifier (${getRecordKeyFieldLabel(appType)}).`);
       return;
     }
     if (!selectedEntitlementColumn) {
@@ -1304,6 +1395,26 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
           ...(prev.mappings || {}),
           [fieldKey]: sourceColumn
         }
+      };
+    });
+  };
+
+  const updateUploadCorrelationColumn = (sourceColumn: string) => {
+    setUploadSchemaDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        correlationColumn: sourceColumn
+      };
+    });
+  };
+
+  const updateUploadRecordKeyColumn = (sourceColumn: string) => {
+    setUploadSchemaDraft(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        recordKeyColumn: sourceColumn
       };
     });
   };
@@ -1964,7 +2075,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                       const userViolations = Array.from(new Set(userAccess.flatMap(a => a.violatedPolicyIds || [])));
                       const hasSod = userAccess.some(a => a.isSoDConflict);
                       const hasTerminationRisk = isTerminatedUser(u) && userAccess.some((entry) => normalizeAccountStatus((entry as any).accountStatus, getAppRecord(entry.appId)) === 'ACTIVE');
-                      const manager = users.find(m => m.id === u.managerId);
+                      const managerMeta = resolveManagerMeta(u.managerId);
                       const hrStatus = normalizeHrStatus(resolveHrStatusSource(u));
                       return (
                         <tr key={u.id} className="hover:bg-slate-50 transition-colors">
@@ -1988,8 +2099,8 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="text-slate-700 font-semibold">{manager?.name || 'N/A'}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{u.managerId || '-'}</div>
+                            <div className="text-slate-700 font-semibold">{managerMeta.primary}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{managerMeta.secondary}</div>
                           </td>
                           {hrAdditionalColumns.map((column) => (
                             <td key={`${u.id}-${column}`} className="px-6 py-4 text-slate-600 font-medium whitespace-nowrap">
@@ -2898,9 +3009,9 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         <ModalShell overlayClassName="z-50" panelClassName="max-w-4xl max-h-[85vh] p-8">
             {(() => {
               const mapperAppType = selectedAppRecord ? getResolvedAppType(selectedAppRecord) : 'Application';
-              const correlationFieldKey = getCorrelationFieldKey(mapperAppType);
               const entitlementFieldKey = getEntitlementFieldKey(mapperAppType);
               const correlationFieldLabel = getCorrelationFieldLabel(mapperAppType);
+              const recordKeyFieldLabel = getRecordKeyFieldLabel(mapperAppType);
               const entitlementFieldLabel = getEntitlementFieldLabel(mapperAppType);
               return (
                 <>
@@ -2915,17 +3026,31 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
             <div className="mt-6 max-h-[65vh] overflow-y-auto space-y-6 pr-1">
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
                 <p className="text-xs font-black text-blue-900 uppercase tracking-wider">Required Upload Selections</p>
-                <p className="text-[11px] text-blue-800">{getCorrelationFieldGuidance(mapperAppType)}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <p className="text-[11px] text-blue-800">{getCorrelationFieldGuidance(mapperAppType)}</p>
+                  <p className="text-[11px] text-blue-800">{getRecordKeyFieldGuidance(mapperAppType)}</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Correlation Column ({correlationFieldLabel}) *</label>
                     <select
                       className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs"
-                      value={uploadSchemaDraft.mappings?.[correlationFieldKey] || ''}
-                      onChange={(event) => updateUploadMapping(correlationFieldKey, event.target.value)}
+                      value={uploadSchemaDraft.correlationColumn || ''}
+                      onChange={(event) => updateUploadCorrelationColumn(event.target.value)}
                     >
                       <option value="">-- Select Correlation Column --</option>
                       {pendingAccountUpload.headers.map(header => <option key={`correlation-${header}`} value={header}>{header}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Mandatory Record Column ({recordKeyFieldLabel}) *</label>
+                    <select
+                      className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs"
+                      value={uploadSchemaDraft.recordKeyColumn || ''}
+                      onChange={(event) => updateUploadRecordKeyColumn(event.target.value)}
+                    >
+                      <option value="">-- Select Record Column --</option>
+                      {pendingAccountUpload.headers.map(header => <option key={`record-${header}`} value={header}>{header}</option>)}
                     </select>
                   </div>
                   <div>

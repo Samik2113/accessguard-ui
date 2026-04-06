@@ -264,6 +264,8 @@ export interface AppTypeSchemaTemplate {
 export interface AppAccountSchemaConfig {
   schemaAppType: NonNullable<Application['appType']>;
   mappings: Record<string, string>;
+  correlationColumn?: string;
+  recordKeyColumn?: string;
   ignoreColumns: string[];
   customColumns?: string[];
   statusRules: {

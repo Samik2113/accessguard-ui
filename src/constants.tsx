@@ -91,8 +91,8 @@ export const APP_TYPE_SCHEMA_TEMPLATES: Record<NonNullable<Application['appType'
     appType: 'Application',
     fields: [
       { key: 'loginId', label: 'Login ID/Name', required: true, aliases: ['loginid', 'login_name', 'userid', 'user_id', 'user'] },
-      { key: 'email', label: 'E-mail ID', required: true, aliases: ['email', 'emailid', 'mail', 'email_id'] },
-      { key: 'employeeId', label: 'Employee ID', required: true, aliases: ['employeeid', 'empid', 'workerid', 'personid'] },
+      { key: 'email', label: 'E-mail ID', required: false, aliases: ['email', 'emailid', 'mail', 'email_id'] },
+      { key: 'employeeId', label: 'Employee ID', required: false, aliases: ['employeeid', 'empid', 'workerid', 'personid'] },
       { key: 'role', label: 'Role', required: true, aliases: ['role', 'entitlement', 'accessrole'] },
       { key: 'lastLoginAt', label: 'Last Login Details', required: false, aliases: ['lastlogin', 'lastlogindetails', 'last_login'] },
       { key: 'accountStatus', label: 'Account Status', required: false, aliases: ['status', 'accountstatus', 'userstatus'] },
@@ -159,7 +159,7 @@ export const APP_TYPE_SCHEMA_TEMPLATES: Record<NonNullable<Application['appType'
     fields: [
       { key: 'ids', label: 'Ids', required: true, aliases: ['ids', 'id', 'user id', 'userid', 'user_id', 'employee id', 'employeeid', 'login id', 'loginid'] },
       { key: 'displayName', label: 'Display Name', required: true, aliases: ['display name', 'displayname', 'name', 'user name', 'username'] },
-      { key: 'email', label: 'Email Id', required: true, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
+      { key: 'email', label: 'Email Id', required: false, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
       { key: 'mailboxAccess', label: 'Mailbox Access', required: true, aliases: ['mailbox access', 'mailboxaccess', 'access', 'role', 'entitlement', 'permission'] }
     ],
     defaultMappings: {
@@ -178,7 +178,7 @@ export const APP_TYPE_SCHEMA_TEMPLATES: Record<NonNullable<Application['appType'
     fields: [
       { key: 'ids', label: 'Ids', required: true, aliases: ['ids', 'id', 'user id', 'userid', 'user_id', 'employee id', 'employeeid', 'login id', 'loginid'] },
       { key: 'displayName', label: 'Display Name', required: true, aliases: ['display name', 'displayname', 'name', 'user name', 'username'] },
-      { key: 'email', label: 'Email Id', required: true, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
+      { key: 'email', label: 'Email Id', required: false, aliases: ['email id', 'emailid', 'email', 'mail', 'mail id', 'mailid'] },
       { key: 'folderAccess', label: 'Folder Access', required: true, aliases: ['folder access', 'folderaccess', 'access', 'role', 'entitlement', 'permission'] }
     ],
     defaultMappings: {
@@ -197,9 +197,25 @@ export const APP_TYPE_SCHEMA_TEMPLATES: Record<NonNullable<Application['appType'
 export const buildDefaultAccountSchema = (appType?: Application['appType']): AppAccountSchemaConfig => {
   const resolvedType = appType && APP_TYPE_SCHEMA_TEMPLATES[appType] ? appType : 'Application';
   const template = APP_TYPE_SCHEMA_TEMPLATES[resolvedType];
+  const correlationDefaults: Record<NonNullable<Application['appType']>, string> = {
+    Application: template.defaultMappings.employeeId || '',
+    Database: template.defaultMappings.loginName || '',
+    Servers: template.defaultMappings.userId || '',
+    'Shared Mailbox': template.defaultMappings.ids || '',
+    'Shared Folder': template.defaultMappings.ids || ''
+  };
+  const recordDefaults: Record<NonNullable<Application['appType']>, string> = {
+    Application: template.defaultMappings.loginId || '',
+    Database: template.defaultMappings.loginName || '',
+    Servers: template.defaultMappings.userId || '',
+    'Shared Mailbox': template.defaultMappings.ids || '',
+    'Shared Folder': template.defaultMappings.ids || ''
+  };
   return {
     schemaAppType: resolvedType,
     mappings: { ...template.defaultMappings },
+    correlationColumn: correlationDefaults[resolvedType],
+    recordKeyColumn: recordDefaults[resolvedType],
     ignoreColumns: [],
     customColumns: [],
     statusRules: {

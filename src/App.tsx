@@ -1127,6 +1127,7 @@ useEffect(() => {
   const correlateAccount = (acc: any, identityList: User[]): Partial<ApplicationAccess> => {
     // Prefer matching by email first. If email matches, use it and skip id checks.
     const accEmails = [acc.email, acc.userEmail, acc.accountEmail].filter(Boolean).map((s: string) => s.toLowerCase());
+    const correlationValue = String(acc.correlationValue || '').trim();
     let match: User | undefined;
     if (accEmails.length > 0) {
       match = identityList.find(u => u.email && accEmails.includes(u.email.toLowerCase()));
@@ -1138,6 +1139,26 @@ useEffect(() => {
           hrStatus,
           isTerminated: hrStatus === 'TERMINATED',
           email: match.email,
+          userName: match.name || acc.userName || acc.name || ''
+        };
+      }
+    }
+
+    if (correlationValue) {
+      match = identityList.find(u => {
+        const userCandidates = [u.id, u.email, u.name, (u as any).employeeId, (u as any).userId]
+          .filter(Boolean)
+          .map((value: any) => String(value).trim().toLowerCase());
+        return userCandidates.includes(correlationValue.toLowerCase());
+      });
+      const hrStatus = normalizeHrStatus(match?.status);
+      if (match) {
+        return {
+          correlatedUserId: match.id,
+          isOrphan: false,
+          hrStatus,
+          isTerminated: hrStatus === 'TERMINATED',
+          email: acc.email || match.email,
           userName: match.name || acc.userName || acc.name || ''
         };
       }
