@@ -4,7 +4,7 @@ import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Inventory from './components/Inventory';
 import ManagerPortal from './components/ManagerPortal';
-import Governance from './components/Governance';
+import Governance from "./components/Governance";
 import MyAccess from './components/MyAccess';
 import MyTeamAccess from './components/MyTeamAccess';
 import ModalShell from './components/ModalShell';
@@ -2422,7 +2422,7 @@ useEffect(() => {
           applications={applications} sodPolicies={sodPolicies} users={users} access={access} cycles={cycles} onConfirmReview={handleConfirmReview}
         />
       )}
-      {activeTab === 'governance' && <Governance cycles={cycles} reviewItems={reviewItems} applications={applications} access={access} onTabChange={setActiveTab} users={users} sodPolicies={sodPolicies} />}
+      {activeTab === 'governance' && <Governance cycles={cycles} reviewItems={reviewItems} applications={applications} access={access} onTabChange={setActiveTab} users={users} sodPolicies={sodPolicies} auditLogs={auditLogs} />}
       {activeTab === 'audit' && (
         <div className="space-y-6 animate-in fade-in duration-500">
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
