@@ -33,6 +33,7 @@ import {
 } from 'recharts';
 import { ActionStatus, Application, ApplicationAccess, AuditLog, ReviewCycle, ReviewItem, SoDPolicy, User } from '../types';
 import ModalShell from './ModalShell';
+import { findApplicationByAppId, hasActiveOrphanRisk } from '../utils/accessRisk';
 
 type GovernanceDashboardKey = 'EXECUTIVE' | 'RISK' | 'REVIEW' | 'PRIVILEGED' | 'REMEDIATION' | 'EXCEPTIONS' | 'REPORTS';
 type TimeRangeKey = '30D' | '90D' | '365D' | 'ALL';
@@ -47,6 +48,7 @@ type EnrichedAccess = ApplicationAccess & {
   logicalIdentityName: string;
   logicalIdentityType: 'HUMAN' | 'PRIVILEGED' | 'SERVICE' | 'SHARED' | 'ORPHAN';
   isPrivilegedDerived: boolean;
+  isOrphanRiskDerived: boolean;
   isDormantDerived: boolean;
   isSharedDerived: boolean;
   isExcessiveDerived: boolean;
@@ -337,6 +339,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
       const logicalIdentityId = normalizeText(entry.correlatedUserId || entry.userId || entry.id);
       const logicalIdentityName = normalizeText(user?.name || entry.userName || entry.email || entry.userId || entry.id);
       const orphan = toBool((entry as any).isOrphan);
+      const orphanRisk = hasActiveOrphanRisk(entry, application);
       const privileged = toBool((entry as any).isPrivileged) || /admin|root|approver|priv/i.test(normalizeText(entry.entitlement));
       const shared = systemType === 'Shared Mailbox' || systemType === 'Shared Folder' || /shared|generic/i.test(`${entry.userName} ${entry.email}`);
       const lastUsedAt = parseLastUsedDate(entry as any);
@@ -349,7 +352,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
 
       const categories: EnrichedAccess['riskCategories'] = [];
       if (privileged) categories.push('PRIVILEGED');
-      if (orphan) categories.push('ORPHAN');
+      if (orphanRisk) categories.push('ORPHAN');
       if (dormant) categories.push('DORMANT');
       if (shared) categories.push('SHARED');
       if (toBool((entry as any).isSoDConflict)) categories.push('SOD');
@@ -377,6 +380,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
         logicalIdentityName,
         logicalIdentityType,
         isPrivilegedDerived: privileged,
+        isOrphanRiskDerived: orphanRisk,
         isDormantDerived: dormant,
         isSharedDerived: shared,
         isExcessiveDerived: excessive,
@@ -516,7 +520,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
   }, [filteredAccess, activeAccessCount]);
 
   const privilegedExposure = filteredAccess.filter((entry) => entry.isPrivilegedDerived);
-  const orphanExposure = filteredAccess.filter((entry) => entry.isOrphan);
+  const orphanExposure = filteredAccess.filter((entry) => entry.isOrphanRiskDerived);
   const dormantExposure = filteredAccess.filter((entry) => entry.isDormantDerived);
   const sharedExposure = filteredAccess.filter((entry) => entry.isSharedDerived);
 
@@ -833,7 +837,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
         entry.logicalIdentityName,
         entry.logicalIdentityType,
         entry.entitlement,
-        entry.isOrphan ? 'Yes' : 'No',
+        entry.isOrphanRiskDerived ? 'Yes' : 'No',
         entry.isDormantDerived ? 'Yes' : 'No',
         entry.lastUsedAt || ''
       ])
@@ -862,12 +866,12 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
     exportCsv(
       `Orphan_Dormant_Compliance_Report_${new Date().toISOString().split('T')[0]}.csv`,
       ['System', 'Identity', 'Identity Type', 'Entitlement', 'Orphan', 'Dormant', 'Privileged', 'Weighted Risk'],
-      filteredAccess.filter((entry) => entry.isOrphan || entry.isDormantDerived).map((entry) => [
+      filteredAccess.filter((entry) => entry.isOrphanRiskDerived || entry.isDormantDerived).map((entry) => [
         entry.systemName,
         entry.logicalIdentityName,
         entry.logicalIdentityType,
         entry.entitlement,
-        entry.isOrphan ? 'Yes' : 'No',
+        entry.isOrphanRiskDerived ? 'Yes' : 'No',
         entry.isDormantDerived ? 'Yes' : 'No',
         entry.isPrivilegedDerived ? 'Yes' : 'No',
         entry.weightedRisk
@@ -879,7 +883,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Overall Access Risk Score" value={`${overallAccessRiskScore}`} tone={overallAccessRiskScore > 40 ? 'red' : overallAccessRiskScore > 20 ? 'amber' : 'green'} subtitle="Weighted open-risk index across active access" onClick={() => setActiveDashboard('RISK')} />
-        <MetricCard title="Privileged Risk Summary" value={`${privilegedExposure.length}`} tone={privilegedExposure.length > 0 ? 'amber' : 'green'} subtitle={`${privilegedExposure.filter((entry) => entry.isOrphan).length} orphan privileged grants`} onClick={() => setActiveDashboard('PRIVILEGED')} />
+        <MetricCard title="Privileged Risk Summary" value={`${privilegedExposure.length}`} tone={privilegedExposure.length > 0 ? 'amber' : 'green'} subtitle={`${privilegedExposure.filter((entry) => entry.isOrphanRiskDerived).length} orphan privileged grants`} onClick={() => setActiveDashboard('PRIVILEGED')} />
         <MetricCard title="Orphan and Dormant Exposure" value={`${orphanExposure.length + dormantExposure.length}`} tone={orphanExposure.length + dormantExposure.length > 0 ? 'amber' : 'green'} subtitle={`${orphanExposure.length} orphan, ${dormantExposure.length} dormant`} onClick={() => setActiveDashboard('RISK')} />
         <MetricCard title="Review Completion and SLA" value={`${reviewCompletionRate}%`} tone={reviewCompletionRate < 85 ? 'red' : reviewCompletionRate < 95 ? 'amber' : 'green'} subtitle={`${overdueReviewCount} overdue reviews, ${slaMetRate}% SLA met`} onClick={() => setActiveDashboard('REVIEW')} />
       </div>
@@ -888,7 +892,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
         <Panel title="Privileged Access Risk Summary" subtitle="Human and non-human elevated access exposure">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <MetricCard title="Total Privileged" value={`${privilegedExposure.length}`} tone="blue" />
-            <MetricCard title="Orphan Privileged" value={`${privilegedExposure.filter((entry) => entry.isOrphan).length}`} tone="amber" />
+            <MetricCard title="Orphan Privileged" value={`${privilegedExposure.filter((entry) => entry.isOrphanRiskDerived).length}`} tone="amber" />
             <MetricCard title="Unused 30+ Days" value={`${privilegedUnused.length}`} tone={privilegedUnused.length > 0 ? 'amber' : 'green'} />
           </div>
         </Panel>
@@ -1140,7 +1144,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard title="Total Privileged Accounts" value={`${privilegedExposure.length}`} tone="blue" />
-        <MetricCard title="Orphan Privileged IDs" value={`${privilegedExposure.filter((entry) => entry.isOrphan).length}`} tone={privilegedExposure.some((entry) => entry.isOrphan) ? 'amber' : 'green'} />
+        <MetricCard title="Orphan Privileged IDs" value={`${privilegedExposure.filter((entry) => entry.isOrphanRiskDerived).length}`} tone={privilegedExposure.some((entry) => entry.isOrphanRiskDerived) ? 'amber' : 'green'} />
         <MetricCard title="Standing Access" value={`${privilegedTimeBoundSummary.standing}`} tone="slate" />
         <MetricCard title="Time-Bound Access" value={`${privilegedTimeBoundSummary.timeBound}`} tone="green" />
         <MetricCard title="Without Recent Usage" value={`${privilegedUnused.length}`} tone={privilegedUnused.length > 0 ? 'amber' : 'green'} />
@@ -1197,7 +1201,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
                   <td className="px-4 py-3">{entry.logicalIdentityName}</td>
                   <td className="px-4 py-3">{entry.logicalIdentityType}</td>
                   <td className="px-4 py-3">{entry.entitlement}</td>
-                  <td className="px-4 py-3">{entry.isOrphan ? 'Yes' : 'No'}</td>
+                  <td className="px-4 py-3">{entry.isOrphanRiskDerived ? 'Yes' : 'No'}</td>
                   <td className="px-4 py-3">{entry.isDormantDerived ? 'Yes' : 'No'}</td>
                   <td className="px-4 py-3">{entry.lastUsedAt ? new Date(entry.lastUsedAt).toLocaleDateString() : 'No usage'}</td>
                 </tr>
@@ -1518,7 +1522,7 @@ const Governance: React.FC<GovernanceProps> = ({ cycles, reviewItems, applicatio
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <MetricCard title="Access Grants" value={`${selectedSystemAccess.length}`} />
               <MetricCard title="Privileged" value={`${selectedSystemAccess.filter((entry) => entry.isPrivilegedDerived).length}`} tone="blue" />
-              <MetricCard title="Orphan" value={`${selectedSystemAccess.filter((entry) => entry.isOrphan).length}`} tone="amber" />
+              <MetricCard title="Orphan" value={`${selectedSystemAccess.filter((entry) => entry.isOrphanRiskDerived).length}`} tone="amber" />
               <MetricCard title="SoD Conflicts" value={`${selectedSystemAccess.filter((entry) => entry.riskCategories.includes('SOD')).length}`} tone="red" />
             </div>
             <div className="mt-6 overflow-x-auto">

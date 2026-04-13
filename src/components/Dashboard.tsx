@@ -5,6 +5,7 @@ import { Calendar, CheckCircle, Clock, Play, FileDown, MoreVertical, X, Boxes, E
 import { useReviewCycleDetail } from '../features/reviews/queries';
 import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
 import ModalShell from './ModalShell';
+import { findApplicationByAppId, findMatchingAccessRecord, hasActiveOrphanRisk } from '../utils/accessRisk';
 
 interface DashboardProps {
   cycles: ReviewCycle[];
@@ -69,6 +70,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
 
   const isTerminatedRisk = (entry: { isTerminated?: boolean; hrStatus?: string }) => {
     return entry.isTerminated === true || String(entry.hrStatus || '').trim().toUpperCase() === 'TERMINATED';
+  };
+
+  const hasOrphanRisk = (item: ReviewItem) => {
+    const matchedAccess = findMatchingAccessRecord(item, access);
+    const matchedApp = findApplicationByAppId(applications, matchedAccess?.appId || item.appId);
+    return hasActiveOrphanRisk(matchedAccess || item, matchedApp);
   };
   
   const [viewingPolicyId, setViewingPolicyId] = useState<string | null>(null);
@@ -228,7 +235,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
 
   const getRiskLevel = (item: ReviewItem) => {
     if (item.isSoDConflict) return 'CRITICAL';
-    if (item.isOrphan || isTerminatedRisk(item)) return 'HIGH';
+    if (hasOrphanRisk(item) || isTerminatedRisk(item)) return 'HIGH';
     if (item.isPrivileged) return 'MEDIUM';
     return 'LOW';
   };
@@ -243,11 +250,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
       const matchesRem = campaignRemediationFilter === 'ALL' || remStatus === campaignRemediationFilter;
       const level = getRiskLevel(i);
       const matchesRisk = campaignRiskFilter === 'ALL' || level === campaignRiskFilter;
-      const hasAnyRiskFactor = i.isSoDConflict || i.isPrivileged || i.isOrphan || isTerminatedRisk(i);
+      const orphanRisk = hasOrphanRisk(i);
+      const hasAnyRiskFactor = i.isSoDConflict || i.isPrivileged || orphanRisk || isTerminatedRisk(i);
       const matchesRiskFactor = campaignRiskFactorFilter === 'ALL' ||
         (campaignRiskFactorFilter === 'SOD' && i.isSoDConflict) ||
         (campaignRiskFactorFilter === 'PRIVILEGED' && i.isPrivileged) ||
-        (campaignRiskFactorFilter === 'ORPHAN' && i.isOrphan) ||
+        (campaignRiskFactorFilter === 'ORPHAN' && orphanRisk) ||
         (campaignRiskFactorFilter === 'TERMINATED' && isTerminatedRisk(i)) ||
         (campaignRiskFactorFilter === 'NONE' && !hasAnyRiskFactor);
       return matchesApp && matchesUser && matchesEnt && matchesStatus && matchesRem && matchesRisk && matchesRiskFactor;
@@ -404,7 +412,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
         const reassignedBy = i.reassignedBy ? (users.find(u => u.id === i.reassignedBy)?.name || i.reassignedBy) : '';
         const risks = [
           i.isSoDConflict ? `SoD Conflict (${(i.violatedPolicyNames || []).join(';')})` : '',
-          i.isOrphan ? 'Orphan Account' : '',
+          hasOrphanRisk(i) ? 'Orphan Account' : '',
           isTerminatedRisk(i) ? 'Dormant Account' : '',
           i.isPrivileged ? 'Privileged Access' : ''
         ].filter(Boolean).join('; ');
@@ -1215,6 +1223,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                     filteredViewingItems.map(item => {
                         const reviewer = users.find(u => u.id === item.managerId);
                       const level = getRiskLevel(item);
+                        const orphanRisk = hasOrphanRisk(item);
                         const canSelectForBulk = !isClosedCycle(selectedCampaign?.status) && item.status === ActionStatus.PENDING && Number(item.reassignmentCount || 0) < maxReassignments;
                         return (
                         <tr key={item.id} className="hover:bg-slate-50">
@@ -1271,9 +1280,9 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                                       </div>
                                     )}
                                     {item.isPrivileged && <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-indigo-100 uppercase w-fit flex items-center gap-1"><ShieldCheck className="w-2.5 h-2.5" /> Privileged</span>}
-                                    {item.isOrphan && <span className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Orphan</span>}
+                                    {orphanRisk && <span className="bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Orphan</span>}
                                     {isTerminatedRisk(item) && <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[8px] font-black border border-orange-100 uppercase w-fit flex items-center gap-1"><AlertTriangle className="w-2.5 h-2.5" /> Dormant</span>}
-                                    {!item.isSoDConflict && !item.isPrivileged && !item.isOrphan && !isTerminatedRisk(item) && (
+                                    {!item.isSoDConflict && !item.isPrivileged && !orphanRisk && !isTerminatedRisk(item) && (
                                       <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[8px] font-black border border-slate-200 uppercase w-fit">Low Risk</span>
                                     )}
                                 </div>
@@ -1742,11 +1751,18 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Flags</p>
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {(() => {
+                    const orphanRisk = hasOrphanRisk(viewingAccountItem);
+                    return (
+                      <>
                   {viewingAccountItem.isSoDConflict && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">SoD Conflict</span>}
                   {viewingAccountItem.isPrivileged && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">Privileged</span>}
-                  {viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
+                  {orphanRisk && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
                   {isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Dormant Account</span>}
-                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !orphanRisk && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

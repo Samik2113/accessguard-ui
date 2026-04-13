@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Application, ApplicationAccess, EntitlementDefinition, SoDPolicy, User } from '../types';
 import { Layers, Users, Users2, Shield, ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, X } from 'lucide-react';
 import ModalShell from './ModalShell';
+import { findApplicationByAppId, hasActiveOrphanRisk } from '../utils/accessRisk';
 
 interface MyTeamAccessProps {
   currentManagerId: string;
@@ -26,9 +27,11 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
     return false;
   };
 
+  const hasOrphanRisk = (item: any) => hasActiveOrphanRisk(item, findApplicationByAppId(applications, item?.appId));
+
   const getRiskLevel = (item: any) => {
     if (parseBool(item?.isSoDConflict)) return 'CRITICAL';
-    if (parseBool(item?.isOrphan)) return 'HIGH';
+    if (hasOrphanRisk(item)) return 'HIGH';
     if (isPrivilegedAccount(item)) return 'MEDIUM';
     return 'LOW';
   };
@@ -75,9 +78,9 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
       totalEntitlements: allItems.length,
       sodConflicts: allItems.filter((item) => parseBool((item as any).isSoDConflict)).length,
       privileged: allItems.filter((item) => isPrivilegedAccount(item)).length,
-      orphan: allItems.filter((item) => parseBool((item as any).isOrphan)).length
+      orphan: allItems.filter((item) => hasOrphanRisk(item)).length
     };
-  }, [teamAccessByUser, reportees]);
+  }, [teamAccessByUser, reportees, applications]);
 
   const viewingUser = reportees.find((user) => user.id === viewingUserId) || null;
   const viewingAccess = useMemo(() => {
@@ -229,7 +232,7 @@ const MyTeamAccess: React.FC<MyTeamAccessProps> = ({ currentManagerId, users, ac
                           {appAccess.map(acc => {
                             const isPriv = isPrivilegedAccount(acc);
                             const hasSod = parseBool((acc as any).isSoDConflict);
-                            const isOrphan = parseBool((acc as any).isOrphan);
+                            const isOrphan = hasOrphanRisk(acc);
                             const level = getRiskLevel(acc);
                             return (
                               <tr key={acc.id} className="hover:bg-slate-50/50">

@@ -4,6 +4,7 @@ import { ReviewItem, ActionStatus, Application, SoDPolicy, User, ApplicationAcce
 import { Check, X, AlertCircle, Search, Filter, Shield, ListChecks, CheckSquare, Square, MessageSquare, ShieldCheck, ShieldAlert, ChevronRight, Send, Lock, Info, AlertTriangle, Eye } from 'lucide-react';
 import ModalShell from './ModalShell';
 import { APP_TYPE_SCHEMA_TEMPLATES } from '../constants';
+import { findApplicationByAppId, findMatchingAccessRecord, hasActiveOrphanRisk } from '../utils/accessRisk';
 
 interface ManagerPortalProps {
   items: ReviewItem[];
@@ -58,9 +59,15 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     return entry.isTerminated === true || String(entry.hrStatus || '').trim().toUpperCase() === 'TERMINATED';
   };
 
+  const hasOrphanRisk = (item: ReviewItem) => {
+    const matchedAccess = findMatchingAccessRecord(item, access);
+    const matchedApp = findApplicationByAppId(applications, matchedAccess?.appId || item.appId);
+    return hasActiveOrphanRisk(matchedAccess || item, matchedApp);
+  };
+
   const getRiskLevel = (item: ReviewItem) => {
     if (item.isSoDConflict) return 'CRITICAL';
-    if (item.isOrphan || isTerminatedRisk(item)) return 'HIGH';
+    if (hasOrphanRisk(item) || isTerminatedRisk(item)) return 'HIGH';
     if (item.isPrivileged) return 'MEDIUM';
     return 'LOW';
   };
@@ -73,11 +80,12 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
       const matchesStatus = statusFilter === 'ALL' || item.status === statusFilter;
       const level = getRiskLevel(item);
       const matchesRisk = riskFilter === 'ALL' || level === riskFilter;
-      const hasAnyRiskFactor = item.isSoDConflict || item.isPrivileged || item.isOrphan || isTerminatedRisk(item);
+      const orphanRisk = hasOrphanRisk(item);
+      const hasAnyRiskFactor = item.isSoDConflict || item.isPrivileged || orphanRisk || isTerminatedRisk(item);
       const matchesRiskFactor = riskFactorFilter === 'ALL' ||
         (riskFactorFilter === 'SOD' && item.isSoDConflict) ||
         (riskFactorFilter === 'PRIVILEGED' && item.isPrivileged) ||
-        (riskFactorFilter === 'ORPHAN' && item.isOrphan) ||
+        (riskFactorFilter === 'ORPHAN' && orphanRisk) ||
         (riskFactorFilter === 'TERMINATED' && isTerminatedRisk(item)) ||
         (riskFactorFilter === 'NONE' && !hasAnyRiskFactor);
       return matchesUser && matchesEnt && matchesApp && matchesStatus && matchesRisk && matchesRiskFactor;
@@ -164,7 +172,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
     }).filter(t => t.isAvailable);
   }, [managerItems, cycles, currentManagerId]);
 
-  const isHighRisk = (item: ReviewItem) => item.isSoDConflict || item.isOrphan;
+  const isHighRisk = (item: ReviewItem) => item.isSoDConflict || hasOrphanRisk(item);
 
   const handleBulkSubmit = () => {
     if (!showBulkModal.status) return;
@@ -570,6 +578,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
             {sortedFilteredItems.map((item) => {
               const locked = isLocked(item);
               const level = getRiskLevel(item);
+              const orphanRisk = hasOrphanRisk(item);
               const reassignedByUser = item.reassignedBy ? users.find(u => u.id === item.reassignedBy) : null;
               const itemCycle = cycles.find(c => c.id === item.reviewCycleId);
               const dueDateTs = itemCycle?.dueDate ? new Date(itemCycle.dueDate).getTime() : Number.POSITIVE_INFINITY;
@@ -620,7 +629,7 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
                             ))}
                           </div>
                         )}
-                        {item.isOrphan && (
+                        {orphanRisk && (
                           <span className="text-[8px] font-black text-orange-600 uppercase flex items-center gap-1">
                             <AlertTriangle className="w-2.5 h-2.5" /> Orphan Account
                           </span>
@@ -906,11 +915,18 @@ const ManagerPortal: React.FC<ManagerPortalProps> = ({ items, onAction, onBulkAc
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Flags</p>
                 <div className="mt-2 flex flex-wrap gap-2">
+                  {(() => {
+                    const orphanRisk = hasOrphanRisk(viewingAccountItem);
+                    return (
+                      <>
                   {viewingAccountItem.isSoDConflict && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">SoD Conflict</span>}
                   {viewingAccountItem.isPrivileged && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">Privileged</span>}
-                  {viewingAccountItem.isOrphan && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
+                  {orphanRisk && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Orphan</span>}
                   {isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Dormant Account</span>}
-                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !viewingAccountItem.isOrphan && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                  {!viewingAccountItem.isSoDConflict && !viewingAccountItem.isPrivileged && !orphanRisk && !isTerminatedRisk(viewingAccountItem) && <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">No Elevated Flags</span>}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

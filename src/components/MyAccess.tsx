@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Application, SoDPolicy } from '../types';
 import { ShieldAlert, ShieldCheck, Layers } from 'lucide-react';
 import { useAccountsByUser } from '../features/accounts/queries';
+import { findApplicationByAppId, hasActiveOrphanRisk } from '../utils/accessRisk';
 
 interface MyAccessProps {
   currentUserId: string;
@@ -14,6 +15,7 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
   const items = Array.isArray((accountsQuery.data as any)?.items) ? (accountsQuery.data as any).items : [];
 
   const appNameById = (appId: string) => applications.find(a => a.id === appId)?.name || appId;
+  const hasOrphanRisk = (item: any) => hasActiveOrphanRisk(item, findApplicationByAppId(applications, item?.appId));
 
   const withRisk = useMemo(() => {
     return items.map((item: any) => {
@@ -60,7 +62,7 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
 
   const getRiskLevel = (item: any) => {
     if (item.isSoDConflict) return 'CRITICAL';
-    if (item.isOrphan) return 'HIGH';
+    if (hasOrphanRisk(item)) return 'HIGH';
     if (item.isPrivileged) return 'MEDIUM';
     return 'LOW';
   };
@@ -119,6 +121,7 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
               <tbody className="divide-y divide-slate-100">
                 {group.items.map((item: any) => {
                   const level = getRiskLevel(item);
+                  const orphanRisk = hasOrphanRisk(item);
                   return (
                   <tr key={item.id || `${item.appId}-${item.userId}-${item.entitlement}`}>
                     <td className="px-5 py-3 text-slate-600 font-mono">{item.userId || item.appUserId || '-'}</td>
@@ -145,12 +148,12 @@ const MyAccess: React.FC<MyAccessProps> = ({ currentUserId, applications, sodPol
                             <ShieldAlert className="w-3 h-3" /> SoD Conflict
                           </span>
                         )}
-                        {item.isOrphan && (
+                        {orphanRisk && (
                           <span className="inline-flex items-center gap-1 bg-orange-50 text-orange-700 border border-orange-100 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                             Orphan
                           </span>
                         )}
-                        {!item.isPrivileged && !item.isSoDConflict && !item.isOrphan && (
+                        {!item.isPrivileged && !item.isSoDConflict && !orphanRisk && (
                           <span className="inline-flex items-center gap-1 bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
                             Low Risk
                           </span>

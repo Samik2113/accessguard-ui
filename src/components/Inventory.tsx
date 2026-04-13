@@ -14,6 +14,7 @@ import {
   ENTITLEMENT_TEMPLATE_HEADERS,
   SOD_POLICY_TEMPLATE_HEADERS
 } from '../constants';
+import { findApplicationByAppId, hasActiveOrphanRisk, normalizeAccountStatus as normalizeSharedAccountStatus } from '../utils/accessRisk';
 
 interface InventoryProps {
   users: User[];
@@ -226,7 +227,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   const appsInputRef = useRef<HTMLInputElement>(null);
 
   const normalizeHeader = (value: string) => String(value || '').trim().toLowerCase();
-  const getAppRecord = (id?: string | null) => applications.find(app => String((app as any).id || (app as any).appId) === String(id || ''));
+  const getAppRecord = (id?: string | null) => findApplicationByAppId(applications, id);
   const getResolvedAppType = (app?: Application | null): NonNullable<Application['appType']> => {
     if (app?.appType && APP_TYPE_SCHEMA_TEMPLATES[app.appType]) return app.appType;
     return 'Application';
@@ -482,13 +483,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
   };
 
   const normalizeAccountStatus = (raw: any, app?: Application | null) => {
-    const value = String(raw || '').trim();
-    if (!value) return 'ACTIVE';
-    const schema = getResolvedAccountSchema(app);
-    const lowered = value.toLowerCase();
-    if (schema.statusRules.activeValues.map(v => v.toLowerCase()).includes(lowered)) return 'ACTIVE';
-    if (schema.statusRules.inactiveValues.map(v => v.toLowerCase()).includes(lowered)) return 'INACTIVE';
-    return value.toUpperCase();
+    return normalizeSharedAccountStatus(raw, app);
   };
 
   const getAccountStatusMeta = (entry: Pick<ApplicationAccess, 'appId' | 'accountStatus'>) => {
@@ -535,6 +530,10 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
     if (parseBool((entry as any).isTerminated)) return true;
     if (normalizeHrStatus((entry as any).hrStatus) === 'TERMINATED') return true;
     return isTerminatedUser(user);
+  };
+
+  const hasOrphanRisk = (entry: Pick<ApplicationAccess, 'appId' | 'accountStatus'> & { isOrphan?: any }) => {
+    return hasActiveOrphanRisk(entry, getAppRecord(entry.appId));
   };
 
   const getHrFallback = (seed: { employeeId?: string; email?: string; loginId?: string; userId?: string; correlationValue?: string }) => {
@@ -1654,7 +1653,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         id, 
         name: sodPolicies.find(p => p.id === id)?.policyName || 'Unknown Policy' 
       }));
-      isOrphan = acc.isOrphan;
+      isOrphan = acc.entitlements.some((entry) => hasOrphanRisk(entry));
       hasPrivileged = acc.entitlements.some(e => isPrivilegedAccount(e));
       hasTerminatedIdentityRisk = acc.entitlements.some((entry) => hasActiveAccountForTerminatedIdentity(entry));
     } else {
@@ -1665,7 +1664,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
         id, 
         name: sodPolicies.find(p => p.id === id)?.policyName || 'Unknown Policy' 
       }));
-      isOrphan = acc.isOrphan;
+      isOrphan = hasOrphanRisk(acc);
       hasPrivileged = isPrivilegedAccount(acc);
       hasTerminatedIdentityRisk = hasActiveAccountForTerminatedIdentity(acc);
     }
@@ -2583,7 +2582,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <div className="text-slate-400 font-mono text-[10px]">{group.userId}</div>
                                   </td>
                                   <td className="px-4 py-3">
-                                    {group.isOrphan ? (
+                                    {group.entitlements.some((entry) => hasOrphanRisk(entry)) ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100 font-bold">
                                         <UserMinus className="w-3 h-3" /> Orphan
                                       </span>
@@ -2657,7 +2656,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                                     <div className="text-slate-400 font-mono text-[10px]">{acc.userId}</div>
                                   </td>
                                   <td className="px-4 py-3">
-                                    {acc.isOrphan ? (
+                                    {hasOrphanRisk(acc) ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100 font-bold">
                                         <UserMinus className="w-3 h-3" /> Orphan
                                       </span>
@@ -2933,7 +2932,7 @@ const Inventory: React.FC<InventoryProps> = ({ users, access, applications, enti
                         <tbody className="divide-y divide-slate-100 bg-white">
                           {appAccess.map(acc => {
                             const isPriv = isPrivilegedAccount(acc);
-                            const isOrphan = parseBool((acc as any).isOrphan);
+                            const isOrphan = hasOrphanRisk(acc);
                             const hasSod = acc.isSoDConflict;
                             const hasTerminationRisk = hasActiveAccountForTerminatedIdentity(acc, viewingUser);
                             const level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = hasSod ? 'CRITICAL' : (isOrphan || hasTerminationRisk) ? 'HIGH' : isPriv ? 'MEDIUM' : 'LOW';
