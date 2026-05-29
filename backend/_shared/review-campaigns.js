@@ -291,6 +291,7 @@ async function buildCampaignDefinition({ db, payload, actor, now, mode, cycleId 
     ? orphanReviewerModeRaw
     : "APPLICATION_OWNER";
   const orphanReviewerId = String(payload?.customOrphanReviewerId || payload?.orphanReviewerId || "").trim();
+  const autoActionOnDueDate = String(payload?.autoActionOnDueDate || "NONE").trim().toUpperCase();
   const scope = payload?.scope || {};
 
   if (!campaignName) throw new Error("Campaign name is required.");
@@ -484,6 +485,7 @@ async function buildCampaignDefinition({ db, payload, actor, now, mode, cycleId 
     certificationType: reviewerType,
     orphanReviewerMode,
     orphanReviewerId: orphanReviewerMode === "CUSTOM" ? orphanReviewerId : undefined,
+    autoActionOnDueDate: ["REVOKE_ALL", "APPROVE_ALL", "NONE"].includes(autoActionOnDueDate) ? autoActionOnDueDate : "NONE",
     year: now.getFullYear(),
     quarter: Math.floor(now.getMonth() / 3) + 1,
     type: "review-cycle"

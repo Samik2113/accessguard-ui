@@ -19,6 +19,7 @@ const schema = {
     orphanReviewerMode: { type: "string" },
     orphanReviewerId: { type: "string" },
     customOrphanReviewerId: { type: "string" },
+    autoActionOnDueDate: { type: "string", enum: ["REVOKE_ALL", "APPROVE_ALL", "NONE"] },
     scope: { type: "object" }
   },
   additionalProperties: true

@@ -24,6 +24,7 @@ export interface ReviewCycleDto {
   pendingItems: number;
   pendingRemediationItems?: number;
   confirmedManagers?: string[];
+  autoActionOnDueDate?: 'REVOKE_ALL' | 'APPROVE_ALL' | 'NONE';
   _etag?: string;
   _ts?: number;
 }

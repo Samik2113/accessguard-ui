@@ -36,6 +36,7 @@ import {
   confirmManager,
   cancelCycle,
   sendReviewNotifications,
+  updateReviewCycle,
   deleteReviewDraft,
   loginUser,
   loginWithEntra,
@@ -444,7 +445,12 @@ const App: React.FC = () => {
       : cycle?.orphanReviewerMode === 'CUSTOM'
         ? 'CUSTOM'
         : 'APPLICATION_OWNER',
-    orphanReviewerId: String(cycle?.orphanReviewerId ?? '').trim() || undefined
+    orphanReviewerId: String(cycle?.orphanReviewerId ?? '').trim() || undefined,
+    autoActionOnDueDate: cycle?.autoActionOnDueDate === 'REVOKE_ALL'
+      ? 'REVOKE_ALL'
+      : cycle?.autoActionOnDueDate === 'APPROVE_ALL'
+        ? 'APPROVE_ALL'
+        : 'NONE'
   });
 
   const normalizeReviewItems = (items: any[]): ReviewItem[] =>
@@ -1308,6 +1314,26 @@ useEffect(() => {
       alert(`Failed to cancel campaign: ${error?.message || 'Unknown error'}`);
     }
   };
+
+  const handleExtendDueDate = async (cycleId: string, newDueDate: string) => {
+    try {
+      const cycle = cycles.find(c => c.id === cycleId);
+      if (!cycle) throw new Error('Review cycle not found');
+
+      await updateReviewCycle({ cycleId, dueDate: newDueDate });
+      await invalidateReviewQueries(cycleId);
+
+      const cyclesRes = await getReviewCycles({ top: 200 });
+      setCycles(Array.isArray(cyclesRes?.cycles) ? cyclesRes.cycles.map(normalizeCycle) : []);
+
+      await addAuditLog('CAMPAIGN_EXTEND_DUE_DATE', `Extended due date for campaign ${cycleId} to ${newDueDate}`);
+      alert('Due date extended successfully.');
+    } catch (error: any) {
+      console.error('Failed to extend due date:', error);
+      alert(`Failed to extend due date: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const handleDataImport = async (
   type: 'HR' | 'APP_ACCESS' | 'APP_ENT' | 'APP_SOD' | 'APPLICATIONS',
   data: any[],
@@ -2377,7 +2403,7 @@ useEffect(() => {
       customization={customization}
       onSaveCustomization={handleSaveCustomization}
     >
-      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} access={access} onStageCampaign={handleStageCampaign} onLaunchCampaign={handleLaunchCampaign} onDeleteDraftCampaign={handleDeleteDraftCampaign} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} launchingReview={launchingReview} />}
+      {activeTab === 'dashboard' && <Dashboard cycles={cycles} applications={applications} access={access} onStageCampaign={handleStageCampaign} onLaunchCampaign={handleLaunchCampaign} onDeleteDraftCampaign={handleDeleteDraftCampaign} reviewItems={reviewItems} users={users} sodPolicies={sodPolicies} isAdmin={currentUser.role === UserRole.ADMIN} onReassign={handleReassignReviewItem} onBulkReassign={handleBulkReassignReviewItems} onSendNotifications={handleSendReviewNotifications} onCancelCampaign={handleCancelCampaign} onExtendDueDate={handleExtendDueDate} launchingReview={launchingReview} />}
       {activeTab === 'my-team-access' && <MyTeamAccess currentManagerId={currentUser.id} users={users} access={access} applications={applications} entitlements={entitlements} sodPolicies={sodPolicies} />}
       {activeTab === 'inventory' && (
   <Inventory

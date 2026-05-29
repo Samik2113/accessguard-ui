@@ -22,6 +22,7 @@ interface DashboardProps {
   onBulkReassign?: (itemsToReassign: Array<{ itemId: string; fromManagerId: string }>, toManagerId: string, comment?: string) => void;
   onSendNotifications?: (payload: { mode: 'REMINDER' | 'ESCALATE' | 'REMEDIATION_NOTIFY' | 'REMEDIATION_REMINDER'; cycleId?: string; appId?: string; managerId?: string; selectedRecipientEmail?: string; dryRun?: boolean }) => Promise<any>;
   onCancelCampaign?: (cycleId: string, reason: string) => Promise<void> | void;
+  onExtendDueDate?: (cycleId: string, newDueDate: string) => Promise<void> | void;
   launchingReview?: boolean;
 }
 
@@ -45,10 +46,11 @@ const createDefaultCampaignForm = (): CampaignConfigPayload => ({
   },
   reviewerType: 'MANAGER',
   orphanReviewerMode: 'APPLICATION_OWNER',
-  orphanReviewerId: ''
+  orphanReviewerId: '',
+  autoActionOnDueDate: 'NONE'
 });
 
-const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onStageCampaign, onLaunchCampaign, onDeleteDraftCampaign, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign, launchingReview = false }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onStageCampaign, onLaunchCampaign, onDeleteDraftCampaign, reviewItems, users, sodPolicies, isAdmin = false, onReassign, onBulkReassign, onSendNotifications, onCancelCampaign, onExtendDueDate, launchingReview = false }) => {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [campaignForm, setCampaignForm] = useState<CampaignConfigPayload>(createDefaultCampaignForm());
@@ -92,6 +94,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
   const [selectedRemediationRecipientId, setSelectedRemediationRecipientId] = useState('');
   const [cancellingCampaignId, setCancellingCampaignId] = useState<string | null>(null);
   const [viewingAccountItemId, setViewingAccountItemId] = useState<string | null>(null);
+  const [extendingDueDate, setExtendingDueDate] = useState<string | null>(null);
+  const [newDueDate, setNewDueDate] = useState('');
   const maxReassignments = Math.max(Number(import.meta.env.VITE_MAX_REASSIGNMENTS || 3), 1);
   const cycleDetailQuery = useReviewCycleDetail({ cycleId: selectedCampaignId || '', top: 500 });
 
@@ -168,7 +172,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
       reviewerType: cycle.reviewerType || cycle.certificationType || 'MANAGER',
       specificReviewerId: cycle.specificReviewerId || '',
       orphanReviewerMode: cycle.orphanReviewerMode || 'APPLICATION_OWNER',
-      orphanReviewerId: cycle.orphanReviewerId || ''
+      orphanReviewerId: cycle.orphanReviewerId || '',
+      autoActionOnDueDate: cycle.autoActionOnDueDate || 'NONE'
     });
     setShowSpecificAppsDropdown(false);
     setSpecificAppsSearch('');
@@ -1025,6 +1030,19 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                     )}
                   </>
                 )}
+                {isAdmin && onExtendDueDate && selectedCampaign && !isClosedCycle(selectedCampaign.status) && selectedCampaign.status !== ReviewStatus.DRAFT && (
+                  <button
+                    onClick={() => {
+                      if (!selectedCampaign) return;
+                      const currentDueDate = selectedCampaign.dueDate ? new Date(selectedCampaign.dueDate).toISOString().split('T')[0] : '';
+                      setNewDueDate(currentDueDate);
+                      setExtendingDueDate(selectedCampaign.id);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-100 transition-all"
+                  >
+                    <Calendar className="w-4 h-4" /> Extend Due Date
+                  </button>
+                )}
                 {isAdmin && onCancelCampaign && selectedCampaign && !isClosedCycle(selectedCampaign.status) && selectedCampaign.status !== ReviewStatus.DRAFT && (
                   <button
                     onClick={async () => {
@@ -1572,6 +1590,15 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                       <option value="ORPHAN_ONLY">Orphan Accounts Only</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">Auto-Action on Due Date</label>
+                    <select value={campaignForm.autoActionOnDueDate || 'NONE'} onChange={(e) => updateCampaignForm({ autoActionOnDueDate: e.target.value as 'REVOKE_ALL' | 'APPROVE_ALL' | 'NONE' })} className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 text-sm font-semibold text-slate-700">
+                      <option value="NONE">No automatic action</option>
+                      <option value="APPROVE_ALL">Approve all pending access</option>
+                      <option value="REVOKE_ALL">Revoke all pending access</option>
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">What should happen to pending review items when the due date passes?</p>
+                  </div>
                 </div>
               </section>
 
@@ -1794,6 +1821,46 @@ const Dashboard: React.FC<DashboardProps> = ({ cycles, applications, access, onS
                 ))}
               </div>
             )}
+        </ModalShell>
+      )}
+
+      {extendingDueDate && (
+        <ModalShell overlayClassName="z-50 bg-slate-900/50" panelClassName="max-w-md p-6">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Extend Due Date</h3>
+              <p className="text-sm text-slate-500 mt-1">Update the due date for this campaign.</p>
+            </div>
+            <button onClick={() => setExtendingDueDate(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-widest px-1">New Due Date</label>
+              <input
+                type="date"
+                value={newDueDate}
+                onChange={(e) => setNewDueDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full px-4 py-2 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button
+              onClick={async () => {
+                if (!newDueDate) return;
+                await onExtendDueDate?.(extendingDueDate, newDueDate);
+                setExtendingDueDate(null);
+              }}
+              disabled={!newDueDate}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+            >
+              Extend Due Date
+            </button>
+            <button onClick={() => setExtendingDueDate(null)} className="px-4 py-2 border rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+          </div>
         </ModalShell>
       )}
     </div>

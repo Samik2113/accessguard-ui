@@ -77,6 +77,7 @@ export interface CampaignConfigPayload {
   specificReviewerId?: string;
   orphanReviewerMode?: OrphanReviewerMode;
   orphanReviewerId?: string;
+  autoActionOnDueDate?: 'REVOKE_ALL' | 'APPROVE_ALL' | 'NONE';
 }
 
 export interface Application {
@@ -145,6 +146,7 @@ export interface ReviewCycle {
   riskScope?: 'ALL_ACCESS' | 'SOD_ONLY' | 'PRIVILEGED_ONLY' | 'ORPHAN_ONLY';
   orphanReviewerMode?: OrphanReviewerMode;
   orphanReviewerId?: string;
+  autoActionOnDueDate?: 'REVOKE_ALL' | 'APPROVE_ALL' | 'NONE';
 }
 
 export interface ReviewItem {

@@ -373,6 +373,29 @@ export const sendReviewNotifications = (payload: {
   dryRun?: boolean;
 }) => postJson("/api/reviews-notify", payload);
 
+export const updateReviewCycle = async (payload: {
+  cycleId: string;
+  dueDate?: string;
+  autoActionOnDueDate?: 'REVOKE_ALL' | 'APPROVE_ALL' | 'NONE';
+}, actor?: { id?: string; name?: string; role?: 'ADMIN' | 'AUDITOR' | 'USER' }) => {
+  console.debug('[API] updateReviewCycle payload:', payload);
+  try {
+    const result = await postJson('/api/reviews-update', payload, {}, {
+      headers: {
+        ...(actor?.id ? { 'x-actor-id': actor.id } : {}),
+        ...(actor?.name ? { 'x-actor-name': actor.name } : {}),
+        ...(actor?.role ? { 'x-actor-role': actor.role } : {}),
+        ...(actor?.id ? { 'x-actor-role': 'ADMIN' } : {}) // Force admin role for updates
+      }
+    });
+    console.debug('[API] updateReviewCycle result:', result);
+    return result;
+  } catch (err) {
+    console.error('[API] updateReviewCycle error:', err);
+    throw err;
+  }
+};
+
 // -------------------- Ingest (admin screens) --------------------
 type ImportOpts = { replaceAll?: boolean; debug?: boolean; resetPasswords?: boolean; returnCredentials?: boolean };
 
